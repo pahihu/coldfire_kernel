@@ -1,0 +1,310 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>the I/O classes for icmp_echo</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0792.html">RFC792</a> Original<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122</a> Updated<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0896.html">RFC896</a> ICMP source quench<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1016</a> More recent source quench<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0950.html">RFC950</a> Subnet mask<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0956.html">RFC956</a> Clock<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0957.html">RFC957</a> Clock<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1305.html">RFC1305</a> Clock<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1812.html">RFC1812</a> Router requirments<br>
+
+
+<p>
+A user opens a <i>icmp_echo</i> to use the icmp echo protocol. The first two bytes
+written are the sequence number. They may be very relevent to the ping word, but they
+are of no interest to the system. If you use it as a two byte ascii number you get 99
+id's more than enough.
+</p>
+<pre> <code>
+io_protocol_common class
+
+		cell% instance_variable %%identifier
+
+				
+		\ errors/stats
+		cell% instance_variable %%read_errors
+		cell% instance_variable %%bad_echo_structure
+
+		m: ( parent--)
+			this [parent] :construct
+			zero %%bad_echo_structure !
+			zero %%read_errors !
+		; overrides :construct
+
+		\ while the port is open we can recieve more peps 
+		\ this has to stop before we can proceed.
+		: _wait_for_echo_close ( identifier --)
+			BEGIN
+				DUP _echo_find DUP not IF
+					\ port addr(--
+					2DROP
+					EXIT
+				THEN
+				\ port addr(--
+				 _#demux_bucket_object + @ this <> IF
+					\ someone else has the port now
+					\ port(--
+					DROP
+					EXIT
+				THEN
+				\ port(--
+				xpause
+			AGAIN
+		;
+
+		m: ( --)
+			\ Remove ourselves from the icmp_echo_demux table.
+			\ We cannot proceed until this is done. If there is a bug
+			\ in the code ( more finds than releases,) we will wait here
+			\ forever.
+			%%identifier @ _echo_remove
+			%%identifier @ _wait_for_echo_close
+			this [parent] :destruct
+		; overrides :destruct
+
+		\ string can be /destination_machine
+		\               or nothing
+		m: ( addr n mode -- instance )
+			%%mode !
+			\ /machine
+			[CHAR] / remove_leading
+			\ addr_machine count_machine(--
+			DUP IF \ machine specified
+				Sresolve_address %%remote_machine !
+			ELSE
+				2DROP
+			THEN
+			\ ask the os for a identifier
+			\ as soon as we do this we can start receiving
+			\ datagrams destined to the allocated port.
+			\ As no one knows about us it is not likely, but it
+			\ is possible.
+			\ getting the identifer adds it to the demux table
+			this _echo_identifier %%identifier !
+			this
+		; overrides :file_open
+
+
+		\ protocol says there is a two byte sequence number after
+		\ identifer. As far as we are concerned it is part of the
+		\ users data area. How the user uses it is his problem. We
+		\ are defintily not going to get involved in creating and
+		\ tranfering a sequence number.
+		: setup_echo { ( identifier ) variable %pep -- }
+
+			_%icmp_object @ 
+			%pep @ ep_proto_obj + !
+
+			IPT_ICMP %pep @ [ ep_data ip_proto + ]T LITERAL + B!
+					
+			%pep @ ep_ipdata + @ ic_seq ERASE
+
+			ICT_ECHORQ	  %pep @ ep_ipdata + @ ic_type + B!
+			\ identifier(--
+			 %pep @ ep_ipdata + @ ic_id + W!
+
+			ic_seq %pep @ add_to_ip
+		;
+
+		m: { variable %pep -- }
+			%%local_machine @
+			%%remote_machine @ 
+			zero
+			%pep @ setup_ip
+			\ priority can be set as a object variable.
+			\ If you ping a COLDFORTH system it has some meaning.
+			\ The rest of the internet expects the priority to be zero
+			\ in all ICMP messages.
+			%%priority @  5 RSHIFT 
+			%pep @ [ ep_data ip_tos + ]T LITERAL + B! 
+			\ ------------------------------------------
+			\ this word sets up a header with no options
+			\ if you want options do it yourself.
+			\ ------------------------------------------
+			\ setup the echo header; this does not include the sequence.
+			%%identifier @
+			%pep @
+			setup_echo
+
+		; overrides :setup_protocol
+
+
+		\ the icmp echo message shows a little logic there is not an 
+		\ additional count
+		: _add_to_echo ( n pep)
+			add_to_ip
+		;
+
+	</code> </pre>
+<p>
+An application should call <i>:setup_protocol</i> or <i>:setup_protocol_from_pep</p> to
+initialise the pep header. It should then alter header if desired.
+</p>
+	<pre> <code>
+		\ as the echo server is implemented in icmp_protocol; there is no
+		\ need for this method.
+		m: ( variable %pep_in variable %pep_out -- )
+			TRUE ABORT" :setup_protocol_from_pep not implemenented."
+		; overrides :setup_protocol_from_pep 
+
+
+		: _pep>echo_data ( pep -- pep addr n 0 | $)
+			DUP ep_ipdata + @
+			\ pep addr(--
+			OVER ep_ipcount + @ 
+			\ pep addr len(--
+			ic_seq -
+			SWAP 
+			ic_seq +
+			SWAP
+			zero
+		;
+
+		\ The big qestion; should We close on an abort or leave it
+		\ to the user. The rule is if you take one of these words you can 
+		\ convert it into a ior type result with a simple catch. That means
+		\ you don't close
+		m:  { ( --pep addr n ) }
+				%%pep_queue xawait
+				%%pep_queue dequeue
+				\ pep(--
+				DUP ep_error + @ not IF
+					_pep>echo_data ?DUP IF
+						1 %%bad_echo_structure +!
+						$ABORT
+					THEN
+					\ pep addr n(--
+					EXIT
+				THEN
+				1 %%read_errors +!
+				DUP ep_error + @
+				SWAP kill_free_buffer
+				$ABORT
+		; overrides :read_protocol
+
+
+
+		\ the read operation treats each datagram
+		\ as a record.
+		m:  ( addr len -- len)
+			%%active_pep @ not IF
+				\ do if for the side effects not the 
+				\ stack items
+				this :read_protocol 
+				%%active_count !
+				%%active_pointer !
+				%%active_pep !
+			THEN
+			\ addr len(--
+			_read_from_active_pep
+			\ len(--
+		; overrides :read
+
+		\ write the data pointed to by addr and n to the pep and queue.
+		\ we have to write something as the first two bytes are
+		\ the sequene number
+		CREATE _$default ," 00 hi"
+		m: { ( addr n --) variable %pep }
+			DUP not IF
+				2DROP
+				_$default
+				COUNT
+			THEN
+			TUCK
+			\ n addr n (--
+			%pep @ ep_ipdata + @ ic_seq + SWAP MOVE
+			\ n(--
+			\ have to now fix up ep_len and ip_length
+			%pep @ _add_to_echo
+			%pep @ queue_ip
+		; overrides :write_protocol
+
+		\ returns true if data
+		m: ( --flag)
+			%%active_pep  @ 0= 
+			%%pep_queue queue_empty? AND not
+		; overrides :key?
+
+		m: ( indent --)
+			CR DUP SPACES ." icmp_echo | " ." Object: " this .h 
+			CR DUP SPACES ." remote machine: " %%remote_machine @ .h 
+			CR DUP SPACES ." local machine      : " %%local_machine @ .h
+			CR DUP SPACES ." priority           : " %%priority @ .h
+			              ." input_pep_queue : " %%pep_queue .h
+			CR DUP SPACES ." datagram receives  : " %%datagrams_received @ .h
+			              ." discards        : " %%datagram_discards @ .h
+			\ indent(--
+			CR DUP SPACES ." type buffer        : " %%type_buffer> @ .h
+			              ." type count      : " %%type_buffer_count @ .h
+			DROP
+			send
+		; overrides :print
+
+target_also
+
+&drivers
+target_definitions
+
+end_class icmp_echo
+
+target_previous_definitions
+target_previous
+
+
+	: ping { ( --) }{
+		variable %sent_messages
+		variable %received_messages 
+		#8 CONSTANT #colume_size
+		}
+		0 %sent_messages !
+		0 %received_messages !
+		$" icmp_echo/" BL WORD #$buffer get_buffer buffer #$buffer $+ 
+		\ temp
+		buffer zero $open kill_buffer
+		CR
+		BEGIN
+			\ object(--
+			DUP :key? IF
+				CR
+				\ object(--
+				DUP ['] _receive_ping CATCH ?DUP IF
+					CR 
+					." sent messages: " %sent_messages @ .
+					." recieved messages: " %received_messages @ . 
+					NIP SWAP close
+					$ABORT
+				THEN
+				1 %received_messages +!
+			ELSE
+				1 %sent_messages +!
+				\ object(--
+				DUP ['] _ping_message CATCH ?DUP IF
+					CR 
+					." sent messages: " %sent_messages @ .
+					." recieved messages: " %received_messages @ . 
+					NIP SWAP close
+					$ABORT
+				THEN
+				IF 
+					1 %received_messages +!
+				THEN
+			THEN
+			character# #colume_size + character_max @ < not IF CR THEN 
+			\ don't want internet to get upset with ping rate.
+			#1sec xtest xwait
+		AGAIN
+	;
+	</code> </pre>
+</body>
+</html>

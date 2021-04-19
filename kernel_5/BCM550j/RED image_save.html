@@ -1,0 +1,156 @@
+<html>
+<head>
+<title>bvp560.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Will only work on coldforth version greater than version 0.93, there was a bug in CREATE-FILE
+</p>
+<pre> 
+<code>
+
+forth
+DEFINITIONS
+
+</code>
+</pre>
+<p>
+This is only relevent if compiling on a card that has copy boot prom for a card that takes a prom.
+</p>
+<pre>
+<code>
+defined _#copy_boot_flash_base [IF]
+
+
+	\ address has to be shifted on BCM522 as there is a
+	\ high and low byte
+	: _flash_start_erase ( base_address --)
+		$AA OVER $5555 + C!
+		$55 OVER $2AAA + C!
+		$80 OVER $5555 + C!
+		$AA OVER $5555 + C!
+		$55 OVER $2AAA + C!
+		$10 OVER $5555 + C!
+		DROP
+	; 
+
+	: _flash_reset ( base --)
+		$F0 SWAP C!
+	;
+
+	\ flag is true if still toggleing.
+	: _flash_toggle? ( base_address --flag)
+		DUP C@ $40 AND SWAP C@ $40 AND <> 
+	;
+
+
+	: _flash_erase ( base_address -- $ )
+		DUP _flash_start_erase
+		BEGIN
+			DUP _flash_toggle?
+			xtest 10 xwait
+		WHILE
+			DUP C@ $20 AND IF \ may of exceeded time
+				DUP _flash_toggle? IF \ we did
+					_flash_reset
+					$" Failed to erase"
+					EXIT
+				THEN
+			THEN
+		REPEAT
+		\ success if here
+		DROP FALSE
+	;
+
+	: _flash_program_byte { ( value addr base -- $ ) }{
+		variable _%base }
+		_%base !
+		\ We test one program byte back
+		_%base @
+		BEGIN
+			DUP _flash_toggle?
+		WHILE
+			DUP C@ $20 AND IF \ may of exceeded time
+				DUP _flash_toggle? IF \ we did
+					_flash_reset
+					2DROP
+					$" Failed to program"
+					EXIT
+				THEN
+			THEN
+		REPEAT
+		DROP
+		$AA _%base @ $5555  + C!
+		$55 _%base @ $2AAA  + C!
+		$A0 _%base @ $5555  + C!
+		_%base @ + C!
+		FALSE
+	;
+
+	: _flash_block_write  { variable _%source 
+		                    variable _%destination 
+							variable _%base 
+							variable _%number -- ( $ ) }
+		_%number @ zero DO
+			_%source @ I + C@
+			_%destination @ I +
+			_%base @ _flash_program_byte
+			?DUP IF ( failed)
+				UNLOOP
+				EXIT
+			THEN
+			^C
+		LOOP
+		FALSE
+	;
+
+$2000   CONSTANT _#8k
+_#copy_boot_flash_base forth CONSTANT _#flash_base
+_#copy_boot_flash_size forth CONSTANT _#flash_size
+: save_image
+	_#flash_base _flash_erase $ABORT  
+	%NEW_IMAGE 0 _#flash_base _#flash_size  _flash_block_write 
+	ABORT" Failed to write data to prom"
+;
+
+: ?same_image ( -- )
+	_#flash_size 0 DO 
+		I %NEW_IMAGE + @ _#flash_base I + @ <> ABORT" Image failed to flash"
+	4 +LOOP
+;
+[ELSE]
+: save_image	{ ( -- ) }{ variable %handler }
+		S" ./BCM550j.bin"  \ $(-- 
+		R/W                  \ $ mode(--
+		CREATE-FILE 
+		\ fileid ior(--
+		$abort
+            \ file-id(--
+		%handler !
+		%image_areas	\ c-addr(--
+		_#prom_size 	\ c-addr u(-- 
+		%handler @  \ c-addr u fileid(--
+		WRITE-FILE  \ ior(-- ior is zero if no fault
+		$abort      \ (--
+		%handler @ CLOSE-FILE $abort
+;
+
+: ?same_image ( --) ;
+
+[THEN]
+
+ 
+host
+
+</code> 
+</pre>
+</body>
+</html>
+
+

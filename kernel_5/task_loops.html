@@ -1,0 +1,309 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name="task_level_names"></a>
+<h5>Task level names</h5>
+<p>
+	The task levels are given names so that magic numbers do not have to be
+	used in following code.
+</p>
+
+<p>
+Different interrupts restart the schedular at differnt levels. 
+The level is scheduled when the system switches from supervisor to user.
+Interrupt routines need to be kept short for this model to work.
+Try to do as little as possible in interrupts and schedule a task to do most of the work.
+</p>
+
+	<pre> <code>
+
+        \ level_machine states are stored in fixed area.
+        \ Done this way so we don't have to run an interrupt stack
+        \ This structure is used when the machine state is stored.
+        \ A0,format and PC are only set if structure used to save a machine
+        \ state for an interrupt routine
+        \ saved so saving the frame off saves everything
+        0
+        DUP CONSTANT _#l_active CELL+
+        DUP CONSTANT _#l_D0     CELL+
+        DUP CONSTANT _#l_D1     CELL+
+        DUP CONSTANT _#l_D2     CELL+
+        DUP CONSTANT _#l_D3     CELL+
+        DUP CONSTANT _#l_D4     CELL+
+        DUP CONSTANT _#l_D5     CELL+
+        DUP CONSTANT _#l_D6     CELL+
+        DUP CONSTANT _#l_D7     CELL+
+        DUP CONSTANT _#l_A0     CELL+
+        DUP CONSTANT _#l_A1     CELL+
+        DUP CONSTANT _#l_A2     CELL+
+        DUP CONSTANT _#l_A3     CELL+
+        DUP CONSTANT _#l_A4     CELL+
+        DUP CONSTANT _#l_A5     CELL+
+        DUP CONSTANT _#l_A6     CELL+
+        DUP CONSTANT _#l_A7     CELL+
+        DUP CONSTANT _#l_ACC    CELL+
+        DUP CONSTANT _#l_MASK   CELL+
+        DUP CONSTANT _#l_MACSR  CELL+
+        DUP CONSTANT _#l_format CELL+
+        DUP CONSTANT _#l_PC     CELL+
+
+        DUP CONSTANT _#l_name>  CELL+
+        DUP CONSTANT _#l_count  CELL+  \ number of used
+        DUP CONSTANT _#l_error1 CELL+  \ asked to be used when in use
+        DUP CONSTANT _#l_error2 CELL+  \ asked to be used when is should not be
+
+        CONSTANT _#l_length
+
+
+        \ structure of return stack
+        zero
+        DUP CONSTANT _#lr_A0 CELL+
+        DUP CONSTANT _#lr_format CELL+
+        DUP CONSTANT _#lr_PC CELL+
+        DROP
+
+	\ Interrupt level names
+	zero
+
+        \ <a name="#interrupt7"></a>
+	DUP CONSTANT #interrupt7       1+
+
+        \ <a name="#interrupt6"></a>
+	DUP CONSTANT #interrupt6       1+
+
+        \ <a name="#interrupt5"></a>
+        DUP CONSTANT #interrupt5       1+
+
+        \ <a name="#interrupt4"></a>
+        DUP CONSTANT #interrupt4       1+
+
+        \ <a name="#interrupt3"></a>
+        DUP CONSTANT #interrupt3       1+
+
+        \ <a name="#interrupt2"></a>
+        DUP CONSTANT #interrupt2       1+
+
+        \ <a name="#interrupt1"></a>
+        DUP CONSTANT #interrupt1       1+
+
+        \ <a name="#clock_high"></a>
+	\ clock routine restarts the scheduler at this level
+	\ every xbase ticks.
+	DUP CONSTANT #clock_high       1+
+
+        \ <a name="#clock_medium"></a>
+	DUP CONSTANT #clock_medium     1+
+
+        \ <a name="#tcp/ip"></a>
+        DUP CONSTANT #tcp/ip           1+
+
+        \ <a name="#clock_low"></a>
+	\ spare cpu time is spent in this level
+	DUP CONSTANT #clock_low        1+
+
+	| CONSTANT _#task_level_number
+
+
+
+        ram_create %task_levels _#task_level_number _#l_length * ram_allot
+
+	\ used by .tasks
+	| CREATE _level_names
+		 ' #interrupt7   t_xt>nfa  t,
+		 ' #interrupt6   t_xt>nfa  t,
+		 ' #interrupt5   t_xt>nfa  t,
+		 ' #interrupt4   t_xt>nfa  t,
+		 ' #interrupt3   t_xt>nfa  t,
+		 ' #interrupt2   t_xt>nfa  t,
+		 ' #interrupt1   t_xt>nfa  t,
+		 ' #clock_high   t_xt>nfa  t,
+		 ' #clock_medium  t_xt>nfa  t,
+		 ' #tcp/ip        t_xt>nfa  t,
+		 ' #clock_low     t_xt>nfa  t,
+
+
+	??HEX
+      \ The level head is arranged
+	zero
+	| DUP CONSTANT _#level_head_trap           2+
+	| DUP CONSTANT _#level_head_vector         2+
+	\ link used by the multitasker.
+	| DUP CONSTANT _#level_head_loop_head          4+
+
+	\ Set by code that initiates the levels execution
+	\ The following two flags have to be together as they are tested as one.
+	\ See trap27
+	\ Set by code that initiates the levels execution
+	DUP CONSTANT _#level_head_restart_flag   2+
+	\ Set to true if level is to be repeated, only set for
+	\ the lowest priority.
+	| DUP CONSTANT _#level_head_repeat_flag    2+
+	| DUP CONSTANT _#level_head_facility #facility_length +
+	DROP
+
+
+	0C #facility_length ??=
+	| CREATE TSK-CODE assembler
+    LABEL tsk0
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ tasks can come and go .tasks and .task need to claim a task to print it's
+		\ details out.
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk1
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+
+    LABEL tsk2
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+	LABEL tsk3
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk4
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk5
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk6
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+	LABEL tsk7
+		7 # TRAP            \ switch task level
+      	level_switch tw,
+		\ the link address has to be in the same location as it is in
+		\ a task.
+		FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk8
+		7 # TRAP
+    	level_switch tw,
+    	FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk9
+		7 # TRAP
+    	level_switch tw,
+    	FFFFFFFF t,
+		0 t,
+		\ facility
+		0 t, 0 t, 0 t,
+
+    LABEL tsk10
+	    7 # TRAP
+      	level_switch tw,
+      	FFFFFFF t,
+		0 tw,
+		-1 tw,	( level can be executed without the execute flag set)
+		\ facility
+		0 t, 0 t, 0 t,
+
+
+    LABEL end.tsk
+
+    | ram_create  base-tasks
+    						ram_create TSK0 tsk1 tsk0 -      ram_allot
+    						ram_create TSK1 tsk2 tsk1 -      ram_allot
+    						ram_create TSK2 tsk3 tsk2 -      ram_allot
+    						ram_create TSK3 tsk4 tsk3 -      ram_allot
+    						ram_create TSK4 tsk5 tsk4 -      ram_allot
+    						ram_create TSK5 tsk6 tsk5 -      ram_allot
+    						ram_create TSK6 tsk7 tsk6 -      ram_allot
+
+    						ram_create TSK7 tsk8 tsk7 -      ram_allot
+    						ram_create TSK8 tsk9 tsk8 -      ram_allot
+				                ram_create TSK9 tsk10 tsk9 -      ram_allot
+
+    						ram_create TSK10 end.tsk tsk10 -   ram_allot
+
+   CREATE _xheads TSK0 t, TSK1 t, TSK2 t, TSK3 t,
+	              TSK4 t, TSK5 t, TSK6 t, TSK7 t,
+				  TSK8 t, TSK9 t, TSK10 t,
+
+    \ Go back and set initial task addresses
+        TSK0	 tsk0 #activation_task_link  +  t!
+        TSK1	 tsk1 #activation_task_link  +  t!
+        TSK2	 tsk2 #activation_task_link  +  t!
+        TSK3	 tsk3 #activation_task_link  +  t!
+        TSK4	 tsk4 #activation_task_link  +  t!
+        TSK5	 tsk5 #activation_task_link  +  t!
+        TSK6	 tsk6 #activation_task_link  +  t!
+
+        \ levels started by clock
+        TSK7	 tsk7 #activation_task_link  +  t!
+        TSK8	 tsk8 #activation_task_link  +  t!
+        TSK9	 tsk9 #activation_task_link  +  t!
+        TSK10	 tsk10 #activation_task_link +  t!
+
+        \ <a name="restart_lvel"></a>
+	: restart_level ( --)
+		TRUE _xlevel @ CELLS _xheads + @
+		[ _#level_head_restart_flag _#level_head_trap - ]T LITERAL + W!
+	;
+
+	</code> </pre>
+</body>
+</html>
+

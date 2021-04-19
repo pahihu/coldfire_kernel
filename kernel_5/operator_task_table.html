@@ -1,0 +1,90 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+    <pre> <code>
+	target_also
+    &tasks
+	target_definitions
+	
+
+	CREATE OPERATOR 
+		0 t,    
+		0 t,
+		
+
+    target_previous_definitions
+	target_previous
+
+    HEX
+
+</code>
+</pre>
+<p>
+The places the operator task activation area in dual port. If this is done code on the otherside of
+dual port can active the task by writing a word value to the task activation location. Back in the days when 
+data and code always came from memory this was a lot faster and simpler than a interrupt routine. With interrupt
+routines now being written in FORTH and C, it still is.
+</p>
+<pre>
+<code>
+
+#BCM550h #BCM550j + #BVP5552 + #BVP5551 + #BVP6552 + #BVP6551 + [IF]
+	port_create operator_activation  #activation_length port_allot 
+[ELSE]
+	ram_create operator_activation  #activation_length ram_allot 
+[THEN]
+
+	_#task_table_length dtw, ( length)
+
+	dictionary_create  _operator_task_table
+
+    dictionary_create  (pu)  
+                              #clock_low             dtw,  ( _#task_table_level)
+                              OPERATOR _t_pfa>nfa    dt,   ( _#task_tabe_name)
+							  operator_activation    dt,   ( activation area)
+
+    _operator_task_table  OPERATOR  t!  ( set up pointer to prom)
+
+	\ Operator task only
+
+    CREATE _(s0)                         0 t,              
+
+    dictionary_variable _(hremember)                 
+    CREATE _(htop)                       _#dictionary_end t,         
+
+    dictionary_variable _(rremember)                 
+    CREATE _(ram_top)                    RMEM5 t,         
+
+    dictionary_variable _(fast_remember)              
+    CREATE _(fast_top)                   _#rambar_base _#rambar_size + t, 
+
+#BVP5552 #BVP5551 + [IF]	
+    dictionary_variable _(static_remember)
+    CREATE _(static_top) _static_ram_base _#static_mem_size + t,
+[THEN]
+#BVP5552 #BVP6552 + [IF]
+	dictionary_variable _(bank_remember)              
+    CREATE _(bank_top) _#bank_mem_start _#bank_mem_size + t, 
+[THEN]
+
+	dictionary_variable _(port_remember)              
+    CREATE _(port_top) _#RTI1000_dual_port_base _#RTI1000_dual_port_size + t,          
+         
+
+	CREATE _(ubase)                      0 t,              
+	dictionary_variable _(uremember)                  
+	CREATE _(utop)                       0 t, 
+	
+	CREATE _('dictionary_remember)       0 t,
+
+
+	</code> </pre>          
+</body>
+</html>

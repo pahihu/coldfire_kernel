@@ -1,0 +1,213 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	HEX
+	HOST
+        
+
+	\ bit offsets
+	\ Both these codes enable receiver as well
+    | 5 CONSTANT _#m68_transmit_enable
+    | 9 CONSTANT _#m68_transmit_disable
+
+
+	| : _m68_transmit_enable ( device --)
+		_#m68_transmit_enable SWAP _#m68_control + C!
+	;
+
+	| : _m68_transmit_disable ( device --)
+		_#m68_transmit_disable SWAP _#m68_control + C!
+	;
+
+
+    
+
+	\ intended for use with panic" and panic.
+	\ These word may not use any of the OS structures.
+	: _panic_emit ( char)
+		BEGIN
+			_#m68b_base _#m68_status + C@
+			04 AND 
+		UNTIL
+		_#m68b_base _#m68_data + C!
+	;		
+	
+	: panic ( addr n --)
+		\ disable transmit interrupts
+		2 _#m68b_base _#m68_int_enable + C!
+		\ enable trasmitter
+		_#m68b_base _m68_transmit_enable
+		zero DO
+			DUP C@ _panic_emit
+			CHAR+
+		LOOP
+		DROP
+		\ wait until last character sent
+		BEGIN
+			_#m68b_base _#m68_status + C@
+			08 AND 
+		UNTIL
+		\ Force a interrupt
+		\ The interrupt software can handle a false interrupt.
+		\ If a transmit was in progress this is required to restart it.
+		_#m68b_base _m68_transmit_disable
+		3 _#m68b_base _#m68_int_enable + C!
+		_#m68b_base _m68_transmit_enable
+	;
+
+	: $panic ( $ --)
+		COUNT panic 
+	;
+
+	\ take a number and print it out as a hex string
+	: .panic ( x --)
+		\ disable transmit interruts
+		2 _#m68b_base _#m68_int_enable + C!
+		\ enable trasmitter
+		_#m68b_base _m68_transmit_enable
+		8 0 DO
+			\ data mask(--
+			DUP 1C RSHIFT 
+			DUP 0A < IF
+				\ ascii 0
+				30 + 
+			ELSE
+				\ ascii A 
+				41 0A - +
+			THEN
+			_panic_emit
+			10 *
+		LOOP
+		DROP
+				\ wait until last character sent
+		BEGIN
+			_#m68b_base _#m68_status + C@
+			08 AND 
+		UNTIL
+		\ Force a interrupt
+		\ The interrupt software can handle a false interrupt.
+		\ If a transmit was in progress this is required to restart it.
+		_#m68b_base _m68_transmit_disable
+		3 _#m68b_base _#m68_int_enable + C!
+		_#m68b_base _m68_transmit_enable
+
+	;
+
+	: panic_cr
+		2 _#m68b_base _#m68_int_enable + C!
+		\ enable trasmitter
+		_#m68b_base _m68_transmit_enable
+
+		#cr _panic_emit
+		#lf _panic_emit
+		
+		\ wait until last character sent
+		BEGIN
+			_#m68b_base _#m68_status + C@
+			08 AND 
+		UNTIL
+		\ Force a interrupt
+		\ The interrupt software can handle a false interrupt.
+		\ If a transmit was in progress this is required to restart it.
+		_#m68b_base _m68_transmit_disable
+		3 _#m68b_base _#m68_int_enable + C!
+		_#m68b_base _m68_transmit_enable
+	;
+
+
+	: panic_emit ( --)
+		2 _#m68b_base _#m68_int_enable + C!
+		\ enable trasmitter
+		_#m68b_base _m68_transmit_enable
+		
+		_panic_emit
+
+		\ wait until last character sent
+		BEGIN
+			_#m68b_base _#m68_status + C@
+			08 AND 
+		UNTIL
+		\ Force a interrupt
+		\ The interrupt software can handle a false interrupt.
+		\ If a transmit was in progress this is required to restart it.
+		_#m68b_base _m68_transmit_disable
+		3 _breg_UMR11 _#m68_int_enable + C!
+		_#m68b_base _m68_transmit_enable
+	;
+
+
+	\ Run time code
+	: _panic"_do ( --)
+		R> 
+		DUP
+		COUNT +    \ addr addr1 (--
+		ALIGNED    \ addr addr2 (--
+		>R
+		COUNT
+		panic
+	;
+
+    : panic_dump ( addr n --)
+    	SWAP -2 AND  DUP ROT + SWAP DO
+    		panic_cr I .panic  BL panic_emit I $10 +  I     
+    		DO  
+    			I @  .panic  BL panic_emit four  
+    		+LOOP
+    	 		BL panic_emit
+				BL panic_emit 
+				I 10 + I DO
+    			I C@ $7F AND DUP BL <  IF
+    				DROP $2E 
+    			THEN
+    		 	DUP 07F = IF 
+    		 		DROP $2E 
+    		 	THEN  panic_emit
+      		LOOP  
+      	$10 +LOOP 
+	;
+	</code> </pre>
+ <p>
+Determine if the address is within the SDRAM is enough, we just don't
+want to generate another address error.
+</p>
+	<pre> <code>
+	: code? ( addr --flag)
+		_#start_dynamic _#end_dynamic WITHIN
+	;	  
+	</code> </pre>
+<a name="$_"></a>
+<h5>$"</h5>
+<p>
+The panic type uses polled output to logical unit zero.
+It is to be used to print information on bad bad situations.
+</p>
+	<pre> <code>
+	\ This version is for use in interrupt code.
+    forth : panic" ( flag--)   
+		HOST
+		COMPILE _panic"_do  ," 
+    ;   TARGET
+	</code> </pre>
+	<pre> <code>
+	: panic_show ( add n --)
+		OVER code? not IF
+			2DROP
+			panic_cr
+			panic" Not in code space"
+		ELSE
+			SWAP $30 - SWAP $40 MIN panic_dump
+		THEN
+	;
+	</code> </pre>
+</body>
+</html>
+

@@ -1,0 +1,1004 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<h1>Base class for I/O drivers</h1>
+<h5>Termination codes</h5>
+<p>
+<i>:read_line</i> generates an end code. That is stored after the received 
+string.  The end code can take on 
+the following values. All this is done so the function keys will work.
+</p>
+	<pre> <code>
+        \ <a name="#end_count"></a>
+	$00 CONSTANT #end_count
+        \ <a name="#end_eol"></a>
+	$01 CONSTANT #end_eol
+        \ <a name="#end_eof"></a>
+	$02 CONSTANT #end_eof
+        \ <a name="#end_function"></a>
+	$C0 CONSTANT #end_function
+	</code> </pre>	
+<h5>io_common</h5>
+<p>
+This is common to a device and a file. You can seek and read both. This class sets the tone 
+for all OS drivers.
+</p>
+	<pre> <code>
+	#cr 0D ??=
+	#^z 1A ??=
+	_#$_data 1 ??=
+	#esc 1B ??=
+	| 030D1A1B CONSTANT _#eot_init 
+
+	\ object 
+	\ :construct
+	\ :destruct
+	\ :print
+	\	link_class
+	\	:list_head
+	\	:number_of_links
+        \           cleanup_class
+        \	    :link_cleanup
+	\	    :unlink_cleanup
+	\		parented_object
+	\		:facility
+	\		:parent_instance
+	\		:!name
+	\		:@name
+	\		:@$root
+	\		:inode_head
+	\		:inode_instance
+	\			io_common
+	\			:span
+	\			:!terminal
+	\			:@terminal
+	\			:Sopen
+	\			:!file_instance
+	\			:!timeout
+	\			:@timeout
+	\			:!mode
+	\			:@mode
+	\			:read
+	\			:read_line
+	\			:previous_line
+	\			:flush_file
+	\			:write
+	\			:buffer_size!
+	\			:cr
+	\			:write_line
+	\			:type
+	\			:mark
+	\			:status
+	\			:?send
+	\			:reposition_file
+	\			:file_position
+	\			:key?
+	\			:clear
+	\			:!control
+	\			:!eot
+	\			:linemode
+	\			:!device
+	\			:baud
+	\			:?page
+	\			:!?page
+	\			:character#
+	\			:line#
+	\			:page#
+	\			:page!
+	\			:line_max
+	\			:character_max
+	\
+	\			:normal
+	\			:rev
+	\			: blink
+	\			:dim
+	\			:udl
+	\			:dim&blink
+	\			:rev&blinl
+	\			:rev&dim
+	\			:rev&udl
+	\			:rev&dim&blink
+	\			:rev&dim&udl
+	\			:tab
+	\			:page
+	\			:>|
+	\			:|>
+	\			:|i
+	\			:|o
+	\			:|v
+	\			:|h
+	\			:|n
+	\			:|tl
+	\			:|tr
+	\			:|br
+	\			:termination>code
+	\			:box
+	\			:element
+	\			:line
+	\			:zed
+	\			:labels
+	\			:shift_labels
+	\			:cursor
+	\			:no_curser
+	\			:message
+	\			:no_message
+	\			:foreground
+	\			:background
+	\			:border
+	\			:a4
+	\			:quarto
+	\			:eoj
+	\			:@control_block
+	\			:!control_block
+	\			:bye
+	\			:consume_port
+	\			:priority!
+	\			:terminal_mode!
+	\			:terminal_mode@
+	\			:inuse?
+	\			:@file_size
+	\			:!file_size
+	\			:?directory
+	\			:get_directory_name
+	\			:put_directory_name
+	\			:next_directory_cookie
+	\			:first_directory_cookie
+	\			:make_file
+	\			:remove_file
+	\			:open_inode
+	\			:close_inode
+	\			:make_directory
+	\			:format
+	\			:file_offset>device_offset
+	\			:bytes_a_zone
+	parented_object class
+
+
+		cell% instance_variable %%terminal
+		cell% instance_variable %%mode
+		cell% instance_variable %%timeout
+		cell% instance_variable %%seek_pointer
+		cell% instance_variable %%terminal_mode
+
+		\ type buffer
+		\ The type buffer is only allocated if used.
+		\ There are many ways to write to a datagram.
+		\ You can make the type buffer any size you desire
+		\ see :buffer_size!
+		| $100 _#sys_buffer_user  - CONSTANT _#type_buffer_size
+		cell% instance_variable %%type_buffer_size
+		cell% instance_variable %%type_buffer_count
+		cell% instance_variable %%type_buffer>
+
+
+		\ if a device supports files it will create another object for the
+		\ file. reads and writes agsint the file object will be against the
+		\ file; reads and writes against the device will bne against the device
+		\ You will see this used in the file class. The data is read and written
+		\ using the files parent.
+		cell% instance_variable %%file_instance
+
+		| $10       CONSTANT #eot_max
+		#eot_max bytes% instance_variable %%eot
+
+		\ span belongs in the i/o_object. It is only needed for EXPECT
+		\ EXPECT is for past compatibility only.
+		cell% instance_variable %%span
+
+		m: ( parent--)
+			this [parent] :construct
+			terminal_class heap_object
+			%%terminal !
+			0 %%mode !
+			0 %%timeout !
+			0 %%seek_pointer !
+			TRUE %%terminal_mode !
+
+			_#eot_init %%eot !
+
+			zero %%type_buffer> !
+			zero %%type_buffer_count !
+			_#type_buffer_size %%type_buffer_size !
+
+			zero %%file_instance !
+
+		; overrides :construct
+
+		: @file_instance
+			%%file_instance @ DUP IF
+				EXIT
+			THEN
+			not ABORT" No file instance"
+		;
+
+                : get_filecode ( --code)
+			this :@name checksum
+		;
+
+		\ write buffered data to storage
+                \ if you override make sure you include code to update
+                \ the seek pointer
+		m:  \ compile time ( --xt)
+		        \ runtime ( --)
+                        %%type_buffer_count @
+		        \ do the flush
+                        %%seek_pointer +!
+                        this :facility release
+		; method :flush_file
+
+		m: ( --)
+			\ if one was allocated remove the type buffer
+ 			%%type_buffer> @ IF
+                                \ clear buffered data
+                                %%type_buffer_count @ IF
+                                        this :flush_file
+                                THEN
+                                %%type_buffer> @
+				0 %%type_buffer> !
+				kill_free_buffer
+			THEN
+			\ does the unlinking
+			%%terminal @ ?DUP IF
+				0 %%terminal !
+				heap_object_free
+			THEN
+			\ we do not destoy the file instance; if it exists it will be what is
+			\ destroying us.
+			this [parent] :destruct
+		; overrides :destruct
+
+		m: ( --addr)
+			%%span
+		; method :span
+                </code></pre>
+                <a name="!terminal"></a>
+                <pre><code>
+		\ devices that can have different types of terminals connected
+		\ for example tyx have there print words vectored trough %%terminal
+		\ %%terminal contains an object derived from <i>terminal_class</i>
+		m: ( class --)
+			%%terminal @
+			heap_object_free
+			heap_object %%terminal !
+		; method :!terminal
+
+
+		m: ( --object)
+			%%terminal @
+		; method :@terminal
+
+
+		\ :Sopen
+		\ If there is no file return ourselves as the instance.
+		\ The ?? indicates classes may require additional stack items 
+		m: ( ?? addr n mode -- instance )
+                        %%mode !
+                        ABORT" This device doesn't support file"
+				DROP
+                        this
+		; method :file_open
+
+		\
+		m: ( addr --)
+			%%file_instance @ ?DUP IF
+				\ new old (--
+				\ error fixed Jan 04 20000
+				\ this claims the node
+				\ not needed file is owned be devive: DUP :facility get
+				SWAP %%file_instance !
+				\ not needed we didn't claim above: DUP :facility release
+				\
+				\ wrong should be as below: kill_free_buffer
+				\ the destructor needs to be called.
+				heap_object_free
+			ELSE
+				%%file_instance !
+			THEN
+		; method :!file_instance
+
+		\ the base i/o words
+		\ ------------------
+		\ There is only one read operation, if timeout is required you must
+		\ execute !timeout, it timeout occures the read bytes are set to zero.
+		\ If a timeout of zero is set there is no timeout.
+		m:       \ compile time ( --xt)
+				 \ runtime ( timeout --)
+			%%timeout !
+		; method :!timeout
+
+		m:       \ compile time ( --xt)
+				 \ runtime ( timeout --)
+			%%timeout @
+		; method :@timeout
+
+
+		\ !mode
+		m:       \ compile time ( --xt)
+				 \ runtime ( mode --)
+			%%mode !
+		; method :!mode
+
+		\ !mode
+		m:       \ compile time ( --xt)
+				 \ runtime ( mode --)
+			%%mode @
+		; method :@mode
+
+		</code> </pre>
+		<p>
+		The wordset used for a device
+		</p>
+		<pre> <code>
+		\ always return zero as the read count.
+		m:  \ compile time ( --xt)
+			\ runtime ( addr len -- len)
+			2DROP zero
+		; method :read
+
+		\ The standard allows one or two characters at the end of the string
+		\ with the characters not included in the count. In this system the
+		\ character is an end_code, it is one character long and is a code
+		\ describing how the string was terminated. The termination can be up down
+		\ arror, function key etc. etc. See #end above for possible codes.
+		m:  \ compile time ( --xt)
+			\ runtime ( addr len -- len flag)
+			1 CHARS -  2DUP \ leave room to add the end code
+			\ addr len addr len(--
+			this :read
+			\ addr len count(--
+			\ if zero count assume end of file.
+			\ Remember this is the default, we just did a standard read
+			\ and there was no data.
+			DUP not IF
+				NIP TUCK + #end_eof
+				SWAP char!
+				FALSE
+				EXIT
+			THEN
+			\ if equal count we end because of count
+			2DUP = IF
+				\ addr len count(--
+				DROP TUCK +
+				\ count end
+				#end_count SWAP char!
+			ELSE
+				\ addr len count(--
+				NIP TUCK +
+				#end_eol SWAP char!
+			THEN
+			TRUE
+		; method :read_line
+
+		m: \ compile time ( --xt)
+		   \ runtime ( n -- n true | false )
+			FALSE
+		; method :previous_line
+
+		\ keep going around until count is zero, each time
+		\ around we send a little more data
+		: _data>type_buffer ( addr count -- true|addr count false)
+			%%type_buffer> @ not IF
+				\ this is the default buffer size nothing more
+				\ see :buffer_size!
+				%%type_buffer_size @ get_free_buffer
+				%%type_buffer> !
+				zero %%type_buffer_count !
+			THEN
+                        \ you have to use the actual set buffer size as there
+                        \ may be other limits at play. For instance nfs is limited to 2K
+                        \ the actaul buffer will be abble to hold a little less than 4k
+			%%type_buffer_size @  %%type_buffer_count @ -
+			\ addr num left(--
+			2DUP > IF ( will not all fit)
+				\ addr count amount_to_fit(--
+				\ make sure we have a type buffer
+				>R \ addr count (--
+				OVER %%type_buffer> @  %%type_buffer_count @ + R@ MOVE \ put in as much as we can
+				\ addr count(--
+				SWAP R@ + SWAP R@ -   \ update send data to reflect what has been sent
+				\ addr_new count_new(--
+				R> %%type_buffer_count +!
+				FALSE                  \ tell :write to send the packet
+				                       \ and come back again
+				EXIT
+			THEN
+			\ data will fit in the buffer
+			DROP
+			\ character we are up to since last record ( eol ).
+			%%type_buffer> @  %%type_buffer_count @ + SWAP \ addr to count(--
+			\ update %%type_buffer_count after you have done the address calculations
+			DUP %%type_buffer_count +!
+			MOVE
+			TRUE
+		;
+
+ </code></pre>
+ <a name=":write"></a>
+ <pre><code>
+
+
+                m: ( addr num--)
+			DUP IF  \ There is some data
+					BEGIN
+                                                this :facility grab
+						_data>type_buffer IF \ return true if all ok
+							EXIT
+						THEN
+						\ send the data to the device to clear the buffer
+						this :flush_file
+					AGAIN
+			ELSE
+				2DROP
+			THEN
+		; method :write
+
+	' :write (_:write_) t!
+
+
+	</code> </pre>
+<p>
+methods needed to set object data.
+</p>
+	<pre> <code>
+		\ you need this to set the type buffer
+		\ to the MTU size.
+		m: ( n --)
+			%%type_buffer> @ IF
+				this :flush_file
+				%%type_buffer> @ kill_free_buffer
+				\ not needed but makes me feel good
+				0 %%type_buffer> !
+			THEN
+			%%type_buffer_size !
+			zero %%type_buffer_count !
+		; method :buffer_size!
+
+
+		m: ( -- )
+			this %%terminal @ ::cr
+		; method :cr
+	' :cr (_:cr_) t!
+
+		m: ( addr num --)
+			this :write
+			this :cr
+		; method :write_line
+
+		m: ( addr len --)
+			this %%terminal @ ::type
+		; method :type
+
+		m: ( addr num -- )
+			this %%terminal @ ::rev
+			this %%terminal @ ::type
+			this %%terminal @ ::normal
+		; method :mark     ( send out data highlighted)
+
+		</code> </pre>
+		<p>
+		File or device status.
+		</p>
+		<pre> <code>
+
+		m:  \ compile time ( --xt)
+			\ runtime ( --status)
+			zero
+		; method :status
+
+		\ make sure all will fit in transmit buffer
+	    m: ( num --)
+			%%type_buffer_count @ + %%type_buffer_size @  > IF
+				this :flush_file
+                        THEN
+		; method :?send
+
+		\ The seek functions
+		\ ------------------
+		m:  \ compile time ( --xt)
+			\ runtime ( offset --)
+			%%seek_pointer !
+		; method :reposition_file
+
+
+		m: ( -- u)
+			%%seek_pointer @
+		; method :file_position
+
+
+		</code> </pre>
+<h5> Methods needed for serial devices</h5>
+		<pre> <code>
+		m: ( --flag)
+			FALSE
+		; method :key?
+
+		m: ( --)
+		; method :clear
+
+
+		m: ( data --)
+			DROP
+		; method :!control
+
+		m: ( addr --)
+			( Defining word for terminal setup control words)
+			%%eot OVER C@ 1+ #eot_max MIN
+			CMOVE
+		; method :!eot
+
+
+		m: ( --)
+			." Execute when in telnet; not after logging into task"
+		; method :linemode
+
+		m: ( data --)
+			DROP
+		; method :!device
+
+		m: ( data --)
+			DROP
+		; method :baud
+
+		</code> </pre>
+<h5>Calling terminal methods from the device</h5>
+		<pre> <code>
+		\ if required wait for terminal input befor flipping pages
+		m:
+			this %%terminal @ ::?page
+		; method :?page
+
+		m:
+			this %%terminal @ ::!?page
+		; method :!?page
+		</code> </pre>
+<p>
+Application access to current character line and page
+</p>
+		<pre> <code>
+		m: ( -- num)
+			%%terminal @ ::character#
+		; method :character#
+
+		m: ( --num)
+			%%terminal @ ::line#
+		; method :line#
+
+		m: ( --num)
+			%%terminal @ ::page#
+		; method :page#
+
+		m: ( --num)
+			%%terminal @ ::page!
+		; method :page!
+
+		m: ( --addr)
+			%%terminal @ ::line_max
+		; method :line_max
+
+		m: ( --addr)
+			%%terminal @ ::character_max
+		; method :character_max
+		</code> </pre>
+<p>
+terminal attributes.
+</p>
+		<pre> <code>
+
+		\ normal character presentation
+		m: ( --)
+			this %%terminal @ ::normal
+		; method :normal
+
+		\ reverse character presentation
+		m: ( --)
+			this %%terminal @ ::rev
+		; method :rev
+
+
+		\ blink character presentation
+		m: ( --)
+			this %%terminal @ ::blink
+		; method :blink
+
+		\ dim character presentation
+		m: ( --)
+			this %%terminal @ ::dim
+		; method :dim
+
+
+		\ underline character presentation
+		m: ( --)
+			this %%terminal @ ::udl
+		; method :udl
+
+		m: ( --)
+			this %%terminal @ ::dim&blink
+		; method :dim&blink
+
+		m: ( --)
+			this %%terminal @ ::rev&blink
+		; method :rev&blink
+
+		m: ( --)
+			this %%terminal @ ::rev&dim
+		; method :rev&dim
+
+		m: ( --)
+			this %%terminal @ ::rev&udl
+		; method :rev&udl
+
+
+		m: ( --)
+			this %%terminal @ ::rev&dim&blink
+		; method :rev&dim&blink
+
+
+		m: ( --)
+			this %%terminal @ ::rev&dim&udl
+		; method :rev&dim&udl
+                </code></pre>
+                <a name="tab">
+                <pre><code>
+		m: ( line char -- )
+			this %%terminal @ ::tab
+		; method :tab
+
+
+		m: ( --)
+			this %%terminal @ ::page
+		; method :page
+
+		\ to graphics
+		m: ( --)
+			this %%terminal @ ::>|
+		; method :>|
+
+		\ from graphics
+		m: ( --)
+			this %%terminal @ ::|>
+		; method :|>
+
+		\ pc element input
+		m: ( --)
+			this %%terminal @ ::|i
+		; method :|i
+
+		\ pc element output
+		m: ( --)
+			this %%terminal @ ::|o
+		; method :|o
+
+		\ pc element vertical line
+		m: ( --)
+			this %%terminal @ ::|v
+		; method :|v
+
+		\ pc element horizontal line
+		m: ( --)
+			this %%terminal @ ::|h
+		; method :|h
+
+		\ pc element not
+		m: ( --)
+			this %%terminal @ ::|n
+		; method :|n
+
+		\ pc element top left
+		m: ( --)
+			this %%terminal @ ::|tl
+		; method :|tl
+
+		\ pc element top right
+		m: (  --)
+			this %%terminal @ ::|tr
+		; method :|tr
+
+		\ pc element bottom left
+		m: ( --)
+			this %%terminal @ ::|bl
+		; method :|bl
+
+		\ pc element bottom left
+		m: ( --)
+			this %%terminal @ ::|br
+		; method :|br
+
+		\ manipulate the input data to produce a termination code
+		\ addr is the start of the buffer
+		\ num is the numbr of characters including the terminator
+		\ num1 excludes the terminator code; which is now one byte only.
+		\ flag is true if more data
+		\ manipulate the input data to produce a termination code
+		m: ( addr num --num  flag)
+			this %%terminal @ ::termination>code
+		; method :termination>code
+
+		\ draw a box
+		m: ( line character --)
+			this %%terminal @ ::box
+		; method :box
+
+
+		m: ( line character depth width num.in num.out --)
+			this %%terminal @ ::element
+		; method :element
+
+
+		m: ( line character number -- )
+			this %%terminal @ ::line
+		; method :line
+
+
+		m: ( line character line -- )
+			this %%terminal @ ::zed
+		; method :zed
+
+
+		m: ( table_addr --)
+			this %%terminal @ ::labels
+		; method :labels
+
+		m: ( table_addr --)
+			this %%terminal @ ::shift_labels
+		; method :shift_labels
+
+		m: ( object --)
+			this %%terminal @ ::cursor
+		; method :cursor
+
+		m: ( --)
+			this %%terminal @ ::no_cursor
+		; method :no_cursor
+
+		m: ( addr num --)
+			this %%terminal @ ::message
+		; method :message
+
+		m: ( --)
+			this %%terminal @ ::no_message
+		; method :no_message
+
+
+		m: ( colour --)
+			this %%terminal @ ::foreground
+		; method :foreground  ( forground colour)
+
+		m: ( colour --)
+			this %%terminal @ ::background
+		; method :background ( backgroung colour)
+
+		m: ( colour --)
+			this %%terminal @ ::border
+		; method :border     ( Bourder colour)
+
+		m: ( --)
+			this %%terminal @ ::a4
+		; method :a4          ( paper size)
+
+		m: ( --)
+			this %%terminal @ ::quarto
+		; method :quarto      ( paper size)
+
+		m: ( --)
+			this %%terminal @ ::eoj
+		; method :eoj     ( paper size)
+		</code> </pre>
+<p>
+:!control_block and :@control_block are used by tube, they are defined here so that
+attempts to use these methods on other i/o devices causes an error.
+</p>
+		<pre> <code>
+		m: ( addr --)
+			TRUE ABORT" This device has no control block"
+		; method :!control_block
+
+		m: ( --addr)
+			TRUE ABORT" This device has no control block"
+		; method :@control_block
+		</code> </pre>
+<p>
+<i>bye</i> has to send a termination code if the task is communicating via a tube.
+To have this happen <i>bye</i> has to execute the following method.
+</p>
+		<pre> <code>
+		m: ( --)
+		; method :bye
+		</code> </pre>
+<p>
+The tcp/ip protocol deals in pep's, these are buffers will a defined structure. If a common_io
+class is to receive pep's it needs to have a :consume_port method defined. This is the method
+that will be called by <a HREF="./tcp/udp_demux.html#:proto_demux">:proto_demux</a>. The
+method should queue the packet for the i/o object to use at it's conveniance, or if
+overleoad return the packet to the free buffer pool.
+</p>
+<p>
+words common to UDP ICMP and TCP protocol are defined here
+</p>
+		<pre> <code>
+		m: ( pep --)
+			kill_free_buffer
+		; method :consume_port
+
+
+		m: ( priority --)
+			DROP
+		; method :priority!
+
+
+		\ look at following link to see why it is treated as
+		\ byte variables
+		\ <a HREF="./tyx.html#:!control">!control ( code-- )</a>
+
+		m: ( flag --)
+			%%terminal_mode !
+		; method :terminal_mode!
+
+		m: ( --flag )
+			%%terminal_mode @
+		; method :terminal_mode@
+
+
+		\ relevent for pipes, set to true if someone using
+		m: ( --flag)
+			TRUE
+		; method :inuse?
+
+
+		\ get the file size
+		m: ( -- size)
+			$7FFFFFF
+		; method :@file_size
+
+		\ store the file size
+		m: (  size -- )
+			DROP
+		; method :!file_size
+
+		m: ( --flag)
+			FALSE
+		; method :?directory
+
+		\ directory entry name
+		m: ( cookie addr max-- actual)
+			TRUE ABORT" Not a directory entry"
+		; method :get_directory_name
+
+		\ store directory entry
+		m: ( addr num dir_entry %handle -- )
+			TRUE ABORT" Not a directory entry"
+		; method :put_directory_name
+
+		m: ( cooky1--cooky2 true | false)
+			TRUE ABORT" Not a file"
+		; method :next_directory_cookie
+
+		m: ( cooky1--cooky2 true | false)
+			TRUE ABORT" Not a file"
+		; method :first_directory_cookie
+
+		m: ( addr n --inode)
+			TRUE ABORT" Can't make files on this device"
+		; method :make_file
+
+		m: ( addr n --)
+			TRUE ABORT" No files on this device"
+		; method :remove_file
+
+
+		\ _%inode is a code that specs the file; it can be a inode number as is the case
+		\ with flash; or a checksum of the file name.
+		\ The device has a linked list of open inodes. If one contains the same id it is
+		\ returned as the inode otherwise a new inode object is created and linked in.
+
+		\ once the inode is in place i/o need only claim the inode facility to play with the file
+		\ to get the inode in place we need to claim the file.
+		m: { variable _%inode ( -- inode_instance) }
+			this :facility grab
+			\ returns the head of the list
+			this :inode_head
+			BEGIN
+				@
+			DUP WHILE
+				\ link(--
+				\ Following only works because all objects are children
+				\ of linked_objects so can use link>object
+				DUP link>object \ object
+				\ link object(--
+				DUP :inode_code _%inode @ = IF
+					\ link object(--
+					\ This will increment the open count
+					DUP :use_increment
+					this :facility release
+					NIP
+					\ object(--
+					EXIT
+				THEN
+				DROP
+			REPEAT
+			DROP
+			_%inode @ this inode_class heap_object
+			this :facility release
+		; method :open_inode
+
+		\ the inode_instance is the value returned when you open the inode.
+		m: ( inode_instance --)
+			\ claim the device
+			this :facility grab
+			DUP :use_decrement IF
+				\ :use_decrement returns true if the node can be freed
+				\ That is use has finished.
+				\ inode_instance(--
+				DUP heap_object_free
+			THEN
+			DROP
+			this :facility release
+		; method :close_inode
+
+
+		\ We allow the getting of the inode object through the device.
+
+		m: ( --inode )
+			%%file_instance @ ?DUP IF
+				:inode_instance
+			ELSE
+				TRUE ABORT" No inode defined"
+			THEN
+		; overrides :inode_instance
+
+		\ end inode stuff
+		\ ---------------
+
+		m: ( parent_inode --inode)
+			TRUE ABORT" Can't create a directory on this device"
+		; method :make_directory
+
+
+		m: ( --)
+		TRUE ABORT" Can't format this device"
+		; method :format
+
+		\ Without inodes zones are of little use
+		\ ---------------------------------------------------
+		\ These functions only exist on file devices.
+
+		m: ( file_offset inode -- device_offset )
+			TRUE ABORT" Device doesn't support files"
+		; method :file_offset>device_offset
+
+				\ bytes in a zone
+		m:
+			zero
+		; method :bytes_a_zone
+
+
+		m: ( indent --)
+			CR DUP SPACES ." io_common | " ." Object: " this .h
+			CR DUP SPACES ." seek_value: " %%seek_pointer @ .h
+				SPACE ." timeout: " %%timeout @ .h
+				SPACE ." linked_objects: " this :number_of_links .h
+			\ indent(--
+			DROP
+			send
+		; overrides :print
+
+	end_class io_common
+
+
+\ deal with the forward reference
+| : (:write) ( addr num object --)
+	:write
+;
+
+' (:write) ':write t!
+
+	</code> </pre>
+
+</body>
+</html>

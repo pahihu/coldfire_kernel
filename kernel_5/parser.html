@@ -1,0 +1,218 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<p>
+Aim; implement  rfc2616<br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2616.html">RFC2616</a><br>
+<a HREF="http://www.zetetics.com/bj/papers/bnfparse.htm">BNF Parser in FORTH</a><br>
+</p>
+<pre> <code>
+MARKER empty
+
+user_variable %bnf_success
+
+\ will only work with cold forth. pure_code is copied into word, there is no sub call.
+\ 
+: save_state ( --) 
+	R> >IN @ >R HERE >R >R @s R> SWAP >R >R 
+; pure_code
+
+: pop_state ( ??--)
+	\ failed restore position
+	\ exit back up a level
+	R>                   \ return address
+	R@ SWAP >R !s
+	
+	R>
+	r>drop
+	R> HERE - ALLOT      \ dictionary back to where it was
+	R> >IN !             \ input back to where it was
+	>R                   \ put return address back
+; pure_code
+
+: restore_state ( ??--)
+		R>                    \ return address
+		R@ SWAP >R !s
+
+		R>
+		R>
+		R> DUP HERE - ALLOT   \ old dictionary location
+		R@ >IN !              \ old input location
+		>R 
+		>R
+		>R                 \ put old dict and return back onto return stack
+; pure_code
+
+: drop_state ( --)
+		R>               \ return address 
+		2r>drop          \ old dict stuff
+		r>drop
+		>R               \ put back return address
+; pure_code
+
+: exit_word ( --)
+		r>drop
+; pure_code
+
+\ if success so far save position and try
+\ else don't execute the word
+: {bnf ( --) 
+	%bnf_success @ IF 
+		save_state
+	ELSE
+		exit_word
+	THEN
+;
+
+: bnf} ( --) 
+	%bnf_success @ IF
+		drop_state	
+	ELSE
+		pop_state
+	THEN
+;
+
+\ exits word on success continues on failure
+: | ( --)
+	%bnf_success @  IF
+		drop_state 
+		exit_word
+	ELSE
+		restore_state
+		TRUE %bnf_success !
+	THEN
+;
+
+: bnf: ( --)
+	: smudge POSTPONE {bnf 
+;
+
+: ;bnf ( --)
+	POSTPONE bnf} smudge POSTPONE ; 
+; IMMEDIATE
+
+: @token ( -- char true|false )
+	 >IN @ #TIB @ < IF
+		>IN @ TIB + char@ TRUE
+	ELSE 
+		FALSE
+	THEN 
+;
+
+\ no need to test success; going to restore >IN if failure anyway.
+: +token ( -- ) 1 CHARS >IN +! ;
+
+: =token ( char -- )
+	%bnf_success @ IF
+		@token IF
+			 = %bnf_success !
+			+token
+		ELSE
+			DROP
+			FALSE %bnf_success !
+		THEN
+	ELSE
+		DROP
+	THEN
+;
+
+: token CREATE , DOES> @ =token ;
+
+CHAR ( token '('
+CHAR ) token ')'
+
+
+bnf: eol ( --)
+		>IN @ #TIB @ < not %bnf_success !
+;bnf
+
+\ number
+bnf: {digit} ( value -- value  )
+	@token IF
+		DUP [CHAR] 0 < not OVER [CHAR] 9 > not AND IF
+			[CHAR] 0 - SWAP $0A * + 
+			+token
+		ELSE
+			FALSE %bnf_success !
+		THEN
+	ELSE
+		FALSE %bnf_success !
+	THEN
+;bnf
+
+bnf: {2number} ( --n)
+	0 {digit} {digit} 
+;bnf
+
+
+
+
+\ any char valid in a comment
+bnf: {comment_char} ( --) 
+	@token  IF
+		DUP [CHAR] ( <> SWAP [CHAR] )  <> AND 
+		%bnf_success ! +token
+	ELSE
+		FALSE %bnf_success !
+	THEN
+;bnf
+
+
+bnf: {comment_text} {comment_char}  {comment_text} |  {comment_char}  | ;bnf
+bnf: {comment} ( --) '(' {comment_text} ')' | '(' {comment_text} {comment} {comment_text} ')' ;bnf
+</code> 
+\ test code for coments
+: cmt_test ( addr n --  )
+		TRUE %bnf_success !
+	    save_stream 
+		string_set_stream
+		{comment} %bnf_success @ IF ." yep" ELSE ." nope" THEN
+    	restore_stream 
+;
+
+CREATE $1 ," (a)"
+CREATE $2 ," not a comment"
+CREATE $3 ," (a commetn(a comment))"
+CREATE $4 ," ()"
+CREATE $5 ," ( not a comment"
+CR
+$1 COUNT cmt_test
+$2 COUNT cmt_test
+$3 COUNT cmt_test
+$4 COUNT cmt_test
+$5 COUNT cmt_test
+CR
+.( yepnopeyepyepnope)
+<code>
+\ test code for comments
+: _test ( addr n --  )
+		TRUE %bnf_success !
+	    save_stream 
+		string_set_stream
+		{2number} %bnf_success @ IF ." yep" ELSE ." nope" THEN
+    	restore_stream 
+;
+
+CREATE $1 ," 12"
+CREATE $2 ," 143"
+CREATE $3 ," xxx"
+CR
+$1 COUNT _test
+$2 COUNT _test
+$3 COUNT _test
+CR
+.( yepyepnope)
+
+\ 
+</code> </pre>
+</body>
+</html>
+

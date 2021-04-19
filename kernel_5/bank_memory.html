@@ -1,0 +1,85 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>Bank memory is structure as described below</p>
+</p>
+	<pre> <code>
+	HOST
+	\ these must be the first dual bank varaiables defined
+	'tbank @ _#bank_mem_start  ??=
+
+	$20 CONSTANT #bank_tube_max
+	
+	bank_variable %bank_running         ( Set to 12345678 by slave)
+	bank_variable %bank_pbase
+	bank_variable %bank_offset
+	bank_variable %bank_wake          
+	bank_variable %bank_table_disk
+	bank_variable %bank_(file_table)
+
+	$20 _#bank_mem_start + 'tbank !
+	bank_variable %bank_ticks			( supplied by master, thats not us)
+	bank_variable %bank_who             \ slave can ask master what slot number it is in
+	bank_variable %bank_init_where		( let others see where init up to)
+	bank_wvariable %bank_software_type 
+	bank_wvariable %bank_interface_version 
+
+
+	$40 _#bank_mem_start + 'tbank !
+	\ The varibles are set and the master interrupted.
+	bank_wvariable %bank_i_terminal
+	bank_wvariable %bank_i_disking
+	bank_wvariable %bank_i_^ced
+	bank_wvariable %bank_i_logoff
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_?who \ request fron slave to get slot number 
+	                            \ tcp/ip will need this support.
+
+\ application
+	bank_wvariable %bank_i_data
+	bank_wvariable %bank_i_command
+	bank_wvariable %bank_i_error
+	bank_wvariable %bank_i_???
+
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_???
+	bank_wvariable %bank_i_file
+
+
+	$60 _#bank_mem_start + 'tbank !
+	bank_variable %bank_i_unit
+
+
+
+	$100 _#bank_mem_start + 'tbank !
+	0 
+	DUP	CONSTANT	#flbus_link 4+     ( for master)
+	DUP CONSTANT	#flbus_source 2+   ( for master)
+	DUP CONSTANT	#flbus_facility 4+ ( for slave)
+	DUP CONSTANT	#flbus_count 2+    ( for slvae)
+	DUP CONSTANT	#flbus_buffer 4+   ( for slave)
+		CONSTANT	#flbus_length
+
+bank_variable %bank_file_table #flbus_length 4 - bank_allot
+bank_variable %bank_tube_control>  #bank_tube_max 4* bank_allot
+
+\ The BCM522 expects this buffer to be the length of the maximum
+\ ilan packet. It does give the best performance.
+bank_create %bank_buffer #ilan_packet_max bank_allot
+</code> </pre>
+
+
+</body>
+</html>
+

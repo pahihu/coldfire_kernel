@@ -1,0 +1,93 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>    
+
+    | CODE _do_create
+		R )+ W MOV
+        W S -) MOV   
+	NEXT
+    
+
+	| CODE _do_does&gt;   
+    	R )+ A0 MOV
+		R )+ W MOV
+		W S -) MOV   
+    	A0 R -) MOV   
+    NEXT
+    
+    
+	\    jsr -&gt; _do_loop
+	\    offset 2 bytes
+    | CODE _do_loop ( --)
+		R )+ W MOV
+    	1 # R ) ADD
+    	R ) D0 MOV
+    	4 R) D0 CMP  CS IF
+    		W ) A0 W. MOV
+    		A0 W ADD
+			W R -) MOV
+    		NEXT assembler
+    	THEN
+    	2 # W ADD
+    	8 # R ADD
+		W R -) MOV
+    NEXT
+
+	\    jsr -&gt; _do_+loop
+	\    offset 2 bytes
+    | CODE _do_+loop ( n--)
+		R )+ W MOV
+    	S )+ D1 MOV
+    	D1 R ) ADD
+    	R ) D0 MOV
+    	4 R) D0 SUB
+    	D1 D0 EOR   MI IF
+			W ) A0 W. MOV
+			A0 W ADD
+    		W R -) MOV
+    		NEXT assembler
+    	THEN
+    	2 # W ADD
+    	8 # R ADD
+		W R -) MOV
+    NEXT
+
+	\ jsr -&gt; _do_&gt;do
+	\ offset 2 bytes
+    | CODE _do_?do ( limit start --)
+		R )+ W MOV
+		S )+ D0 MOV
+		S )+ D1 MOV
+    	D0 D1 CMP NE IF
+			D1 R -) MOV
+			D0 R -) MOV
+    		2 # W ADD
+			W R -) MOV
+    	ELSE
+			W ) A0 W. MOV
+			A0 W ADD
+    		W R -) MOV
+    	THEN
+    NEXT
+
+	\ jsr -&gt; _do_do
+	| CODE _do_do
+		R )+ W MOV
+		S )+ D0 MOV
+		S )+ R -) MOV
+		D0 R -) MOV
+		W R -) MOV
+	NEXT
+	</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,1818 @@
+<html>
+<head>
+<title>Coldfire REF. Card (E&CE 222 University of Waterloo)</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+</head>
+
+<body bgcolor="#FFFFFF">
+<h1><font color="#0000CC">ColdFire Reference Card</font></h1>
+<p><font color="#0000CC">Release 1.0 </font>(C) 1999 E&amp;CE Department, University 
+  of Waterloo. All Rights Reserved.<br>
+  If printing, set margins to 0, and set variable font to 9 pts.</p>
+<table width="100%" border="1" cellspacing="2" cellpadding="1" bordercolorlight="#CCCCCC" bordercolordark="#000099" bordercolor="#003399" name="Instructions">
+  <tr bgcolor="#CCFF00" valign="middle"> 
+    <th width="11%">Mneumonic</th>
+    <th width="51%">Addressing modes</th>
+    <th width="29%"><font size="-2">Bit Pattern</font></th>
+    <th width="9%"> 
+      <p>Condition<br>
+        Codes </p>
+    </th>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="100"> 
+      <p><b>ADD </b>(L)<br>
+        add two values</p>
+    </td>
+    <td width="51%" valign="top"> 
+      <p>Source + destination -&gt; destination<br>
+        ADD &lt;ea&gt;y + Dx --&gt; Dx; ADD Dx + &lt;ea&gt;y --&gt; &lt;ea&gt;y</p>
+      <b><font color="#0000CC">Source</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <b><font color="#CC0000">Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1101 Register[3] Opmode[3] EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">Opmode:<br>
+        010: &lt;ea&gt;y + Dx --&gt; Dx<br>
+        110: Dx + &lt;ea&gt;y --&gt; &lt;ea&gt;y</font></p>
+    </td>
+    <td width="9%" valign="top" height="100">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="104"> 
+      <p><b>ADDA</b> (L)<br>
+        add address</p>
+    </td>
+    <td width="51%" valign="top"> 
+      <p>Source + destination -&gt; destination<br>
+        ADDA &lt;ea&gt;y,Ax</p>
+      <p><b><font color="#0000CC">Source</font></b></p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <p>&nbsp; </p>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1101 R[3] 111 EA-mode[3] EA-register[3]</font></p>
+    </td>
+    <td width="9%" valign="top" height="104">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"> 
+      <p><b>ADDI</b> (L)<br>
+        add immediate</p>
+    </td>
+    <td width="51%" valign="top"> 
+      <p>Immediate Data + destination -&gt; destination<br>
+        ADDI #&lt;data&gt;,Dx</p>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 0110 1000 
+      0 R[3]<br>
+      upper word of immediate data[16]<br>
+      lower word of immediate data[16]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="28"><b>ADDQ </b>(L)<br>
+      add quick</td>
+    <td width="51%" valign="top"> 
+      <p>Immediate Data + destination -&gt; destination<br>
+        ADDQ #&lt;data&gt;,&lt;ea&gt;x</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0101 DATA[3] 
+      010 EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top" height="28">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>ADDX</b> (L)<br>
+      add with extend</td>
+    <td width="51%" valign="top">Source + destination + X -&gt; destination<br>
+      ADDX Dy,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1101 Register 
+      Dx[3] 11 0000 Register Dy[3]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>AND</b> (L)<br>
+      logical AND</td>
+    <td width="51%" valign="top"> 
+      <p>Source + destination -&gt; destination<br>
+        AND Dy,&lt;ea&gt;x; AND &lt;ea&gt;y,Dx</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <b><font color="#CC0000">Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1100 Register[3] Opmode[3] EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">Opmode:<br>
+        110: AND Dy,&lt;ea&gt;x<br>
+        010: AND &lt;ea&gt;y,Dx</font></p>
+    </td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>ANDI</b> (L)<br>
+      logical AND immediate</td>
+    <td width="51%" valign="top">Immediate Data + destination -&gt; destination<br>
+      ADDI #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 0010 1000 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>ASL, ASR</b><br>
+      arithmetic shift left and right</td>
+    <td width="51%" valign="top"> 
+      <p>Destination shifted by count -&gt; destination<br>
+        ASd Dy, Dx; ASd #&lt;data&gt;,Dx<br>
+        where d is direction: L or R</p>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1110 count register[3] dr[1] 1 0 ir[1] 00 register[3]</font></p>
+      <p><font size="-2">count register: specifies shift count<br>
+        dr: direction: 0 shift right, 1 shift left<br>
+        ir: 0 immediate shift count, 1 register shift</font></p>
+    </td>
+    <td width="9%" valign="top">X N Z V=0 C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>Bcc</b> (B,W)<br>
+      branch conditionally</td>
+    <td width="51%" valign="top"> 
+      <p>If condtion true, then PC + dn -&gt; PC<br>
+        Bcc &lt;label&gt;; where cc is a condition code from the condition code 
+        table</p>
+      <p>&nbsp;</p>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">0110 condition[4] displacement[8]</font></p>
+      <p><font size="-2">or</font></p>
+      <p><font size="-2">0110 condition[4] 0000 0000<br>
+        displacement[16]</font></p>
+    </td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="42"><b>BCHG</b> (B,L)<br>
+      test bit and change</td>
+    <td width="51%" valign="top"> 
+      <p>1. (&lt;bit number&gt; of Destination) -&gt; Z<br>
+        2. (&lt;bit number&gt; of Destination) -&gt; &lt;bit number&gt; of destination<br>
+        BCHG Dy,&lt;ea&gt;x; BCHG #&lt;data&gt;,&lt;ea&gt;x</p>
+      <p><b><font color="#CC0000">Destination</font></b> (1 and 2)</p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td width="3%"><font size="-2">Dn</font></td>
+          <td width="9%"><font size="-2">An</font></td>
+          <td width="5%"><font size="-2">(An)</font></td>
+          <td width="6%"><font size="-2">(An)+</font></td>
+          <td width="6%"><font size="-2">-(An)</font></td>
+          <td width="10%"><font size="-2">(d16,An)</font></td>
+          <td width="12%"><font size="-2">(d8,An,Xi)</font></td>
+          <td width="10%"><font size="-2">(d16,PC)</font></td>
+          <td width="12%"><font size="-2">(d8,PC,Xi)</font></td>
+          <td width="9%"><font size="-2">(xxx).W</font></td>
+          <td width="8%"><font size="-2">(xxx).L</font></td>
+          <td width="10%"><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L </td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&#149;</td>
+          <td width="8%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L</td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&nbsp;</td>
+          <td width="8%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1. 0000 Register[3] 101 EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. 0000 1000 01 EA-mode[3] EA-register[3]<br>
+        0000 0000 bit number[8]</font></p>
+    </td>
+    <td width="9%" valign="top" height="42">Z</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="24"><b>BCLR</b> (B,L)<br>
+      test bit and clear</td>
+    <td width="51%" valign="top"> 
+      <p>1. (&lt;bit number&gt; of Destination) -&gt; Z<br>
+        2. 0 -&gt; &lt;bit number&gt; of destination<br>
+        BCLR Dy,&lt;ea&gt;x; BCLR #&lt;data&gt;,&lt;ea&gt;x</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td width="3%"><font size="-2">Dn</font></td>
+          <td width="9%"><font size="-2">An</font></td>
+          <td width="5%"><font size="-2">(An)</font></td>
+          <td width="6%"><font size="-2">(An)+</font></td>
+          <td width="6%"><font size="-2">-(An)</font></td>
+          <td width="10%"><font size="-2">(d16,An)</font></td>
+          <td width="12%"><font size="-2">(d8,An,Xi)</font></td>
+          <td width="10%"><font size="-2">(d16,PC)</font></td>
+          <td width="12%"><font size="-2">(d8,PC,Xi)</font></td>
+          <td width="9%"><font size="-2">(xxx).W</font></td>
+          <td width="8%"><font size="-2">(xxx).L</font></td>
+          <td width="10%"><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L </td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&#149;</td>
+          <td width="8%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L</td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&nbsp;</td>
+          <td width="8%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1. 0000 Register[3] 110 EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. 0000 1000 10 EA-mode[3] EA-register[3]<br>
+        0000 0000 bit number[8]</font></p>
+    </td>
+    <td width="9%" valign="top" height="24">Z</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>BRA</b> (B,W)<br>
+      branch </td>
+    <td width="51%" valign="top">PC + dn -&gt; PC<br>
+      BRA &lt;label&gt;</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">0110 0000 displacement[8]</font></p>
+      <p><font size="-2">or</font></p>
+      <p><font size="-2">0110 0000 0000 0000<br>
+        displacement[16] </font></p>
+    </td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>BSET</b> (B,L)<br>
+      test bit and set</td>
+    <td width="51%" valign="top"> 
+      <p>1.TEST (&lt;bit number&gt; of Destination) -&gt; Z<br>
+        2. 1 -&gt; &lt;bit number&gt; of destination<br>
+        BSET Dy,&lt;ea&gt;x; BSET #&lt;data&gt;,&lt;ea&gt;x</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td width="3%"><font size="-2">Dn</font></td>
+          <td width="9%"><font size="-2">An</font></td>
+          <td width="5%"><font size="-2">(An)</font></td>
+          <td width="6%"><font size="-2">(An)+</font></td>
+          <td width="6%"><font size="-2">-(An)</font></td>
+          <td width="10%"><font size="-2">(d16,An)</font></td>
+          <td width="12%"><font size="-2">(d8,An,Xi)</font></td>
+          <td width="10%"><font size="-2">(d16,PC)</font></td>
+          <td width="12%"><font size="-2">(d8,PC,Xi)</font></td>
+          <td width="9%"><font size="-2">(xxx).W</font></td>
+          <td width="8%"><font size="-2">(xxx).L</font></td>
+          <td width="10%"><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L </td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&#149;</td>
+          <td width="8%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L</td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&nbsp;</td>
+          <td width="8%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1. 0000 Register[3] 111 EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. 0000 1000 11 EA-mode[3] EA-register[3]<br>
+        0000 0000 bit number[8]</font></p>
+    </td>
+    <td width="9%" valign="top">Z</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>BSR</b> (B,W)<br>
+      branch to subroutine</td>
+    <td width="51%" valign="top">SP - 4 -&gt; SP; Next PC -&gt; (SP); PC + dn 
+      -&gt; PC<br>
+      BSR &lt;label&gt;</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">0110 0001 displacement[8]</font></p>
+      <p><font size="-2">or</font></p>
+      <p><font size="-2">0110 0001 0000 0000<br>
+        displacement[16] </font></p>
+    </td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>BTST</b> (B,L)<br>
+      test bit</td>
+    <td width="51%" valign="top"> 
+      <p>1.(&lt;bit number&gt; of Destination) -&gt; Z <br>
+        BTST Dy,&lt;ea&gt;x; BTST #&lt;data&gt;,&lt;ea&gt;x</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td width="3%"><font size="-2">Dn</font></td>
+          <td width="9%"><font size="-2">An</font></td>
+          <td width="5%"><font size="-2">(An)</font></td>
+          <td width="6%"><font size="-2">(An)+</font></td>
+          <td width="6%"><font size="-2">-(An)</font></td>
+          <td width="10%"><font size="-2">(d16,An)</font></td>
+          <td width="12%"><font size="-2">(d8,An,Xi)</font></td>
+          <td width="10%"><font size="-2">(d16,PC)</font></td>
+          <td width="12%"><font size="-2">(d8,PC,Xi)</font></td>
+          <td width="9%"><font size="-2">(xxx).W</font></td>
+          <td width="8%"><font size="-2">(xxx).L</font></td>
+          <td width="10%"><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L </td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&#149;</td>
+          <td width="8%">&#149;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+        <tr align="center"> 
+          <td width="3%">L</td>
+          <td width="9%">&nbsp;</td>
+          <td width="5%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="6%">&#149;</td>
+          <td width="10%">&#149;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+          <td width="12%">&nbsp;</td>
+          <td width="9%">&nbsp;</td>
+          <td width="8%">&nbsp;</td>
+          <td width="10%">&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1. 0000 Register[3] 100 EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. 0000 1000 00 EA-mode[3] EA-register[3]<br>
+        0000 0000 bit number[8]</font></p>
+    </td>
+    <td width="9%" valign="top">Z</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>CLR</b> (B,W,L)<br>
+      clear </td>
+    <td width="51%" valign="top"> 
+      <p>0 -&gt; destination</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">0100 0010 size[2] EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">size: 00 byte, 01 word, 10 long</font></p>
+    </td>
+    <td width="9%" valign="top">N=0 Z=1 V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>CMP</b> (L)<br>
+      compare </td>
+    <td width="51%" valign="top"> 
+      <p>Destination - source -&gt; cc<br>
+        CMP &lt;ea&gt;y, Dx</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1011 Register[3] 
+      010 EA-mode[3] EA-register[3] </font></td>
+    <td width="9%" valign="top">N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>CMPA</b> (L)<br>
+      compare address</td>
+    <td width="51%" valign="top"> 
+      <p>Destination - Source -&gt; cc<br>
+        CMPA &lt;ea&gt;y,Ax</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1011 Register[3] 
+      111 EA-mode[3] EA-register[3] </font></td>
+    <td width="9%" valign="top">N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>CMPI</b> (L)<br>
+      compare immediate</td>
+    <td width="51%" valign="top">Destination - immediate data -&gt; cc<br>
+      CMPI #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 1100 1000 
+      0 Register[3]<br>
+      Upper word of immediate data[16]<br>
+      Lower word of immediate data[16]</font></td>
+    <td width="9%" valign="top">N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>EOR</b> (L)<br>
+      logical XOR</td>
+    <td width="51%" valign="top"> 
+      <p>Source XOR destination -&gt; destination<br>
+        EOR Dy,&lt;ea&gt;x</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1011 Register[3] 
+      110 EA-mode[3] EA-register[3] </font></td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" height="15" bgcolor="#CCCCCC" valign="top"><b>EORI</b> (L)<br>
+      logical XOR immediate</td>
+    <td width="51%" valign="top">Immediate data XOR destination -&gt; destination<br>
+      EORI #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 1010 1000 
+      0 Register[3]<br>
+      Upper word of immediate data[16]<br>
+      Lower word of immediate data[16]</font></td>
+    <td width="9%" height="15" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>EXT, EXTB</b> (W,L)<br>
+      sign extend</td>
+    <td width="51%" valign="top">Destination sign - extended -&gt; destination<br>
+      EXT.W Dx (extend byte to word)<br>
+      EXT.L Dx (extend word to longword)<br>
+      EXTB.L Dx (extend byte to longword)</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">0100 100 Opmode[3] 000 Register[3]</font></p>
+      <p><font size="-2">Opmode:<br>
+        010: EXT.W Dx<br>
+        011: EXT.L Dx<br>
+        111: EXTB.L Dx</font></p>
+    </td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>JMP</b> (unsized)<br>
+      jump </td>
+    <td width="51%" valign="top"> 
+      <p>Target address -&gt; PC<br>
+        JMP &lt;ea&gt;y</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 11 
+      EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>JSR</b> (unsized)<br>
+      jump to subroutine</td>
+    <td width="51%" valign="top"> 
+      <p>SP-4 -&gt; SP; Next PC -&gt; (SP); Target address -&gt; PC</p>
+      <p> <b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 10 
+      EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="62"><b>LEA</b> (L)<br>
+      load effective address</td>
+    <td width="51%" valign="top" height="62"> 
+      <p>Effective address -&gt; destination<br>
+        LEA &lt;ea&gt;y, Ax</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="62"><font size="-2">0100 
+      Register[3] 111 EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top" height="62">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>LINK</b> (W)<br>
+      link and allocate</td>
+    <td width="51%" valign="top">SP - 4 -&gt; SP; Ax -&gt; (SP); SP -&gt; Ax; 
+      SP + d16 -&gt; SP<br>
+      LINK Ax,#&lt;displacement&gt;</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 0101 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>LSL, LSR</b> (L)<br>
+      logical shift left and right</td>
+    <td width="51%" valign="top">Destination shifted by count -&gt; destination<br>
+      LSd Dy,Dx; LSD #&lt;data&gt;,Dx (where d is direction: L or R)</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1111 count/register[3] 
+      dr[1] 10 ir[1] 01 register[3]</font></td>
+    <td width="9%" valign="top">X N Z V=0 C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>MOVE</b>, <b>MOVEA</b> (B,W,L)<br>
+      move </td>
+    <td width="51%" valign="top"> 
+      <p>Source -&gt; Destination<br>
+        Move &lt;ea&gt;y,&lt;ea&gt;x; MOVEA &lt;ea&gt;y,Ax</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+      <b><font color="#CC0000">Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <p>Restricted modes</p>
+      <table width="100%" border="1" cellpadding="1">
+        <tr> 
+          <th>Source addressing mode</th>
+          <th>Destination Addressing mode</th>
+        </tr>
+        <tr> 
+          <td><font size="-2">Dy, Ay, (Ay), (Ay)+,-(Ay)</font></td>
+          <td><font size="-2">All possible</font></td>
+        </tr>
+        <tr> 
+          <td><font size="-2">(d16,Ay), (d16,PC)</font></td>
+          <td><font size="-2">All except (d8,Ay,Xi), (xxx).W, (xxx).L</font></td>
+        </tr>
+        <tr> 
+          <td><font size="-2">(d8,Ay,Xi), (d8,PC,Xi), (xxx).W, xxx.(L), #&lt;xxx&gt;</font></td>
+          <td><font size="-2">All except (d8,Ay,Xi), (d16,Ay), (xxx).W, (xxx).L</font></td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">00 Size[2] Destination-Register[3] Destination-Mode[3] 
+        Source-Mode[3] Source-Register[3]</font></p>
+      <p><font size="-2">Size: 01 byte; 11 word; 10 long</font></p>
+    </td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>MOVE from CCR</b> (W)<br>
+      move from condition code register</td>
+    <td width="51%" valign="top">CCR -&gt; destination<br>
+      MOVE CCR,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 0010 1100 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>MOVE to CCR</b> (W)<br>
+      move to condition code register</td>
+    <td width="51%" valign="top"> 
+      <p>Source -&gt; CCR<br>
+        MOVE Dy,CCR; MOVE #&lt;data&gt;,CCR</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 0100 11 
+      EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="41"><b>MOVEM</b> (L)<br>
+      move multiple registers</td>
+    <td width="51%" valign="top" height="41"> 
+      <p>Registers -&gt; destination or Source -&gt; Registers<br>
+        MOVEM &lt;list&gt;,&lt;ea&gt;x; MOVEM &lt;ea&gt;y,&lt;list&gt;</p>
+      <p><b>Register to Memory</b> or <b>Memory to Register</b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="41"> 
+      <p><font size="-2">0100 1 dr[1] 0011 EA-mode[3] EA-register[3]<br>
+        registers to transfer/modify bit mask[16]</font></p>
+      <p><font size="-2">dr: 0 register to memory; 1 memory to register </font></p>
+    </td>
+    <td width="9%" valign="top" height="41">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="2"><b>MOVEQ</b> (L)<br>
+      move quick</td>
+    <td width="51%" valign="top" height="2">Immediate data -&gt; destination<br>
+      MOVEQ #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="2"> 
+      <p><font size="-2">0111 Register[3] 0 Data[8]</font></p>
+      <p><font size="-2">Data is 8 bits, sign-extended to a long</font></p>
+    </td>
+    <td width="9%" valign="top" height="2">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="44"><b>MULS</b> (W,L)<br>
+      signed multiply</td>
+    <td width="51%" valign="top" height="44"> 
+      <p>Source x destination -&gt; destination<br>
+        1. MULS.L &lt;ea&gt;y,Dx (32 x 32 -&gt; 32)<br>
+        2. MULS.W &lt;ea&gt;y,Dx (16 x 16 -&gt; 32)</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="44"> 
+      <p><font size="-2">1. Word<br>
+        1100 Register[3] 111 Ea-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. Long<br>
+        0100 1100 00 EA-mode[3] EA-register[3]<br>
+        0 Register Dx[3] 1000 0000 0000</font></p>
+    </td>
+    <td width="9%" valign="top" height="44">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>MULU</b> (W,L)<br>
+      unsigned multiply</td>
+    <td width="51%" valign="top"> 
+      <p>Source x destination -&gt; destination<br>
+        1. MULU.L &lt;ea&gt;y,Dx (32 x 32 -&gt; 32)<br>
+        2. MULU.W &lt;ea&gt;y,Dx (16 x 16 -&gt; 32)</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1. Word<br>
+        1100 Register[3] 011 Ea-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">2. Long<br>
+        0100 1100 00 EA-mode[3] EA-register[3]<br>
+        0 Register Dx[3] 0000 0000 0000</font></p>
+    </td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>NEG</b> (L)<br>
+      negate </td>
+    <td width="51%" valign="top">0 - destination -&gt; destination<br>
+      NEG Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 0100 1000 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>NEGX</b> (L)<br>
+      negate with extend</td>
+    <td width="51%" valign="top">0 - destination - X -&gt; destination<br>
+      NEGX Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 0000 1000 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>NOP</b> (unsized)<br>
+      no operation</td>
+    <td width="51%" valign="top">No operation<br>
+      NOP </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 0111 
+      0001 = $4E71</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>NOT</b> (L)<br>
+      logical complement</td>
+    <td width="51%" valign="top">~ destination -&gt; destination<br>
+      NOT Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 0110 1000 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>OR</b> (L)<br>
+      logical inclusive-OR</td>
+    <td width="51%" valign="top"> 
+      <p>Source OR destination -&gt; destination<br>
+        OR Dy,&lt;ea&gt;x; OR &lt;ea&gt;y,Dy</p>
+      <p><b><font color="#0000CC">Source</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <b><font color="#CC0000">Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149; </td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1000 Register[3] Opmode[3] EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">Opmode:<br>
+        110: OR Dy,&lt;ea&gt;x<br>
+        010: OR &lt;ea&gt;y,Dy</font></p>
+    </td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>ORI</b> (L)<br>
+      logical inclusive-OR immediate</td>
+    <td width="51%" valign="top">Immediate data OR destination -&gt; destination<br>
+      ORI #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 0000 1000 
+      0 Register[3]<br>
+      Upper word of immediate data[16]<br>
+      Lower word of immediate data[16]</font></td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>PEA</b> (L)<br>
+      push effective address onto stack</td>
+    <td width="51%" valign="top"> 
+      <p>SP - 4 -&gt; SP; &lt;ea&gt;y -&gt; (SP)<br>
+        PEA &lt;ea&gt;y</p>
+      <p><b><font color="#CC0000">Destination</font></b> </p>
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1000 01 
+      EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>RTS </b> (unsized)<br>
+      return from subroutine</td>
+    <td width="51%" valign="top">(SP) -&gt; PC; SP + 4 -&gt; SP<br>
+      RTS </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 0111 
+      0101 = $4E75</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>SUB</b> (L)<br>
+      subtract </td>
+    <td width="51%" valign="top"> Destination - source -&gt; destination<br>
+      SUB Dy,&lt;ea&gt;x; SUB &lt;ea&gt;y,DY<b><font color="#0000CC"><br>
+      <br>
+      Source</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+      <b><font color="#CC0000">Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"> 
+      <p><font size="-2">1001 Register[3] Opmode[3] EA-mode[3] EA-register[3]</font></p>
+      <p><font size="-2">Opmode:<br>
+        010: SUB Dy,&lt;ea&gt;x<br>
+        110: SUB &lt;ea&gt;y,DY </font></p>
+    </td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="72"><b>SUBA</b> (L)<br>
+      subtract address</td>
+    <td width="51%" valign="top" height="72">Destination - source -&gt; destination<br>
+      SUBA &lt;ea&gt;y,Ax<b><font color="#CC0000"> <br>
+      <br>
+      Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="72"><font size="-2">1001 
+      Register[3] 111 EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top" height="72">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>SUBI</b> (L)<br>
+      subtract immediate</td>
+    <td width="51%" valign="top">Destination - immediate data -&gt; destination<br>
+      SUBI #&lt;data&gt;,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0000 0100 1000 
+      0 Register[3]<br>
+      Upper word of immediate data[16]<br>
+      Lower word of immediate data[16]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="70"><b>SUBQ</b> (L)<br>
+      subtract quick</td>
+    <td width="51%" valign="top" height="70"> Destination - immediate data -&gt; 
+      destination<br>
+      SUBQ #&lt;data&gt;,&lt;ea&gt;x<br>
+      <b><font color="#CC0000"><br>
+      Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="70"><font size="-2">0101 
+      data[3] 110 EA-mode[3] EA-register[3]</font></td>
+    <td width="9%" valign="top" height="70">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>SUBX</b> (L)<br>
+      subtract with extend</td>
+    <td width="51%" valign="top">Destination - source -&gt; destination<br>
+      SUBX Dy,Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">1001 Dx[3] 
+      1 1000 0 Dy[3]</font></td>
+    <td width="9%" valign="top">X N Z V C</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"> <b>Scc</b> (B)<br>
+      set according to condition</td>
+    <td width="51%" valign="top">If condition true then 1s -&gt; destination<br>
+      else 0s -&gt; destination<br>
+      Scc Dx (cc is condition code, see condition codes table)</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0101 Condtion[3] 
+      1100 0 Register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>SWAP</b> (W)<br>
+      swap register words</td>
+    <td width="51%" valign="top">Register bits 31 to 16 &lt;--&gt; Register bits 
+      15 to 0<br>
+      SWAP Dx</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1000 0100 
+      0 Register[3]</font></td>
+    <td width="9%" valign="top">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>TRAP</b> (unsized)<br>
+      trap </td>
+    <td width="51%" valign="top">TRAP #&lt;vector&gt;</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 0100 
+      Vector[4]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top" height="84"><b>TST</b> (B,W,L)<br>
+      test operand</td>
+    <td width="51%" valign="top" height="84"> Destination tested -&gt; condition 
+      codes<br>
+      TST &lt;ea&gt;y<b><font color="#CC0000"><br>
+      <br>
+      Destination</font></b> 
+      <table width="100%" border="1" cellspacing="0" cellpadding="1">
+        <tr bgcolor="#CCCCCC"> 
+          <td><font size="-2">Dn</font></td>
+          <td><font size="-2">An</font></td>
+          <td><font size="-2">(An)</font></td>
+          <td><font size="-2">(An)+</font></td>
+          <td><font size="-2">-(An)</font></td>
+          <td><font size="-2">(d16,An)</font></td>
+          <td><font size="-2">(d8,An,Xi)</font></td>
+          <td><font size="-2">(d16,PC)</font></td>
+          <td><font size="-2">(d8,PC,Xi)</font></td>
+          <td><font size="-2">(xxx).W</font></td>
+          <td><font size="-2">(xxx).L</font></td>
+          <td><font size="-2">#&lt;xxx&gt;</font></td>
+        </tr>
+        <tr align="center"> 
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+          <td>&#149;</td>
+        </tr>
+      </table>
+    </td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF" height="84"><font size="-2">0100 
+      1010 Size[2] EA-mode[3] EA-register[3] </font></td>
+    <td width="9%" valign="top" height="84">N Z V=0 C=0</td>
+  </tr>
+  <tr> 
+    <td width="11%" bgcolor="#CCCCCC" valign="top"><b>UNLK</b> (unsized)<br>
+      unlink </td>
+    <td width="51%" valign="top">Ax -&gt; SP; (SP) -&gt; Ax; SP+4 -&gt; SP<br>
+      UNLK Ax</td>
+    <td width="29%" valign="top" bgcolor="#CCFFFF"><font size="-2">0100 1110 0101 
+      1 Register[3]</font></td>
+    <td width="9%" valign="top">not affected</td>
+  </tr>
+</table>
+<h2>Effective Addressing Modes</h2>
+<table width="75%" border="1" cellpadding="3" cellspacing="1">
+  <tr bgcolor="#CCFF00"> 
+    <th width="41%">Addressing Modes</th>
+    <th width="16%">Syntax</th>
+    <th width="15%">Mode Field</th>
+    <th width="28%">Register Field</th>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Data Register Direct</td>
+    <td width="16%" align="center"><b>Dn</b></td>
+    <td width="15%" align="center">000</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Address Register Direct</td>
+    <td width="16%" align="center"><b>An</b></td>
+    <td width="15%" align="center">001</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Address Register Indirect</td>
+    <td width="16%" align="center"><b>(An)</b></td>
+    <td width="15%" align="center">010</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Postincrement Address Register Indirect</td>
+    <td width="16%" align="center"><b>(An)+</b></td>
+    <td width="15%" align="center">011</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Predecrement Address Register Indirect</td>
+    <td width="16%" align="center"><b>-(An)</b></td>
+    <td width="15%" align="center">100</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">8-bit index displacement Address Register 
+      Indirect</td>
+    <td width="16%" align="center"><b>(d8,An,Xi)</b></td>
+    <td width="15%" align="center">110</td>
+    <td width="28%" align="center">register number</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Program counter indirect with displacement</td>
+    <td width="16%" align="center"><b>(d16,PC)</b></td>
+    <td width="15%" align="center">111</td>
+    <td width="28%" align="center">010</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Program counter indirect with index 8-bit 
+      displacement</td>
+    <td width="16%" align="center"><b>(d8,PC,Xi)</b></td>
+    <td width="15%" align="center">111</td>
+    <td width="28%" align="center">011</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Absolute Short</td>
+    <td width="16%" align="center"><b>(xxx).W</b></td>
+    <td width="15%" align="center">111</td>
+    <td width="28%" align="center">000</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Absolute Long</td>
+    <td width="16%" align="center"><b>(xxx).L</b></td>
+    <td width="15%" align="center">111</td>
+    <td width="28%" align="center">001</td>
+  </tr>
+  <tr> 
+    <td width="41%" bgcolor="#CCCCCC">Immediate</td>
+    <td width="16%" align="center"><b>#&lt;xxx&gt;</b></td>
+    <td width="15%" align="center">111</td>
+    <td width="28%" align="center">100</td>
+  </tr>
+</table>
+<h2>Condition Codes Register</h2>
+<p>The CCR is the least significant byte of the status register (SR). Bits 4-0 
+  are the condition code flags:</p>
+<ul>
+  <li>X: Extend condition code (bit 4)</li>
+  <li>N: Negative condition code (bit 3)</li>
+  <li>Z: Zero condition code (bit 2)</li>
+  <li>V: Overflow condition code (bit 1)</li>
+  <li>C: Carry condition code (bit 0)</li>
+</ul>
+<h2>Condition Codes Table</h2>
+<h2><img src="conditions.png" width="424" height="311"></h2>
+<h2>ASCII Chart</h2>
+<PRE>    0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
+0  NUL SOH STX ETX EOT ENQ ACK BEL BS  HT  LF  VT  FF  CR  SO  SI
+1  DLE DC1 DC2 DC3 DC4 NAK SYN ETB CAN EM  SUB ESC FS  GS  RS  US
+2   SP  !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
+3   0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
+4   @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
+5   P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
+6   `   a   b   c   d   e   f   g   h   i   j   k   l   m   n   o
+7   p   q   r   s   t   u   v   w   x   y   z   {   |   }   ~ DEL</PRE>
+<h2>Notes</h2>
+<p>Supervisor (privileged) instructions not included in chart.<br>
+  While we have tried to be accurate, there are no guarantees that this chart 
+  is completely correct. If you find an error, please send mail to <a href="mailto:rsanders@ece">Roger</a>.</p>
+<p>Developed and produced by Ashish Mishra, E&amp;CE Dept., U of W, 1999.</p>
+</body>
+</html>

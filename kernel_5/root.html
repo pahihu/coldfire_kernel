@@ -1,0 +1,113 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<h5>root</h5>
+<p>
+Every open device has one of these objects.  The sting used to open the device is saved, along with the base address of the device object and file object.
+</p>
+	<pre> <code>
+	\ if we use io_common here than the root object can abort if any of the i/o 
+	\ methods are used against it. It really is not needed; it really is only 
+	\ created for info reasons. It  belongs to .opened
+
+	\ object 
+	\ :construct
+	\ :destruct
+	\ :print
+	\	link_class
+	\	:list_head
+	\	:number_of_links
+        \           cleanup_class
+        \	    :link_cleanup
+	\	    :unlink_cleanup
+	\		parented_object
+	\		:facility
+	\		:parent_instance
+	\		:!name
+	\		:@name
+	\		:@root
+	\			root
+	\			:root_!device
+	\           :root_!file
+	
+	parented_object class
+
+		protected
+	
+			
+
+		public
+	
+		ram_variable _%opened_devices
+		cell% instance_variable %%status
+		cell% instance_variable %%device
+		cell% instance_variable %%file
+		m:  ( -- )
+			@u %%status !
+			\ if open is kind enough to tell us we know
+			\ Only used by :print to user can find the device object
+			zero %%device !
+			zero %%file !
+			zero this [parent] :construct
+		; overrides :construct
+
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+		m: ( addr--)
+			%%device !
+		; method :root_!device
+
+		m: ( addr --)
+			%%file !
+		; method :root_!file
+
+		\ this gets overridden whenever a different head is used
+		m: ( --)
+			_%opened_devices
+		; overrides :list_head
+
+		m: ( --addr)
+			TRUE ABORT" Root cannot be claimed"
+		; overrides :facility
+
+		m: ( indent --)
+			CR DUP SPACES ." root | " ." Object : " this .h ." Task: " %%status @ .h
+
+                        CR DUP SPACES ." file: " this :@name TYPE
+
+                        %%device @ IF
+                                CR DUP 8 + %%device @ :print
+                        THEN
+                        %%file @ IF
+                                CR DUP 8 + %%file @ :print
+                        THEN
+			send
+			DROP
+		; overrides :print
+
+	end_class root
+</code></pre>
+<p>
+Prints out details of all opened devices.
+</p>
+<pre><code>
+	: .opened
+		_%opened_devices BEGIN
+			@ ?DUP
+		WHILE
+			zero OVER link>object :print
+		REPEAT
+	;
+</code> </pre>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<p>
+	We are very dependent on TCP/IP coming up. If the local config file fails to load,
+	which will happen if the local flash file is not there, we fall back to the
+	following default.
+	</p>
+	<pre><code>
+
+	10.0.0.1 CONSTANT #default_ip
+        \ <a name="#1sec"></a>
+	#100              CONSTANT #1sec
+        \ <a name="#2sec"></a>
+	#1sec 2*          CONSTANT #2sec
+        \ <a name="#10sec"></a>
+	#1sec #10 *       CONSTANT #10sec
+        \ <a name="#1hour"></a>
+	#1sec #60 * #60 * CONSTANT #1hour
+
+	$240C CONSTANT #ilan_packet_max
+
+        \ <a name="#xoff"></a>
+	$13 CONSTANT #xoff
+
+        \ <a name="#xon"></a>
+	$11 CONSTANT #xon
+
+        \ <a name="#back_space"></a>
+	$08 CONSTANT #back_space
+
+        \ <a name="#bell"></a>
+	$07 CONSTANT #bell
+
+        \ <a name="#^c"></a>
+	$03 CONSTANT #^c
+
+        \ <a name="#tab"></a>
+	$09 CONSTANT #tab
+
+        \ <a name="#cr"></a>
+	$0D CONSTANT #cr
+
+        \ <a name="#lf"></a>
+	$0A CONSTANT #lf
+
+        \ <a name="#esc"></a>
+	$1B CONSTANT #esc
+
+        \ <a name="#^z"></a>
+	$1A CONSTANT #^z
+
+
+        | $040          CONSTANT #line_size
+	| $2000         CONSTANT #bigblock
+
+        \ <a name="#slot_num"></a>
+        \ maximum number of RTI1000 slots
+        $10             CONSTANT #slot_num
+
+
+        \ <a name="#2k"></a>
+        $800 CONSTANT #2k
+
+</code> </pre>
+</body>
+</html>

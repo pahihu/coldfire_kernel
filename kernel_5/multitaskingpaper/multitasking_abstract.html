@@ -1,0 +1,33 @@
+<html>
+<head>
+<title>CVS FORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>COLDFORTH Multitasking</h2>
+<p>
+If a computer is controlling a machine, TCP/IP should have a low priority. 
+Stopping the machine at limit switches, generating a nice function output; 
+they are all things of greater importance. What does it matter if a couple 
+of datagrams are lost, the network has probable dropped some anyway. 
+</p>
+<p>
+COLDFORTH supports preemptive multitasking and places TCP/IP communication priority 
+one level above the lowest level. The lowest level is used for user input.
+Both levels are below the priority levels used to control machinery. 
+</p>
+<p>
+TCP/IP requires the timeout of routes, the timeout of ARP entries, timeout of 
+defragmentation attempts, and the detection of TCP inaction. All these functions are placed in 
+tasks that sit on the lowest priority level along with terminal input and 
+buffer defragmentation. Getting the data through has a higher priority.
+</p>
+<p>
+This article looks at why a preemptive multitasking is important and how it is implemented 
+in COLDFORTH.
+</p>
+</body>
+</html>

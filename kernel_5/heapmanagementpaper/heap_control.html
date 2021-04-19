@@ -1,0 +1,1235 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name="heap_control"></a>
+<h3>Heap control</h3>
+<p>
+If you are going to support TCP/IP you need good heap allocation.
+There is no ultimate heap control method. Just tradeoffs.
+This version is written in FORTH so it is portable.
+Supplies buffer according to size of memory requests.
+Maintains the buffers in sorted lists.
+Uses a low priority task to recombine buffers.
+</p> 
+
+	<pre> <code>
+	ABORT 
+	TRUE EQU #heap_debug
+	??HEX
+	</code> </pre>
+<p>
+There are times when buffers and non buffers are linked into list. Buffers can be returned
+non buffers can't
+</p>
+	<pre> <code>
+	: ?buffer  ( addr --flag)
+		_#heap_start _#heap_end WITHIN 
+	;
+	</code> </pre>
+
+<h4>BUFFER STRUCTURE</h4>
+<p>
+Before the user area there is a system area. This is used to link the buffer into lists
+that must be maintained for the orderly operation of the system. When a buffer is 
+allocated data about the allocation is stored in this area for use by diagnostic code.
+It may look like a wasted area  but you have no idea how usefull it is at times 
+to know who is claiming the buffers.
+</p>
+<p>
+The system part of the buffer is arranged
+</p>
+
+
+	<pre> <code>
+	zero
+		\ linked through here at all times
+		\ either through a buffer list or from 'buffer
+		\ Unless you use get_free_buffer,
+		\ then it is your problem.
+		\ Note ALLOCATE and FREE use _get_abort_buff. 
+	 DUP CONSTANT _#sys_buffer_link       CELL+
+		\ used when linked into abort list.
+	 DUP CONSTANT _#sys_buffer_back       CELL+ 
+		\ link back to used head
+	 DUP CONSTANT _#sys_buffer_used_link  CELL+  
+		\ points back to whoever is linked to us
+	 DUP CONSTANT _#sys_buffer_used_back  CELL+  
+		\ A list offset.
+	 DUP CONSTANT _#sys_buffer_size_code  CELL+  
+		\ contains task user_base address
+		\ or a user code if interrupt code claimed it.
+	 DUP CONSTANT _#sys_buffer_task       CELL+  
+		\ ip when buffer claimed                                       
+	 DUP CONSTANT _#sys_buffer_ip         CELL+ 
+		\ pointer that contains pointer to this buffer
+		\ on an abort this pointer is reset
+	 DUP CONSTANT _#sys_abort_buffer_pointer CELL+
+	 	\ time buffer was claimed
+	 DUP CONSTANT _#sys_buffer_xclock+    CELL+  
+		\ address supplied to user
+		\ points here. 
+		\ To get the buffer list use the code
+		\ buff [ _#sys_buffer_size _#sys_buffer_user - ] LITERAL + @
+		\ To convert the list to size see below.
+	 DUP CONSTANT _#sys_buffer_user              
+                                            
+	DROP
+	</code> </pre>
+
+
+<p>
+	The following constant gives the smallest buffer that the system can allocate.
+	We use _#sys_buffer_user in the calculation so that additional fields can be
+	allocated into the system data area and things just sort themselves out. We make 
+	sure the result is greater than 10h hex other wise it really is a waste of time
+	going so small.
+</p>
+	
+	
+	<pre> <code>
+	40  CONSTANT _#buffer_unit
+	_#buffer_unit _#sys_buffer_user - CONSTANT _#min_buffer
+	
+	\ make sure it is not too small.
+	_#min_buffer 0F ??>
+	</code> </pre>
+
+
+<p>
+We could have written the code assuming the the link into the empty buffer list was 
+offset from the base address but we didn't so make sure it is where we expect it.
+</p>
+
+
+	<pre> <code>
+	_#sys_buffer_link 0 ??=    
+	</code> </pre>
+
+
+<h4>BUFFER SIZES</h4>
+<p>
+You have buffers that are:  _#min_buffer + ( list**2 -1 )( _#sys_buffer_user + _#min_buffer )
+bytes long. That is to say you only need one header. 
+The larger buffers are sized so the system can break then into smaller buffers if required.
+The reconstruction of buffers is done by a background task and is not an application problem.
+There is a seperate list for each size.
+The backgroung task joins ajoining buffers and moves them up a list.
+The number of lists is given by _#sys_buffer_size_code_number , 
+but for the user this is converted into a buffer size and supplied 
+as #maximum_buffer .
+</p>
+<p>
+Initially I wanted to be able make the smallest buffer any size I wanted, and 
+arrange things so the buffer used for a string was optimized. Unfortuatly the 
+code to determine if two buffers could be joined was a little complex and I
+went back to binary powers. This makes this calculation more complex 
+than it need be, but it is correct.
+</p>
+	
+	<pre> <code>
+	zero
+	CREATE _#buffer_sizes                     \ we want this to be resonable fast so pre calc
+	1+      _#min_buffer t,                                           \ list 0    number 1
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 00001 * + t,  \ list 1           2
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 00003 * + t,  \ list 2           3
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 00007 * + t,  \ list 3           4
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 0000F * + t,  \ list 4           5
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 0001F * + t,  \ list 5           6
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 0003F * + t,  \ list 6           7
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 0007F * + t,  \ list 7           8
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 000FF * + t,  \ list 8           9
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 001FF * + t,  \ list 9           10
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 003FF * + t,  \ list 10          11
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 007FF * + t,  \ list 11          12
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 00FFF * + t,  \ list 12          13
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 01FFF * + t,  \ list 13          14
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 03FFF * + t,  \ list 14          15 1meg
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 07FFF * + t,  \ list 15          16 2meg
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 0FFFF * + t,  \ list 16          17 4meg
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 1FFFF * + t,  \ list 17          18 8meg
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 3FFFF * + t,  \ list 18          19 16meg
+	1+      _#min_buffer _#min_buffer _#sys_buffer_user + 7FFFF * + t,  \ list 19          20 32meg
+	</code> </pre>
+
+
+<p>
+The above code generates a table of fixed length. The number of entries used depends
+on the amount of memory given to the buffering system. As a couple of dynamic ram chips
+can give a sysem a very large area of memory the allocated area can be quite large.
+</p>
+
+
+	<pre> <code>
+	_#heap_end _#heap_start -                \ amount of memory available
+	_#min_buffer _#sys_buffer_user + /       \ number of small buffers that will fit
+	>asl 1+  MIN CONSTANT _#sys_buffer_list_number
+	</code> </pre>
+
+<a name="maximum_buffer"></a>
+<h5>maximum_buffer</h5>
+<p>                                        
+ Give the application a hint as to what it can expect. As there is only one buffer of
+ the size #maximum_buffer even in a lightly loaded system it's use is not recommended
+</p>
+
+
+	<pre> <code>
+	1 _#sys_buffer_list_number 1 - LSHIFT 1 - 
+	_#sys_buffer_user _#min_buffer + * _#min_buffer +
+	CONSTANT #maximum_buffer
+	</code> </pre>
+
+
+<p>
+The user should not use size codes, they may change with time. This word converts
+a buffer size into the internal size code. The size code is a list table offset. There
+are several list tables, we can use the offset to select the correct list from any.
+</p>
+
+	<pre> <code> 
+	\ If the size request is stupid return largest list
+	: _size>size_code ( n  -- list_number*CELL )
+		#maximum_buffer MIN
+		_#buffer_sizes BEGIN
+			2DUP @			\ n list n value <--
+			1+ < IF ( will fit)
+				NIP		         	\ list <--
+				_#buffer_sizes -    \ list number by CELL size
+				EXIT
+			THEN
+			CELL+
+		AGAIN
+	;
+	</code> </pre>
+
+
+<a name="buffer_too_big"></a>
+<h5>buffer_too_big?</h5>
+<pre> <code>
+	\ flag is true if request is bigger than largest buffer
+	: buffer_too_big? ( n -- flag )
+		\ pick a size that is likly to succeed 
+		_size>size_code  [ _#sys_buffer_list_number 3 - CELLS ]T LITERAL > 
+	;
+
+</code> </pre>
+<a name="n_buffer_size"></a>
+<h5>n>buffer_size</h5>
+<p>
+If you request a buffer of size n the system will return a buffer of size n1. The
+system deals in buffers of a particular size. It does this so the buffers can be
+rejoined after use. This word can be used to determine the actual buffer size. This
+is useful if you are using the buffer to store small units of data and your requested
+size was about what you wanted.
+</p>
+<p>
+I think it is better to use <i>buffer_size</i>.
+</p>
+	<pre> <code>
+	\ If you make a request for n bytes, what is the actual buffer size.
+	\ can be used by programs that use only COLDFORTH but hardly portable
+	: n>buffer_size ( bytes -- n2 )
+		_size>size_code _#buffer_sizes + @ ;
+	</code> </pre>
+
+
+<h4>LIST ARRAYS</h4>
+<p>
+The first list in the array contains unused buffers of the smallest 
+size. The second a list of buffers twice as big and so on. Buffers in the
+unused list are double linked. This is required by the buffer joining code
+which must be able to join two buffers from anywhere within the list.
+</p>
+
+
+	<pre> <code>                          
+	ram_create _sys_buffer_list_free  _#sys_buffer_list_number CELLS  ram_allot
+	</code> </pre>
+
+
+<p>
+This is only used by buffer display words. It has to be  double linked so that
+buffers being returned can be returned with just a buffer reference.
+</p>
+
+	<pre> <code>
+	ram_create _sys_buffer_list_used _#sys_buffer_list_number CELLS  ram_allot
+	</code> </pre>
+
+
+<h4>RETURNING BUFFERS</h4>
+<p>
+To make buffer joining faster the buffer lists are maintained in sorted order.
+They are sorted from lowest address to highest highest.
+At first glance this may seem very slow, but remember buffers are taken from and
+put back on the same end of the list. The correct location is probable going
+to be near the beginning. Also remember we have a task that aims to keep
+these lists short.
+</p>
+
+
+	<pre> <code>
+	\ This is also used in the splitting buffer code, and joining buffer code.
+	: _return_buffer ( buffer list --)
+		_lock_word
+			BEGIN
+				2DUP      \ buffer list buffer list <--
+				@		  \ buffer list buffer (list) <--
+				\ Use unsigned as comparing memory addresses 
+				U< IF     \ belongs before this
+					\ buffer list <--
+					DUP @ \ buffer list (list) <--
+					jump  \ buffer list (list) buffer <--
+					!     \ buffer list <--
+					!     \ <--
+					_unlock_word
+					EXIT
+				THEN
+				\ buffer list <--
+				DUP @ not IF \ end of list insert anyway
+					DUP @    \ buffer list (list) <--
+					jump     \ buffer list (list) list <--
+					!
+					!
+					_unlock_word
+					EXIT
+				THEN   \ buffer list <--
+				@      \ buffer (list) <--
+			AGAIN
+	;
+
+	ram_variable %bad_buffer_address
+	: _return_buffer_to_list ( addr_sys --)
+		[ #heap_debug [IF] ]T
+		DUP ?buffer not IF
+			%bad_buffer_address !
+			TRUE ABORT" Task returning bad buffer"
+		THEN
+		[ [THEN] ]T
+		DUP					      \ addr_sys addr_sys <--
+		_#sys_buffer_used_link +  \ addr_sys link_addr <--
+		unlink_double
+		DUP _#sys_buffer_size_code + @ _sys_buffer_list_free +
+                                  \ addr_sys list <--
+		_return_buffer
+	;
+	</code> </pre>
+
+<h4>ALLOCATION OF THE INITIAL DATA AREA</h4>
+<p>
+Given addr and length consume memory area and allocate to buffers until all memory consumed
+This word is used in the init code to set up the buffer system.
+</p>
+<p>
+We need to make a small note here. This word will create buffers that can't be rejoined,
+but there will be buffers in the lower list that can be used to create the original 
+buffer if a better option was available.
+</p>
+<dl>
+		<dd>Example:   base 350000 size 30000</dd>
+
+		<dd>Allocated as buffers</dd>
+		<dd>350000 size 20000</dd>
+		<dd>370000 size 10000</dd>
+		<dd>After spliting and joining</dd>
+		<dd>350000 size 10000</dd>
+		<dd>360000 size 20000</dd>
+</dl>
+
+	<pre> <code>
+	: _init_buffers ( addr length --)
+		BEGIN
+			DUP _#buffer_unit               \ addr length length size<--
+			/                               \ addr length num  <--
+			>asl                            \ addr length size_code <--
+			[ _#sys_buffer_list_number 1 - ]T LITERAL
+			MIN                             \ can have multiple buffers in largest list
+			jump                            \ addr length size_code addr <--
+			OVER                            \ addr length size_code addr size_code <--
+			CELLS                           \ addr length size_code addr list_code <--
+			_sys_buffer_list_free +         \ addr length size_code addr list <--
+			_return_buffer                  \ addr length size_code <--
+			2**                             \ addr length size_code2 <--
+			_#buffer_unit *                 \ addr length consumed_length <--
+			TUCK                            \ addr consumed_length length consumed_length <--
+			2SWAP +							\ length consumed_length addr2 <--
+			-rot                            \ addr length consumed_length <--
+			-                               \ addr length2 <--
+			DUP _#buffer_unit <             \ addr length2 flag <--
+		UNTIL
+		2DROP
+	;
+	</code> </pre>
+
+
+
+<h4>JOINING BUFFERS</h4>
+<p>
+This word is used in the low priority task to rejoin buffers. We need 
+to talk about this a bit.
+To join a buffer we look down the list and find two buffers next to 
+each other that can be joined. The data that must be valid is a pointer
+to the first buffer, the first buffer and second buffer. The data
+is collected with interrupts disabled, the interrupts are reenabled,
+and the data looked at to see if what we want. If it is, interrrupts
+are disable again, and a check is done to see that the data is still valid.
+If the data is still valid then the section of the list being looked at 
+is reasonable stable, and a join can occure. Doing it this way reduces the 
+number of wasted joins.
+</p>
+	
+	
+	<pre> <code>
+	: _(join_buffers)  \ ( list (list) ((list)) list_number --)
+		>R                                 \ list (list) ((list)) <--
+		SWAP ROT                           \ ((list)) (list) list <--
+		R@ CELLS _sys_buffer_list_free +   \ ((list)) (list) list list_n <--
+		_lock_word
+		BEGIN
+			\ ((list)) (list) list list_n <--
+			DUP 
+		WHILE \ while there are buffers
+										\ ((list)) (list) list list_n
+			2DUP = IF					\ ((list)) (list) list list_n <--
+				\ this is where we looked befor
+				@                       \ ((list)) (list) list (list_n) <--
+				jump = IF    
+					\ ((list)) (list) list <--
+					jump    \ ((list)) (list) list ((list)) <--
+					jump    \ ((list)) (list) list ((list)) (list) <--
+					@       \ ((list)) (list) list ((list)) ((list)) <--     
+					= IF
+						\ ((list)) (list) list <--
+						\ things have stayed the same
+						\ do what has to be done
+						ROT     \ (list) list ((list)) <--
+						@       \ (list) list (((list))) <--
+						SWAP    \ (list) (((list))) list <--
+						!       \ (list)
+						_unlock_word
+						R> 1+ CELLS _sys_buffer_list_free +
+						_return_buffer
+						EXIT
+					THEN
+				THEN
+				_unlock_word
+				DROP
+				2DROP
+				r>drop
+				EXIT
+			THEN	 
+			\ ((list)) (list) list list_n <--
+			2DUP < IF \ gone past no luck give up
+				_unlock_word
+				2DROP
+				2DROP
+				r>drop
+				EXIT
+			THEN
+			@
+		REPEAT
+		_unlock_word
+		2DROP	\ ((list)) (list) <--
+		2DROP   \ <--
+		r>drop
+	;
+	</code> </pre>
+<a name="_joinable"></a>
+
+<p>
+Buffers can only be joined if they create buffers that can be joined.
+</p>
+<p>
+The theory: A buffer is joinable if the second buffer has bit set in a bit position
+one lower than the lowest bit position in the first. If you do an XOR this bit position
+should come up set. The result should be equal to the memory block size of the list.
+</p>
+	<pre> <code>
+	\ Now could you ask for a neater solution.
+	: _?joinable ( addr1 addr2 list_number --addr)
+		jump              \ addr1 addr2 list addr1 <--
+		ROT               \ addr1 list addr1 addr2<--
+		XOR               \ addr1 list xor<--
+		_#buffer_unit ROT \ addr1 xor #buffer_unit list
+		LSHIFT            \ addr1 xor list_bit<--
+		TUCK              \ addr1 list_bit xor list_bit<--
+		=                 \ addr1 list_bit flag<--apart by buffer unit
+		-rot              \ flag addr1 list_bit<--
+		\ the list bit should not be set in the first address
+		AND               \ flag flag<--
+		not               
+		AND               \ flag<-
+	;
+	</code> </pre>
+<a name="n_buffer_size"></a>
+
+<dl>	
+<dd>addr1 -- buffers have to be below this address
+<dd>list_number -- size code we are joining
+<dd>addr2 -- where to start from next time
+<dl>
+	
+	<pre> <code>
+	: _join_buffer ( addr1 list_number -- addr2 false | true)
+		\ addr1 list_number <-
+		\ Trace down list until we point to a buffer whose address is above addr1
+		dup>r
+		CELLS _sys_buffer_list_free +  \ addr1 list <--
+		_lock_word
+		\ loop around until the pointer points past addr1.
+		BEGIN
+			DUP @ 
+			\ if non zero fetch again
+			\ can't join if there are not two buffers
+			DUP IF 
+				@
+			THEN
+		WHILE
+			OVER    \ addr1 list addr1 
+			OVER @	\ addr1 list addr1 (list) <--
+			\ addr1 is less than where the list points
+			\ Have to used unsigned compare as we are dealing with addresses
+			U<       \ addr1 list flag <-- 
+			IF ( next buffer is above minimum address, deal with it.
+						\ addr1 list <--
+				DUP @	\ addr1 list (list) <--
+				DUP @   \ addr1 list (list) ((list)) <--
+				_unlock_word
+				\ addr1 list (list) ((list)) <--
+				\ (list) and ((list)) are the address of the two buffers
+				\ that we would like to join.
+				2DUP R@ _?joinable IF
+					3DUP R@ _(join_buffers)
+					\ whatever happens we have to move past
+					\ and try again.
+					\ ((list)) is no longer a link address
+					\ just an address we must work above.
+					NIP
+					NIP
+					NIP
+					r>drop
+					FALSE  \ don't terminate
+					EXIT
+				ELSE
+					\ addr1 list (list) ((list)) <--
+					\ we have to move up to (list)
+					\ and try again
+					DROP
+					NIP
+					NIP
+					FALSE   \ don't terminate
+					r>drop
+					EXIT
+				THEN	
+			ELSE
+				@   \ addr1 (list) <--
+			THEN	
+		REPEAT
+		_unlock_word
+		2DROP
+		r>drop
+		TRUE  \ terminate
+	;
+	</code> </pre>
+<a name="_join_buffer_code"></a>
+	<pre> <code>
+	\ This word is suitale for use in a task.
+	: _join_buffer_code ( --)
+		[ _#sys_buffer_list_number 1 -  ]T LITERAL zero DO
+			zero 
+			BEGIN
+				\ loop until list finished.
+				\ _join_buffer returns where we are up to.
+				I _join_buffer
+			UNTIL
+			xpause
+		LOOP
+	;
+	</code> </pre>
+
+<h4>SPLITTING BUFFERS</h4>
+<p>
+The system has the buffers stored in a series of lists. The next highest list contains
+buffers twice as big as the list below. If a new buffer is required we go to the next list
+and split a buffer into two and pu both in the list that has run out. Of couse the next
+list may not have the required buffer so a call to the next is required and so on. To make
+matters harder, this has to happen with multiple tasks requesting buffers, and in a manner
+that doesn't lock up the system for long. This code is written so the a split can successful
+yet when you go to use your new buffer some other task has pinched it, so you hae to go and
+split again.
+</p>
+<p>
+If we require a split of the biggest buffer and there is nothing there, we have problems,
+If we where running under another OS we could request more memory. In a stand alone system
+that is the end of the show. We just turn on the led and exit
+</p>
+
+	<pre> <code>
+#BCM550 [IF]
+	: _no_buffer_led ( --)
+		_lock_word
+		_breg_SS1 C@
+		_#SS1_no_buffer_memory OR
+		_breg_SS1 C!
+		_unlock_word
+	;
+[THEN]
+#BVP5502 #BVP5501 + [IF]
+	: _no_buffer_led ( --)
+	;
+[THEN]
+	</code> </pre>
+<h5>_number_in_list</h5>
+<p>
+Number of items in a zero terminated list.
+</p>
+
+	<pre> <code> 
+	: _number_in_list ( addr -- n )
+		zero SWAP
+		BEGIN
+		    @ ?DUP
+		WHILE
+		    SWAP 1+ SWAP
+		REPEAT
+	;
+	</code> </pre>
+
+<h5>panic.buffers ( --) </h5>
+<p>
+Print out the current buffer structure, for what is all means
+see <a href="head_control">heap control"</a>.
+</p>
+	
+	<pre> <code>
+	: panic.buffers ( --)
+		panic_cr
+		panic"     Size      Free      Used" panic_cr   
+		_#sys_buffer_list_number CELLS zero DO
+			 I _#buffer_sizes + @ .panic
+			 BL panic_emit BL panic_emit
+			 I _sys_buffer_list_free + _number_in_list .panic
+			 BL panic_emit BL panic_emit
+			 I _sys_buffer_list_used + _number_in_list .panic
+			 panic_cr
+		4 +LOOP
+	;
+	</code> </pre>
+	<pre> <code>
+	: _get_major_buffer ( --)
+		_no_buffer_led
+		panic" Ran out of free buffer space"
+		panic.buffers
+		\ if we came here by ALLOCATE the correct
+		\ action is to ABORT
+		\ If the problem occured in interrupt code and the 
+		\ abort gets back to the system the interrupt task will exit.
+		\ as ALLOCATE catches the abort the result is user defined.
+		ABORT" Ran out of free buffer space"
+	; 
+	</code> </pre>
+
+<p>
+This word will take a buffer out of the requested list ( if one is available)
+and create two buffers in the next lower list. It is used in following words
+to split a buffer.
+</p>
+<dl>
+<dd>On success return with list-1 and true.
+<dd>On failure return with "list" and false.
+</dl>
+<p>
+The stack items are as required to run _spit_buffer in a recursive manner.
+</p>
+
+
+	<pre> <code>
+	: _split_buffer ( list_num*cell -- list false| list-1 true)
+		DUP _sys_buffer_list_free +  \ list free <--
+		_lock_word
+			DUP @ not IF \ no buffer to split
+				DROP     \ list <--
+				_unlock_word
+				FALSE
+				EXIT
+			THEN
+			DUP @ \ list free (free) <--
+			2DUP  \ list free (free) free (free) <--
+			@     \ list free (free) free ((free)) <--
+			SWAP  \ list free (free) ((free)) free <--
+			!     \ list free (free) <--
+		_unlock_word
+		ROT      \ free (free) list <--
+		cell -    \ free (free) list-1 <--
+		_#buffer_sizes + @ \ free (free) size-1 <--
+		_#sys_buffer_user + \ free (free) offset <--
+		OVER               \ free (free) offset (free) <-- 
+		+                  \ free (free) (free+1) <--
+		jump cell -        \ free (free) (free+1) free-1 <--
+		_return_buffer     \ free (free) <--
+		SWAP cell -        \ (free) free-1 <--
+		TUCK			   \ free-1 (free) free-1
+		_return_buffer
+		_sys_buffer_list_free -
+		TRUE
+	;
+	</code> </pre>
+
+<a name="_get_more_buffers"></a>
+<p>
+The input parameter is the list requiring the extra buffers.
+The output paramter is the same. 
+</p>
+<p>
+Although this seems like a bunch of dirty tricks
+it is the best way to do it, this will
+work in a system that has others pinching
+the results of our efforts. You can get
+the case where it will recurse succeed, unrecurse
+only to have to do it again because someone
+else has pinched the result.
+To put it another way when thinking about this code
+remember others ( including interupt code )
+can be running it at the same time.
+</p>
+
+
+	<pre> <code>
+	??HEX
+	: _get_more_buffers ( list*cell1 -- list*cell1)
+		CELL+ DUP
+		[ _#sys_buffer_list_number CELLS ]T LITERAL < not IF
+			\ can't meet request
+			_get_major_buffer
+			\ if we return system has another source of 
+			\ memory. A standard COLDFORTH system does not
+			cell - 
+			EXIT
+		THEN
+		BEGIN
+			_split_buffer IF ( success)
+				EXIT
+			THEN
+			\ we have failed
+			\ we have to call ourselves again to
+			\ try the next size up
+			RECURSE
+			\ if we get back here
+			\ we recursed and the recurse worked
+			\ we have list where it was and there may now be a buffer in the list
+		AGAIN
+	;
+	</code> </pre>
+
+
+<p>
+Have a try at claiming a buffer from the requested list. Failure simple means we have
+to split a buffer form the next list.
+</p>
+
+
+	<pre> <code>		
+	: _try_list ( list_number*cells -- list false | addr_sys true) 
+		DUP _sys_buffer_list_free +  \ list free <--
+		_lock_word
+			DUP @ IF  ( we have a buffer)
+				DUP @                \ list free (free) <--
+				TUCK                 \ list (free) free (free) <--
+				@					 \ list (free) free ((free)) <--
+				SWAP                 \ list (free) ((free)) free <--
+				!                    \ list (free) <--
+				_unlock_word
+				\ store diagnostic data
+				2DUP                                   \ list (free) list (free) <--
+				_#sys_buffer_size_code + !              \ list (free) <--
+				user_base OVER _#sys_buffer_task + !       \ list (free) <--
+				xclock+ @ OVER _#sys_buffer_xclock+ + ! \ list (free) <--
+				\ Now have to link into used list
+				\ we maintain a back pointer to speed 
+				\ up the return operation.
+				\ We maintain a used list so we can see what is happening.
+				\ nothing more.
+				DUP                                    \ list (free) (free)
+				_#sys_buffer_used_link +                \ list (free) link <--
+				ROT                                    \ (free) link list <--
+				_sys_buffer_list_used +                \ (free) link head <--
+				link_double
+				TRUE
+				EXIT
+			THEN  
+		( we have failed
+		_unlock_word
+		DROP                     \ list <--
+		FALSE                    \ list false <--
+	;
+
+
+	\ note we do not check that the stack item:  list  is valid
+	\ unless we have to get more buffers.
+	: _get_buffer_from_list ( list_number*cells -- addr_sys)
+		BEGIN
+			_try_list              \ list flag<--
+			IF 
+				EXIT 
+			THEN
+			\ if we get here list was empty
+		    _get_more_buffers                   \ list <--
+		AGAIN
+	;
+	</code> </pre>
+
+
+<h4>MISCELLANEOUS</h4>
+<a name="buffer_save_ip"></a>
+<h5>buffer_save_ip</h5>
+<p>
+When a buffer is claimed a ip value that points to who did the claiming should
+be stored in the buffer system area. This word should be used at a level where a
+valid ip value is known. Where that is will depend on how the buffer is claimed.
+</p>
+<p>
+This needs to be done at different places in different words
+applications are free to use this if they create generic
+memory allocation code.
+It will seldem get used but users needs access to this word
+<p>
+
+
+	<pre> <code>
+	: buffer_save_ip ( ip addr_user )
+		[ _#sys_buffer_ip _#sys_buffer_user - ]T LITERAL + ! 
+	;
+
+
+	\ when starting up tasks buffers are claimed for the new task
+	\ The task using the buffer is really the new task and this should
+	\ be indicated
+	: buffer_save_task ( u addr_user
+		[ _#sys_buffer_task _#sys_buffer_user - ]T LITERAL + ! 
+	;
+
+
+	</code> </pre>
+
+
+<h4> The application words </h4>
+<a name="buffer"></a>
+<h5>buffer</h5>
+<p>
+The user area has a variable ( uvariable) called 'buffer. In this variable
+is stored the user address of the last allocated buffer.
+</p>
+	
+	<pre> <code>
+	: buffer ( --addr_user )
+		'buffer @ 
+	;
+	</code> </pre>
+
+
+<a name="get/kill_buffer"></a>
+<a name="get_buffer"></a>
+<h5>get_buffer</h5>
+<p>
+get_buffer and kill_buffer can be used to get and release a fresh buffer
+that is pointed to by 'buffer and refered to using buffer .
+These words must be used together.
+<pre>
+Example:
+    n1 get_buffer                     \ buffer 1
+         buffer                       \ address buffer 1
+         n2 get_buffer                \ buffer 2           
+		 buffer                   \ buffer 2
+         kill_buffer
+         buffer                       \ buffer 1
+    kill_buffer
+</pre>
+</p>
+<p>
+The buffers are linked together in the buffers system area so get_buffer
+can be used recursivly. ABORT releases the buffers back to the system.
+In other words you get access to the buffers but the system knows where
+they are. Buffers so allocated will be returned on a task abort.
+</p>
+<pre> <code>
+	??HEX
+	: get_buffer ( n --)
+		_size>size_code                 \ list_number*cells <--
+		_get_buffer_from_list           \ addr_sys <--
+		buffer 
+		OVER !                                                        \ addr_sys <--
+		[ _#sys_buffer_user _#sys_buffer_link - ]T LITERAL +          \ addr_user <--
+		'buffer !
+		R@ buffer buffer_save_ip
+	;
+	</code> </pre>
+<a name="kill_buffer"></a>
+<h5>kill_buffer</h5>
+	<pre> <code>
+	: kill_buffer ( --)
+		buffer IF
+			buffer [ _#sys_buffer_link _#sys_buffer_user - ]T LITERAL + DUP @  \ addr_sys addr_sys1 <--
+			'buffer !                                                          \ addr_sys <--
+			_return_buffer_to_list
+		THEN
+	;
+
+	\ used in ABORT to return all buffers
+	: _return_buffers
+		BEGIN
+			buffer 
+		WHILE
+			kill_buffer
+		REPEAT
+	;
+			
+
+	</code> </pre>
+<a name="get_abort_buffer"></a>
+<p>
+The following words are supplied to the user as ALLOCATE and FREE, two standard
+ANS words. 
+</p>
+
+	<pre> <code>
+	: _get_abort_buffer ( pointer n --addr_user)
+		_size>size_code                  \ pointer list_number*cells <--
+		_get_buffer_from_list            \ pointer addr_sys <--
+		DUP _head_abort_buffers link_double	 \ pointer addr_sys <--
+		TUCK                             \ addr_sys pointer addr_sys
+		[ _#sys_abort_buffer_pointer _#sys_buffer_link - ]T LITERAL + !
+		[ _#sys_buffer_user _#sys_buffer_link - ]T LITERAL + \ addr_user <--
+	;
+	</code> </pre>
+<a name="kill_abort_buffer"></a>
+	<pre> <code>
+
+	: _kill_abort_buffer ( addr_user --)
+	    ?DUP IF
+		    \ reset location pointing to buffer if we have been asked to
+			DUP [ _#sys_abort_buffer_pointer _#sys_buffer_user - ]T LITERAL + @ ?DUP IF
+				zero SWAP !
+			THEN
+		    [ _#sys_buffer_link _#sys_buffer_user - ]T LITERAL +
+			DUP unlink_double
+		    _return_buffer_to_list
+	    THEN
+	;
+	</code> </pre>	
+
+<p>
+The cell pointed to by addr is set to zero on an abort. The cell should
+be used by the application to store the buffer address.
+This word is required because ALLOCATE is a standard word
+and it doesn't allow the setting of a pointer address.
+</p>
+	
+	<pre> <code>
+	: set_abort_buffer_pointer ( addr addr_user --)
+		[ _#sys_abort_buffer_pointer _#sys_buffer_user - ]T LITERAL + ! 
+	;
+	</code> </pre>
+
+
+<p>	
+This is used in the abort routine
+</p>
+
+	<pre> <code>
+	: _return_abort_buffers ( --)
+		BEGIN
+			_head_abort_buffers @ ?DUP
+		WHILE
+
+			[ _#sys_buffer_user _#sys_buffer_link - ]T LITERAL +
+			_kill_abort_buffer
+		REPEAT
+	;		 
+	</code> </pre>
+<a name="get_free_buffer"></a>
+<p>
+Use these to get buffers that are not linked into
+'buffer or 'abort_buffer. If you store the address somewhere
+and do not set it back to zero on an abort
+these are the words for you.
+Better to use ALLOCATE and FREE for general work
+These completly remove the buffer from the buffer system.
+A good idea if you are transfering buffers between tasks.
+But the buffers can be lost if something goes wrong.
+</p>
+
+	<pre> <code>
+	: get_free_buffer ( n -- addr_user)
+		_size>size_code                                      \ list_number*cells <--
+		_get_buffer_from_list                                \ addr_sys <--
+		[ _#sys_buffer_user _#sys_buffer_link - ]T LITERAL + \ addr_user <--
+		R@ OVER buffer_save_ip                               \ addr_user <--
+	;
+	</code> </pre>
+<a name="kill_free_buffer"></a>
+	<pre> <code>
+	: kill_free_buffer ( addr_user --)
+		?DUP IF
+			[ _#sys_buffer_link _#sys_buffer_user - ]T LITERAL +
+			_return_buffer_to_list
+		THEN
+	;
+	</code> </pre>
+
+<a name="_$buffer"></a>
+<h5>#$buffer</h5>
+<p>
+1   for the count
+1   so we can zero terminate
+0FF for the characters
+then round up to nearest long word
+AS the buffer system works as it does the buffer retuned will be longer.
+</p>
+<pre> <code>
+0FF CONSTANT #$maximum_data
+104 CONSTANT #$buffer
+</code> </pre>
+<a name="$buffer"></a>
+<h5>$buffer</h5>
+<p>
+Use this to get buffers for counted strings
+</p>
+
+	<pre> <code>
+	: $buffer  ( --)
+		#$buffer get_buffer
+		\ we want to know who called us
+		R@ buffer buffer_save_ip
+	;
+	</code> </pre>
+
+
+<a name="buffer_size"></a>
+<h5>buffer_size</h5>
+<p>
+Best way to go is ask for about what you want
+and then use this word to see what you got ( it will be bigger or the same)
+and then use what you get.
+</p>
+
+	<pre> <code>
+	: buffer_size ( addr_user -- size )
+		DUP 0= ABORT" Buffer address supplied as zero"
+		[ _#sys_buffer_size_code _#sys_buffer_user - ]T LITERAL + @ \ size_code <--
+		_#sys_buffer_list_number CELLS                            \ size_code size_code_max <--
+		OVER < ABORT" Buffer structure faulty"
+		_#buffer_sizes + @
+	;
+	</code> </pre>
+
+<a name="ANS_memory_allocation"></a>
+<h4>ANS MEMORY ALLOCATION</h4>
+<p>
+get_buffer and free_buffer are simpler to use as recursive use of 
+buffer is possible. They are not portable.
+</p>
+<a name="ALLOCATE"></a>
+<h5>ANS 14.6.1.0707 ALLOCATE</h5> 
+<p>MEMORY</p>
+<p>( u -- a-addr ior )</p>
+<p>
+Allocate u address units of contiguous data space. The data-space pointer is 
+unaffected by this operation. The initial content of the allocated space is undefined. 
+If the allocation succeeds, a-addr is the aligned starting address of the allocated 
+space and ior is zero. 
+If the operation fails, a-addr does not represent a valid address and ior is 
+the address of a string describing the error.
+</p>
+
+	<pre> <code>
+	CREATE _$too_big  ," buffer request too large."
+	: ALLOCATE ( n -- addr_user ior )
+		DUP buffer_too_big? IF
+			DROP zero _$too_big EXIT
+		THEN
+		\ ALLOCATE doesn't know where the address will be stored.
+		\ so set ponter to zero
+		zero SWAP				   \ pointer n <--
+		['] _get_abort_buffer CATCH ?DUP IF \ failed
+			NIP       \ zero $error<-- 
+			EXIT
+		THEN     \ addr<--
+		R@ OVER buffer_save_ip
+		zero     \ addr i/o_error<--
+	;
+	</code> </pre>
+
+<a name="FREE"></a>
+<h5> ANS 14.6.1.1605 FREE </h5> 
+
+<p>( a-addr -- ior )</p>
+<p>
+Return the contiguous region of data space indicated by a-addr to the system	
+for later allocation. a-addr shall indicate a region of data space that was previously
+obtained by ALLOCATE or RESIZE. The data-space pointer is unaffected by this operation. 
+If the operation succeeds, ior is zero. If the operation fails, ior is the 
+implementation-defined I/O result code. 
+</p>
+	
+	<pre> <code>
+	: FREE ( addr_user -- ior )
+		\ never fails.
+		_kill_abort_buffer zero
+	;
+	</code> </pre>
+
+<a name="RESIZE"></a>
+<h5>ANS 14.6.1.2145 RESIZE</h5> 
+
+<p>( a-addr1 u -- a-addr2 ior )</p>
+<p>
+Change the allocation of the contiguous data space starting at the address 
+a-addr1, previously allocated by ALLOCATE or RESIZE, to u address units. u may be
+either larger or smaller than the current size of the region. 
+The data-space pointer is unaffected by this operation. 
+</p>
+<p>
+If the operation succeeds, a-addr2 is the aligned starting address of u address 
+units of allocated memory and ior is zero. a-addr2 may be, but need not be, 
+the same as a-addr1. If they are not the same, the values contained in the region 
+at a-addr1 are copied to a-addr2, up to the minimum size of either of the two regions. 
+If they are the same, the values contained in the region are preserved to the minimum 
+of u or the original size. If a-addr2 is not the same as a-addr1, the region of memory at
+a-addr1 is returned to the system according to the operation of FREE. 
+</p>
+<p>
+If the operation fails, a-addr2 equals a-addr1, the region of memory at a-addr1 
+is unaffected, and ior is the implementation-defined I/O result code. 
+</p>
+	
+	<pre> <code>
+	: RESIZE        ( addr_user1 n1 -- addr_user2 ior)   
+		DUP buffer_too_big? IF 
+			DROP      \ addr_user1 <--
+			_$too_big EXIT 
+		THEN
+		\ If the request can fit in a smaller buffer do so.
+		OVER buffer_size   \ addr_user1 n1 current_buffer_size<--
+		OVER n>buffer_size \ addr_user1 n1 current_buffer_size proposed_buffer_size<-- 
+		= IF            \ memory request is for same size buffer
+			DROP zero EXIT
+		THEN \ addr_user1 n1 <--
+		zero SWAP                    \ addr_user1 zero n1 <--
+		['] _get_abort_buffer CATCH  ?DUP IF  \ error occured
+			NIP NIP                  \ addr_user1 $error<--
+			EXIT
+		THEN
+		                             \  addr_user1 addr_user2 <--
+		2DUP                         \  addr_user1 addr_user2 addr_user1 addr_user2 <--
+		OVER buffer_size
+		OVER buffer_size
+		MIN                          \  addr_user1 addr_user2 addr_user1 addr_user2 size <--
+		MOVE                         \  addr_user1 addr_user2<--
+		SWAP
+		FREE
+	;
+	</code> </pre>
+
+<a name="ubuffer"></a>
+<h4>ubuffer</h4>
+<p>
+Used in the form:  
+</p>
+<samp> n  ubuffer name </samp>
+<p>
+Where n is the size of the buffer required. ubuffer is the parent and name 
+is the child. The child returns the address of a buffer. The address is 
+stored in a user variable so the same word returns different addresses in 
+different tasks. The buffer is linked into the _'abort_buffer list.
+In other words buffers allocated with ubuffer child 
+words will be taken from the buffer pool as and when the data is used. 
+The buffers will be returned on an abort. If the buffer must survive 
+across aborts use <i>ufree_buffer</i>.
+</p>
+<p>
+Describe the dictionary entry
+</p>
+	
+	<pre> <code>
+	zero
+	DUP CONSTANT   _#ubuffer_uoffset CELL+
+	DUP CONSTANT   _#ubuffer_n       CELL+
+	DROP
+	</code> </pre>
+
+<p>
+This is an extension to the cross compiler.
+</p>
+	
+	<pre> <code>
+	: user_buffer_runtime
+		DUP [ _#ubuffer_uoffset ]T LITERAL + @ @u + @ ?DUP IF \ buffer allocated
+			NIP EXIT
+		THEN
+		DUP [ _#ubuffer_uoffset ]T LITERAL + @ @u + 
+		OVER [ _#ubuffer_n ]T LITERAL + @              \ pfa pointer n <--
+		_get_abort_buffer                  \ pfa addr_buffer <--
+		TUCK SWAP                          \ addr_buffer addr_buffer pfa <--
+		2DUP SWAP buffer_save_ip           \ point to the guilty party
+		\ set the user variable to the buffer address
+		[ _#ubuffer_uoffset ]T LITERAL + @ @u +      
+		                                   \ addr_buffer addr_buffer user <--
+		!                                  \ addr_buffer<--
+		\ preset to zero
+		DUP DUP buffer_size ERASE
+	;
+
+	forth : ubuffer ( n--) 
+		HOST  CREATE
+		HOST  'U             \ n addr <--
+		forth @              \ n offset <--
+		HOST  t,             \ n <--
+		forth cell
+		HOST  'U
+		forth +!
+		HOST  t,              \ <--
+	DOES>
+		user_buffer_runtime
+	;
+	
+	\ allocate a ubuffer that doesn't get returned on an abort
+	: user_free_buffer_runtime
+		DUP [ _#ubuffer_uoffset ]T LITERAL + @ @u + @ ?DUP IF \ buffer allocated
+			NIP EXIT
+		THEN
+		DUP [ _#ubuffer_n ]T LITERAL + @              \ pfa n <--
+		get_free_buffer                  \ pfa addr_buffer <--
+		TUCK SWAP                          \ addr_buffer addr_buffer pfa <--
+		2DUP SWAP buffer_save_ip           \ point to the guilty party
+		\ set the user variable to the buffer address
+		[ _#ubuffer_uoffset ]T LITERAL + @ @u +      
+		                                   \ addr_buffer addr_buffer user <--
+		!                                  \ addr_buffer<--
+		DUP DUP buffer_size ERASE
+	;
+
+	forth : ufree_buffer ( n--) 
+		HOST  CREATE
+		HOST  'U             \ n addr <--
+		forth @              \ n offset <--
+		HOST  t,              \ n <--
+		forth cell          
+		HOST  'U 
+		forth +!
+		HOST  t,              \ <--
+	DOES>
+		user_free_buffer_runtime
+	;
+
+	</code> </pre>
+</body>
+</html>
+

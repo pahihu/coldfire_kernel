@@ -1,0 +1,352 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="GB">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" Test Words for 555 stage 1">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+
+<h4>The mode</h4>
+<p>
+If you set IMRS in _lreg_DACRx you can write to the SDRAM mode register.
+The value written depends on the address present on the address bus when the ram is next
+written to after IMRS is set. The address is not multiplexed (section 11.6.2.1.3). So you have to work
+out the value you want written and then work out which coldfire address lines you need
+active to put the value on the sdram address lines.
+</p>
+<p>
+Lets work out the value first.
+</p>
+<table>
+<tr><th>Sdram Address Pin</th><th>Coldfire Address Pin</th><th>Comment</th><th>value</th><tr>
+<tr><td>0</td><td>15</td><td>burst length 0(1)</td><td>0</td></tr>
+<tr><td>1</td><td>14</td><td>burst length 1</td><td>0</td></tr>
+<tr><td>2</td><td>13</td><td>burst length 2</td><td>0</td></tr>
+<tr><td>3</td><td>12</td><td>Burst type(2)</td><td>0</td></tr>
+<tr><td>4</td><td>11</td><td>CAS latency(3)</td><td>0</td></tr>
+<tr><td>5</td><td>10</td><td>CAS latency</td><td>1</td></tr>
+<tr><td>6</td><td>9</td><td>CAS latency</td><td>0</td></tr>
+<tr><td>7</td><td>17</td><td>Operating Mode(4)</td><td>0</td></tr>
+<tr><td>8</td><td>18</td><td>Operating mode</td><td>0</td></tr>
+<tr><td>9</td><td>19</td><td>Write burst type(5)</td><td>1</td></tr>
+<tr><td>10</td><td>21</td><td>Reserved</td><td>0</td></tr>
+<tr><td>11</td><td>20</td><td>Reserved</td><td>0</td></tr>
+</table>
+<br>
+(1)Burst length is set to 1 as required section 11.6.2.1.3 of user's manual.<br>
+(2)Burst is not used, value should not matter.<br>
+(3)Bus running at 45 mHz 2 cycles is enough.<br>
+(4)Only one mode defined.<br>
+(5)0 or 1 should work. Set to 1<br>
+<p>
+So the the value to write is 0x220
+</p>
+<p>
+Now the translation. We need to set A5 and A9 on the chip, the address isn't
+multiplexed. write 80400. That is A10 and A19 on the coldfire.
+</p>
+<pre> <code>
+CODE dram_init ( -- )
+
+	\ bank 0
+	_lreg_DACR0 AB D0 MOV
+	_#dacrx_IMRS # D0 OR  \ Initiate mode register set
+	D0 _lreg_DACR0 AB MOV
+	\ Value written doesn't matter, the address does.
+	D0 _#sdram0_base 80400 + AB MOV
+
+
+	\ bank 1
+\	_lreg_DACR1 AB D0 MOV
+\	_#dacrx_IMRS # D0 OR  \ Initiate mode register set
+\	D0 _lreg_DACR1 AB MOV
+\	\ value written doesn't matter, the address does.
+\	D0 _#sdram1_base 80400 + AB MOV
+
+NEXT
+
+
+	</code> </pre>
+<p>
+The dram is ready to run. Wasn't too hard now was it.
+</p>
+<p>
+Now to test it. Basic read and write
+</p>
+	<pre> <code>
+CODE (0_test)
+	\ Can we write zero to bank 0?
+	0 # D0 MOV
+	D0 _#sdram0_base AB MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT
+
+CODE (1_test)
+	\ Can we write -1 to bank 0?
+	-1 # D0 MOV
+	D0 _#sdram0_base AB MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT 
+
+: 0&1_test_lw ( -- )				\ write 0 and -1 as long words and then read back.
+	(0_test)
+	." 0 write then read = " .h CR
+	(1_test)
+	." -1 write then read = " .h CR
+;
+
+</code> </pre>
+<p>
+The byte operations bank0
+</p>
+<pre> <code>
+
+CODE (87_test)				\ write 87h to high byte.
+	0x87 # D0 MOV
+	D0 _#sdram0_base AB B. MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT
+
+: 87_test ( -- )
+	(87_test)
+	." write 87h, should read back 0x87FFFFFF = " .h CR
+;
+
+CODE (65_test)				\ write 65h to 3rd byte of long word
+	0x65 # D0 MOV
+	D0 _#sdram0_base 1+ AB B. MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT
+
+: 65_test ( -- )
+	(65_test)
+	." write 65h, should read back 0x8765FFFF = " .h CR
+;
+
+CODE (43_test)				\ write 43h to 2nd byte of long word
+	0x43 # D0 MOV
+	D0 _#sdram0_base 2+ AB B. MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT
+
+: 43_test ( -- )
+	(43_test)
+	." write 43h, should read back 0x876543FF = " .h CR
+;
+
+CODE (21_test)				\ write 12h to low byte of long word
+	0x21 # D0 MOV
+	D0 _#sdram0_base 3 + AB B. MOV
+	_#sdram0_base AB D0 MOV
+	D0 [ S -] MOV
+NEXT
+
+: 21_test ( -- )
+	(21_test)
+	." write 21h, should read back 0x87654321 = " .h CR
+;
+
+
+</code> </pre>
+<p>
+Ok now we have to test the whole thing, to keep the startup time
+reasonable, this things has to perform, so we enable cache.
+</p>
+	<pre> <code>
+CODE enable_cache
+	\ Prom instruction cache
+	\ set ACR3 ( instruction access).
+	_#acr3_address_mask
+	_#acr3_address_base +
+	_#acr3_enable + 
+	_#acr3_SFIELD +
+	_#acr3_CM_cached  + 
+	_#acr3_WP + # D0 MOV
+	D0 ACR3 MOV
+	
+
+	\ invalidate all the caches.
+	_#cacr_DCINVA \ data cache invalidate
+	_#cacr_BCINVA + \ branch cache invalidate
+	_#cacr_ICINVA + \ Instruction cache invalidate
+	    # D0 MOV
+	D0 CACR MOV
+
+	\ enable the instruction and branch cache.
+	\ as we want to test memory it is best to leave the
+	\ data cache disabled.
+	_#cacr_IEC             \ Enable instruction cache	
+	_#cacr_BEC +           \ branch cache enable
+	    # D0 MOV
+	D0 CACR MOV
+NEXT
+
+</code> </pre> 
+<p>
+Can we set the memory sub system to AAAAAAAA.
+</p>
+	<pre> <code>
+
+CODE (test_AA) 		
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0xAAAAAAAA # D1 MOV
+		0 # D3 MOV
+		BEGIN
+			D1 A0 ) MOV
+			D1 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL
+		D3 [ S -] MOV
+NEXT	
+
+</code> </pre>
+<p>
+Can we set the memory sub system to 55555555.
+</p>
+<pre> <code>
+
+CODE (test_55)
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0x55555555 # D1 MOV
+		0 # D3 MOV
+		BEGIN
+			D1 A0 ) MOV
+			D1 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+		D3 [ S -] MOV
+NEXT
+
+: test_AA_55 ( --)
+	(test_AA)
+	IF ." AA test failed" CR THEN
+	(test_55)
+	IF ." 55 test failed" CR THEN
+;
+
+
+</code> </pre>
+<p>
+Can we set sdram to its address in ascending order
+</p>
+<pre> <code>
+
+CODE (addr+_test)
+
+		_#sdram0_base # A0 MOV
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			A0 A0 )+ MOV
+			4 # D0 SUB
+		EQ UNTIL
+		
+		_#sdram0_base _#sdram0_size 2 / + # A0 MOV
+		A0 D1 MOV  4 # D1 ADD
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			D1 A0 )+ MOV
+			4 # D1 ADD
+			4 # D0 SUB
+		EQ UNTIL
+		
+			
+		_#sdram0_base # A0 MOV
+		_#sdram0_size 2/  # D0 MOV
+
+		0 # D3 MOV
+		BEGIN
+			A0 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+
+		_#sdram0_base _#sdram0_size 2 / + # A0 MOV
+		A0 D1 MOV 4 # D1 ADD
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			D1 D3 ADD
+			A0 )+  D3 SUB
+			4 # D1 ADD
+			4 # D0 SUB
+		EQ UNTIL
+
+		D3 [ S -] MOV
+
+NEXT
+
+</code> </pre>
+<p>
+Can we set the sdram to its address in decending order
+</p>
+<pre> <code>
+
+CODE (addr-_test)
+
+		_#sdram0_base _#sdram0_size + # A0 MOV
+		_#sdram0_size # D0 MOV
+		BEGIN
+			4 # A0 SUB
+			A0 A0 ) MOV
+			4 # D0 SUB
+		EQ UNTIL	
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0 # D3 MOV
+		BEGIN
+			A0 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+
+		D3 [ S -] MOV
+NEXT
+
+: addr_test ( --)
+	(addr+_test)
+	IF ." write ascending addr failed" ABORT THEN
+	(addr-_test)
+	IF ." write descending addr failed" ABORT THEN
+;
+	
+</code> </pre>
+<p>
+I think we have to say the dynamic ram is ok. Set it to zero.
+</p>
+	<pre> <code>
+CODE clear_dram ( -- )
+
+	_#sdram0_base # A0 MOV
+	_#sdram0_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL	
+NEXT
+
+: Dram_test ( -- )
+	CR
+	dram_init
+	0&1_test_lw
+	87_test
+	65_test
+	43_test
+	21_test
+	enable_cache
+	test_AA_55
+	addr_test
+	clear_dram
+;
+

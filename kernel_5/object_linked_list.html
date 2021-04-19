@@ -1,0 +1,43 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<pre> <code>
+
+
+
+linked_object class
+
+	_create_double_listhead fred
+
+	m: ( --)
+	.S
+	fred BEGIN
+		@ DUP
+	WHILE
+		DUP \ addr addr(--
+		this :link>obj .S
+		:print
+	REPEAT
+	DROP
+	; method :list
+
+end_class new+test
+
+
+
+\ list_head all		
+\ all test NEW CONSTANT xx
+
+
+
+
+</code> </pre>
+</BODY>
+</HTML>

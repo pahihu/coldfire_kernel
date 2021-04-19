@@ -1,0 +1,1541 @@
+<html>
+<head>
+<title>init.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+</code> </pre>
+
+<p>
+Values written to dual port as we go through startup routine. When the initialisation
+has finished the location is set to 12345679.
+</p>
+	<pre> <code>
+        ram_variable %inital_sr
+
+	.S .( into init)
+	\ <a name="$add_message"></a>
+        \ should send a message to the log, coming
+	: $add_message ( addr --) DROP ;
+
+        CREATE kernel_input_files 0 t,
+
+	ram_variable %init_where
+	zero
+	DUP CONSTANT _#finished_chip_select    1+ \ 00
+	DUP CONSTANT _#finished_setup_timer    1+ \ 01
+	DUP CONSTANT _#finished_first_wait     1+ \ 02
+	DUP CONSTANT _#finished_precharge      1+ \ 03
+	DUP CONSTANT _#finished_refresh_wait   1+ \ 04
+	DUP CONSTANT _#finished_sram_init      1+ \ 05
+	DUP CONSTANT _#finished_zero_write0    1+ \ 06
+	DUP CONSTANT _#finished_zero_write1    1+ \ 07
+	DUP CONSTANT _#finished_one_write0     1+ \ 08
+	DUP CONSTANT _#finished_one_write1     1+ \ 09
+	DUP CONSTANT _#finished_byte_op0a      1+ \ 0A
+	DUP CONSTANT _#finished_byte_op0b      1+ \ 0B
+	DUP CONSTANT _#finished_byte_op0c      1+ \ 0C
+	DUP CONSTANT _#finished_byte_op0d      1+ \ 0D
+	DUP CONSTANT _#finished_byte_op1a      1+ \ 0E
+	DUP CONSTANT _#finished_byte_op1b      1+ \ 0F
+	DUP CONSTANT _#finished_byte_op1c      1+ \ 10
+	DUP CONSTANT _#finished_byte_op1d      1+ \ 11
+	DUP CONSTANT _#finished_AAAAAAAA_0     1+ \ 12
+	DUP CONSTANT _#finished_AAAAAAAA_1     1+ \ 13
+	DUP CONSTANT _#finished_55555555_0     1+ \ 14
+	DUP CONSTANT _#finished_55555555_1     1+ \ 15
+	DUP CONSTANT _#finished_up_address_0   1+ \ 16
+	DUP CONSTANT _#finished_up_address_1   1+ \ 17
+	DUP CONSTANT _#finished_down_address_0 1+ \ 18
+	DUP CONSTANT _#finished_down_address_1 1+ \ 19
+	DUP CONSTANT _#finished_set_zero       1+ \ 1A
+	DUP CONSTANT _#finished_copied_boot    1+ \ 1B
+	DUP CONSTANT _#finished_in_start_up    1+ \ 1C
+	DUP CONSTANT _#finished_int_setup      1+ \ 1D
+	DUP CONSTANT _#finished_timer_setup    1+ \ 1E
+	DUP CONSTANT _#finished_rambar_setup   1+ \ 1F
+	DUP CONSTANT _#finished_ram_init       1+ \ 20
+	DUP CONSTANT _#finished_dummies        1+ \ 21
+	DUP CONSTANT _#finished_in_start       1+ \ 22
+	DROP
+	$30
+	DUP CONSTANT _#finished_dual_init      1+  \ 30
+	DUP CONSTANT _#finished_static_init    1+
+	DUP CONSTANT _#finished_fast_init      1+
+	DUP CONSTANT _#finished_m68init        1+
+	DUP CONSTANT _#finished_first_string   1+
+	DUP CONSTANT _#finished_dual_port_init 1+
+	DUP CONSTANT _#finished_/vectors       1+
+	DUP CONSTANT _#finished_pu_create      1+
+	DUP CONSTANT _#finished_dict_init      1+
+	DUP CONSTANT _#finished_op_set_user    1+
+	DUP CONSTANT _#finished_open_tty       1+
+	DUP CONSTANT _#finished_terminal_driver 1+ \ 3B
+	DUP CONSTANT _#finished_cursor_send    1+
+	DUP CONSTANT _#finished_spare     1+
+	DUP CONSTANT _#finished_buffers_init   1+
+	DUP CONSTANT _#finished_kernel_check   1+
+	DUP CONSTANT _#finished_remote_init    1+  \ 40
+	DUP CONSTANT _#finished_pipe_init      1+
+	DUP CONSTANT _#finished_spipe_init     1+
+	DUP CONSTANT _#finished_mpipe_init     1+
+	DUP CONSTANT _#finished_buffer_reclaim 1+
+	DUP CONSTANT _#finished_disk_serve     1+
+	DUP CONSTANT _#finished_watch_task     1+
+	DUP CONSTANT _#finished_master_init    1+
+	DUP CONSTANT _#finished_slave_init     1+  \ 48
+	DUP CONSTANT _#finished_.free          1+
+	DROP
+
+	$80
+	DUP CONSTANT _#sram_0_init_error       1+  \ 80		\ synch static ram
+	DUP CONSTANT _#sram_addr_error         1+  \ 81
+	DUP CONSTANT _#sram_55_error           1+  \ 82
+	DUP CONSTANT _#sram_AA_error           1+  \ 83
+	DUP CONSTANT _#sram_FF_error           1+  \ 84
+	DUP CONSTANT _#dpram_0_init_error      1+  \ 85		\ s1 s2 dual port ram
+	DUP CONSTANT _#dpram_addr_error        1+  \ 86
+	DUP CONSTANT _#dpram_55_error          1+  \ 87
+	DUP CONSTANT _#dpram_AA_error          1+  \ 88
+	DUP CONSTANT _#dpram_FF_error          1+  \ 89
+
+	DROP
+
+\ fail strings; we copy into dual port memeory before test;
+\ if we fail it never gets over written.
+CREATE _$chip_select      ," chip selects done"
+CREATE _$0w0       ," write/read zero to dram 0 long word failed"
+CREATE _$0w1       ," write/read zero to dram 1 long word failed"
+CREATE _$1w0       ," write/read one to dram 0 long word failed"
+CREATE _$1w1       ," write/read one to dram 1 long word failed"
+CREATE _$0a       ," write/read dram 0 byte 0 ( bits 31->24 = $87) failed"
+CREATE _$0b       ," write/read dram 0 byte 1 ( bits 23-> 16 = $65) failed"
+CREATE _$0c       ," write/read dram 0 byte 2 ( bits 15->8 = $43) failed"
+CREATE _$0d       ," write/read dram 0 byte 3 ( bits 7->0 = $21) failed"
+CREATE _$1a       ," write/read dram 1 byte 0 ( bits 31->24 = $87) failed"
+CREATE _$1b       ," write/read dram 1 byte 1 ( bits 23-> 16 = $65) failed"
+CREATE _$1c       ," write/read dram 1 byte 2 ( bits 15->8 = $45) failed"
+CREATE _$1d       ," write/read dram 1 byte 3 ( bits 7->0 = $21) failed"
+CREATE _$0AA      ," write/read all dram 0 $AAAAAAAA failed"
+CREATE _$1AA      ," write/read all dram 1 $AAAAAAAA failed"
+CREATE _$055      ," write/read all dram 0 $55555555 failed"
+CREATE _$155      ," write/read all dram 0 $55555555 failed"
+CREATE _$0up      ," dram 0 failed to write address as data in up direction"
+CREATE _$1up      ," dram 1 failed to write address as data in up direction"
+CREATE _$0down    ," dram 0 failed to write address as data in down direction"
+CREATE _$1down    ," dram 1 failed to write address as data in down direction"
+
+
+#5474 [IF] 		\ allocate space for supervisor stack
+
+          0x0400 CONSTANT #kstack_length
+          ram_create _#kernal_stack #kstack_length ram_allot
+[THEN]
+
+.S .( before switch_error?)
+
+#BCM550h #BCM550j + [IF]
+
+
+
+	: switch_error? ( -- flag)
+		_breg_SST0 C@ _#restart_method_bits AND not
+	;
+
+	: switch_cold? ( -- flag)
+		_breg_SST0 C@ _#restart_method_bits AND _#cold_restart =
+		switch_error? OR
+	;
+
+	: switch_normal?
+		_breg_SST0 C@ _#restart_method_bits AND _#normal_restart =
+	;
+
+	: switch_warm?
+		_breg_SST0 C@ _#restart_method_bits AND _#warm_restart =
+	;
+
+[THEN]
+
+#BVP5552 #BVP5551 +  [IF]
+	: switch_error? ( -- flag)
+		_wreg_PADAT W@ _#restart_method_bits AND not
+	;
+
+	\ No script; but we do memory test
+	: switch_cold? ( -- flag)
+		_wreg_PADAT W@ _#restart_method_bits AND _#cold_restart =
+	;
+	 
+	\ we load flash/normal.html
+	: switch_normal?
+		_wreg_PADAT W@ _#restart_method_bits AND _#normal_restart =
+	;
+
+	\ we load flash/warm.html
+	: switch_warm?
+		_wreg_PADAT W@ _#restart_method_bits AND _#warm_restart =
+	;
+
+[THEN]
+
+#BVP6551 #BVP6552 + #ECM160 + [IF]
+
+	: switch_error? ( -- flag)
+		_#breg_switch C@ _#restart_method_bits AND not
+	;
+
+	\ No script; but we do memory test
+	: switch_cold? ( -- flag)
+		_#breg_switch C@ _#restart_method_bits AND _#cold_restart =
+	;
+
+	\ we load flash/normal.html
+	: switch_normal?
+		_#breg_switch C@ _#restart_method_bits AND _#normal_restart =
+	;
+
+	\ we load flash/warm.html
+	: switch_warm?
+		_#breg_switch C@ _#restart_method_bits AND _#warm_restart =
+	;
+
+
+
+[THEN]
+
+.S .( before check_kernal)
+
+	\ True all is OK
+	\ If it is wrong all we can do is report an error and hope
+	\ things are good enough to run.
+	: check_kernel ( -- flag)
+		\ Make sure count is valid
+		[  _prom_kernel_count ]T LITERAL @ \ addr number(--
+		[  _prom_kernel_size ]T LITERAL U> IF
+			FALSE
+			EXIT
+		THEN
+
+		\ Recalculate the checksum and compare with value saved
+		\ when prom was created.
+		[ _prom_kernel_start ]T LITERAL 
+		[  _prom_kernel_count ]T LITERAL @ \ addr number(--
+		checksum
+		[ _prom_kernel_checksum ]T LITERAL @ =
+	;
+
+
+     \ True all is OK
+	 \ If it is wrong all we can do is report an error and hope
+	 \ things are good enough to run.
+	: check_kernel_dictionary ( -- flag)
+
+		\ Make sure count is valid
+		[  _prom_dictionary_count ]T LITERAL @ \ addr number(--
+		[  _#dictionary_image_size 8 - ]T LITERAL U> IF
+			FALSE
+			EXIT
+		THEN
+
+		\ Recalculate the checksum and compare with value saved
+		\ when prom was created.
+		[ _prom_dictionary_image_start 8+ ]T LITERAL 
+		[  _prom_dictionary_count ]T LITERAL @ \ addr number(--
+		checksum
+    	[ _prom_dictionary_checksum ]T LITERAL @ =
+   
+    ;
+  
+	
+
+	</code> </pre>
+<h4>Restore application from flash</h4>
+<p>
+Only word call externally from this section is flash>dictionary.
+</p>
+	<pre> <code>
+
+
+	| : _sign_on ( character --)
+                enable_interrupt_traps
+                _unlock_word
+		EMIT
+	\	PAGE
+		." Version: "
+		.version
+		CR send
+	;
+
+.S .( before _init_dictionary)
+
+	| : _init_dictionary ( --)
+		[ _prom_dictionary_image_start ]T LITERAL
+		[ _#dictionary_start ]T LITERAL
+		_('dictionary_remember) @ 
+		OVER - MOVE
+	;
+	</code> </pre>
+<p>
+While all other tasks can use free_buffers and other areas for there stacks
+and user area. The operator task must use predefined areas.
+The operator task is used to set up the resources needed to run the free 
+buffer sytem.
+</p>
+	<pre> <code>
+.S .( before _operator_set_user)
+	| : _operator_set_user ( task_table-- )
+		>R
+		_(ubase) @ Umax 
+		ERASE                             \ (--
+
+		R@ _#task_table_level + W@ CELLS _xheads 
+		+ @                      \ level_base(--
+		#activation_task_link  +                            \ link(--
+		DUP @  ( following task)
+		                             \ link (link)(--
+
+		R@ _#task_table_activation + @ #activation_task_link + !
+		\ activate area in dual port memory
+		_(ubase) @ R@ _#task_table_activation + @ #activation_task> + !
+
+		R@ _#task_table_activation + @ _(ubase) @ 
+		[ _activation> user_base - ]T LITERAL + !
+
+		4E42 R@ _#task_table_activation + @ #activation_trap + W!
+
+		sleep R@ _#task_table_activation + @ #activation_status + W!
+
+
+		R@ _#task_table_activation + @ SWAP ! ( In task loop asleep)          \ (--
+
+
+		TRUE _error_pos? W! 
+
+		\ dictionary
+		_(hremember) @  _'h_task !
+		\ point the h pointer to task dictionary. A pointer is
+		\ required because the dictionary can be temporary
+		_'h_task  _'h> !
+		\ top
+		_(htop) @  _'h_task_top  !
+		_'h_task_top  _'h_top> !
+		
+		\ ram
+		_(rremember)  @  'ram !
+		_(ram_top)  @ _'ram_top !
+		
+		\ fast memory	
+		_(fast_remember)  @  'fast  !
+		_(fast_top) @ _'fast_top !
+	
+		\ dual port memory
+		_(port_remember) @ 'port !
+		_(port_top) @ _'port_top !
+
+[ #BVP5552 #BVP5551 + [IF] ]T
+		\ static memory
+		_(static_remember) @ 'static !
+		_(static_top) @ _'static_top !
+
+
+[ [THEN] ]T
+
+[ #BVP5552 #BVP6552 + [IF] ]T
+		\ bank memory
+		_(bank_remember) @ 'bank !
+		_(bank_top) @ _'bank_top !
+[ [THEN] ]T
+
+
+		\ user area
+		_(uremember) @ 'user !
+		_(utop)  @ _'user_top !
+
+		\ This occures because the return stack is under the user area.
+		_(ubase) @  _%return_stack_end !
+
+
+		panic" set up stack memory areas " panic_cr 
+		\ set up stack memory areas
+		\ The end address only is set if the stacks were not
+		\ created from free buffers
+		_(s0) @   _%data_stack_end  !
+
+		panic" the task name to the user area" panic_cr 
+
+		\ the task name to the user area
+		R@ _#task_table_name + @ name_count _#name_count_bits AND   
+		_%task_name_count !
+		_%task_name>  !
+
+		\ Copy task level to user area
+		panic" copy task level to user " panic_cr 
+
+		R@ _#task_table_level + W@ _%task_level !
+
+		['] task_abort  'abort    !
+		
+		R@   _%task_table             !
+
+		0A   BASE                   !
+		
+		['] .system_name   'HEADING    !
+		
+		['] ?CREATE         'create     !
+
+                mixed_word
+
+\		_#initial_q_base %q_base !
+		_#initial_q_digits %fractional_digits !		
+		\ The root wordlist for this task
+		~root  _task_root_wordlist      !
+
+		r>drop 
+	;
+
+
+.S .( before _port_init)
+
+#BCM550j #BVP5551 + #BVP5552 + #BVP6551 + #BVP6552 + #ECM160 + [IF]
+	\ initialise the dual port area
+	: _port_init ( --)
+		_#RTI1000_dual_port_base _#RTI1000_dual_port_size ERASE
+		_#RTI1000_dual_port_base %port_offset !
+		\ pointer to table of port_pipe control block pointers.
+		%port_tube_control>  %port_pbase !
+		wake %port_wake W!
+	;
+
+[THEN]
+
+\ The fpga and dual port memory needs to be initialized by stage2 before stage1 starts.
+#BVP6551 [IF]
+
+        | : Wait_fpga_ready ( -- )
+                BEGIN
+                        _#Version_Register @
+                        zero $0FF WITHIN
+                UNTIL
+        ;
+
+        | : Wait_dual_port_ready ( -- )
+                BEGIN
+                        %port_running @         \ set to 12345678 by CPU2.
+                        #start_code =
+                UNTIL
+        ;
+
+[THEN]
+
+	| : !init_where ( code --)
+		%port_init_where !
+	;
+
+#BVP5551 #BVP5552 + [IF]
+	: _static_init ( --)
+			_%static_clear_start
+			[ _#static_mem_size
+			_%static_clear_start _static_ram_base - - ]T LITERAL
+			ERASE
+	;
+[THEN]
+
+
+	: _fast_init ( --)
+			_%fast_clear_start
+			[ _#rambar_size
+			_%fast_clear_start _#rambar_base - - ]T LITERAL
+			ERASE
+	;
+
+
+#5407 [IF]
+
+\ we have two data cache registers so we can now cache the static ram if present.
+\ static takes less than 2/3 of the time.
+
+CODE (set_data_cachable)
+	_#acr0_address_mask
+	_#acr0_address_base +
+	_#acr0_enable +
+	_#acr0_SFIELD +
+	_#acr0_CM_cached  + # D0 MOV
+	D0 ACR0 MOV
+
+#BVP5551 #BVP5552 + [IF]
+	_#acr1_address_mask
+	_#acr1_address_base +
+	_#acr1_enable +
+	_#acr1_SFIELD +
+	_#acr1_CM_cached  + # D0 MOV
+	D0 ACR1 MOV
+[THEN]
+	NOP
+NEXT
+
+
+: set_data_cachable
+	['] (set_data_cachable)
+	super_execute
+;
+[THEN]
+
+#BVP6551 #BVP6552 + #ECM160 + [IF]
+
+CODE (enable_caches) ( -- )
+
+	_#acr0_address_mask		\ data cache
+	_#acr0_address_base +
+	_#acr0_enable +
+	_#acr0_SFIELD +
+	_#acr0_CM_cached  + # D0 MOV
+	D0 ACR0 MOV
+
+	_#acr2_address_mask 		\ instruction cache
+	_#acr2_address_base +
+	_#acr2_enable +
+	_#acr2_SFIELD +
+	_#acr2_AMM  +   		\ allow less than 16 Meg masking.
+	_#acr2_CM_cached  + # D0 MOV
+	D0 ACR2 MOV
+
+	_#cacr_DEC      \ Data enable cache
+	_#cacr_DESB  +   \ enable store buffer
+	_#cacr_DDPI +   \ Disable data CPUSHL invalidate. This is what we want. We have to
+	                \ clear the data cache when compiling we want it to run
+	                \  as quickly as possible.
+	_#cacr_IEC +   	\ enable instruction cache
+	_#cacr_BEC  +   \ branch cache enable
+    	_#cacr_DCM  +   \ Data cache mode outside ACR's; non cachable precise
+	\ _#cacr_DF   +	\ disable fpu.
+        _#cacr_IDCM +	\ inhibit cache outside ACR's
+	    # D0 MOV
+	D0 CACR MOV
+NEXT
+
+
+: enable_caches ( --)
+	['] (enable_caches) super_execute
+;
+
+CODE (invalidate_ins_cache) ( --)
+
+        _#cacr_DCINVA 			\ invalid data, branch and instruction caches.
+        _#cacr_ICINVA +
+        _#cacr_BCINVA +
+  	# D0 MOV
+        D0 CACR MOV
+NEXT
+
+: invalidate_ins_cache ( -- )
+	['] (invalidate_ins_cache) super_execute
+;
+
+CODE (ints_status) ( -- n1 n2 n3 n4 )
+	_lreg_IPR_h # A0 MOV
+        A0 )+ D0 MOV		\ int pending high
+        D0 S -) MOV
+        A0 )+ D0 MOV		\ int pending low
+        D0 S -) MOV
+        A0 )+ D0 MOV		\ int mask high
+        D0 S -) MOV
+        A0 ) D0 MOV		\ int mask low
+        D0 S -) MOV
+        0x0C # A0 ADD
+        A0 ) D0 MOV
+        D0 S -) MOV		\ IRQ level, and IACK and priority.
+NEXT
+
+: .int_status ( -- )
+	CR
+	['] (ints_status) super_execute
+ 	." int IRQ & IACK - " .h CR
+ 	SWAP ." int mask [63..0] - " .h SPACE .h CR
+	SWAP ." ints pending [63..0] - " .h SPACE .h CR
+;
+
+: .panic_int_status ( -- )
+	panic_cr
+	['] (ints_status) super_execute
+ 	panic" int IRQ & IACK - " .panic panic_cr
+ 	SWAP panic" int mask [63..0] - " .panic .panic panic_cr
+	SWAP panic" ints pending [63..0] - " .panic .panic panic_cr
+;
+
+: iii
+	['] (invalidate_ins_cache) super_execute
+;
+
+: m68_init
+	['] _m68init super_execute
+;
+
+
+: (comms_init) ( -- )
+
+	$0100 	_#m68a_base _#pcs_r_fcr + W!
+	$0 	_#m68a_base _#pcs_r_far + W!
+
+	$0100 	_#m68a_base _#pcs_t_fcr + W!
+	$0 	_#m68a_base _#pcs_t_far + W!
+;
+
+: comms_init
+	['] (comms_init) super_execute
+;
+
+[THEN]
+
+
+.S .( after set_data_cachable )
+
+	target_also
+	&tasks
+	??HEX
+	ram_variable %load_result
+
+
+
+: START
+		_#finished_in_start  !init_where
+
+\ #### This is probable required for BVP
+[ #BCM550h #BCM550j + [IF] ]T
+
+		\ enable fpga flip flops.
+		_breg_SS0 C@
+		_#SS0_enable_logic  OR
+		_breg_SS0 C!
+[ [THEN] ]T
+
+[ #BCM550h #BCM550j + [IF] ]T
+		\ enable bus error
+		_breg_SS0 C@
+		_#SS0_enable_bus_error OR
+		_breg_SS0 C!
+[ [THEN] ]T
+
+[ #BVP6551 [IF] ]T
+		panic" wait for fpga and cpu2 to initialize"
+		Wait_fpga_ready
+	 	Wait_dual_port_ready
+[ [THEN] ]T
+
+[ #BCM550h #BCM550j + #BVP5551 + #BVP5552 + #BVP6551 + #BVP6552 + #ECM160 + [IF] ]T
+		_port_init
+		_#finished_dual_init !init_where
+[ [THEN] ]T
+
+[ #BVP5552 #BVP5551 + [IF] ]T
+		_static_init
+		_#finished_static_init !init_where
+
+[ [THEN] ]T
+
+		_fast_init
+		_#finished_fast_init !init_where
+
+
+		\ after this word is executed panic will work
+[ #BCM550h #BCM550j +  #BVP5552 + #BVP5551 + [IF] ]T
+		_m68init
+[ [THEN] ]T
+
+		_#finished_m68init !init_where
+
+		panic_cr
+
+		panic" Serial started" panic_cr
+		_#finished_first_string !init_where
+
+		\ This tries to enable interrupts but fails because
+		\ /VECTORS has not been executed and the traps still
+		\ point to RTE instructions.
+		\ The sooner we init the free buffers the sooner we can use them
+
+		[ _#heap_start ]T LITERAL
+		[ _#heap_end _#heap_start - ]T LITERAL
+
+                _init_buffers
+		panic" We have free buffers" panic_cr
+
+		panic" Heap start         : " [ _#heap_start ]T LITERAL .panic panic_cr
+		panic" Heap end           : " [ _#heap_end   ]T LITERAL .panic panic_cr
+		panic" Operator status    : " user_base .panic panic_cr
+		panic" Operator activation: " operator_activation .panic panic_cr
+		panic" Interrupt vectors  : " _interrupt_vectors .panic panic_cr
+		panic" base tasks         : " base-tasks .panic panic_cr
+		panic" end base tasks     : " base-tasks  [ end.tsk tsk0 - ]T LITERAL + .panic panic_cr
+		_random_init
+
+
+		_#finished_dual_port_init !init_where
+
+		\ don't restart multitasker for a time
+		014 XAGAIN !
+		\ We are initalizing from the OPERATOR task it is on the
+		\ lowest level so set up the multitasker accordingly.
+		#clock_low _xlevel !
+		#clock_low _xlevel_next !
+		\ When you start starting at zero is a good place to set time.
+		zero xclock+ !
+		-1   xclock- ! ( init the clock int counters)
+		TSK-CODE base-tasks [ end.tsk tsk0 - ]T LITERAL  CMOVE
+		#clock_low _xlevel ! ( set level to value correct for OPERATOR)
+
+		/VECTORS
+		_#finished_/vectors  !init_where
+		panic" Finished Vectors" panic_cr
+		_#finished_pu_create !init_where
+		_init_dictionary
+		_#finished_dict_init !init_where
+
+		\ $(--
+		OPERATOR @ _operator_set_user
+		_#finished_op_set_user !init_where
+
+		[ #5407 [IF] ]T
+		\ now that the traps are written to memeory
+		\ we can enable the data cache.
+		set_data_cachable
+		[ [THEN] ]T
+
+[ #BCM550h #BCM550j + #BVP6551 + #BVP6552 + #ECM160 + [IF] ]T
+		$" ty0"
+[ [THEN] ]T
+
+[ #BVP5552 #BVP5551 + [IF] ]T
+		$" ty1"
+[ [THEN] ]T
+		panic" About to open tty" panic_cr
+		R/W $open
+		_#finished_open_tty !init_where
+
+		panic" Done tty open" panic_cr
+
+		DUP 'output_file !
+		DUP 'input_file !
+		DUP 'abort_file !
+		DROP
+		\ this has to be installed for the multitasker to work
+            	idle_task  taskin
+  		\ at this point the multitask has to be working
+    		\ this enables interrupt level changing, software traps installed.
+		[CHAR] 1 _sign_on
+[ #BVP6551 #BVP6552 + #ECM160 + [IF] ]T
+   		comms_init		\ ##temp - has to be after enable_interrupt_traps i.e _sign_on
+[ [THEN] ]T
+		ws60
+  		_#finished_terminal_driver !init_where
+		cursor
+		_#finished_cursor_send !init_where
+ [ #BVP6551 #BVP6552 + #ECM160 + [IF] ]T
+ 		enable_caches
+ [ [THEN] ]T
+ [ #BVP6552  [IF] ]T
+		vga_clear
+		#vga_dark_blue #vga_white #10 #40 #200 #450 $" vga" TRUE $open
+		DUP 'output_file !
+		." Stage 2" CR send
+		%panic_output !
+ [ [THEN] ]T
+ [ #BVP6551  [IF] ]T
+		#vga_dark_green #vga_white #220 #80 #200 #450 $" vga" TRUE $open
+		DUP 'output_file !
+		." Stage 1" CR send
+		%panic_output !
+ [ [THEN] ]T
+
+		\ set up the dma controllers
+		\ ##temp
+                \ _dma_init
+    	        queue_list_init
+                ." queue list init" CR send
+\ not working
+\		MESSAGE_PU_INIT
+
+		check_kernel not IF
+			$" ?< KERNEL CHECKSUM ERROR, BAD CPU >?"
+			$add_message
+		THEN
+
+		check_kernel_dictionary not IF
+			$" ?< KERNEL DICTIONARY ERROR, BAD CPU >?
+		THEN
+		_#finished_kernel_check !init_where
+
+		['] QUIT 'abort !
+
+[ #BCM550h #BCM550j + [IF] ]T
+		remote_init
+[ [THEN] ]T
+		_#finished_remote_init !init_where
+
+                \ You need to have the bus enable to detect the cards
+                \ Services are going to have to be written so they don't use %cards
+
+[ #BCM550j [IF] ]T
+		\ service to old rti cards
+		rti_disk_serve taskin
+[ [THEN] ]T
+
+[ #rti1000_master [IF] ]T
+                bus_enable 			\ Start up rtibus
+		?cards   ( exceptions used) 	\ for cards that can't report the id with bus disable.
+[ [THEN] ]T
+
+                \ background task used to rejoin buffers
+		buffer_reclaim taskin
+
+                \ backgrounbd task used to write date to flash
+                flash_write taskin
+
+
+[ #BVP5552 #BVP6552 + [IF] ]T
+		\ disk services via dual port memory.
+		bank_disk_serve taskin
+[ [THEN] ]T
+		_#finished_buffer_reclaim !init_where
+
+[ #BCM550h #BCM550j + [IF] ]T
+		\ provide disk service to racks
+		\ rti_ibm_serve taskin
+		_#finished_disk_serve !init_where
+[ [THEN] ]T
+
+		(assembler>dict) @execute
+		init_assembler
+
+[ #tcp/ip_included [IF] ]T
+                \ set default host name. It is expected that an init file will override this.
+                S" rack" Slocalhost
+		_#finished_slave_init !init_where
+
+		\ *******  get tcp/ip started ******* \
+
+		\ local interface object all packets destined for local machine
+		interface_local heap_object DROP
+		\ do what a interface has to do and send it to interface local
+		interface_loopback heap_object DROP
+
+		\ proto queue to udp_demux
+		tcp_protocol    heap_object _%tcp_object !
+		udp_protocol    heap_object _%udp_object !
+		icmp_protocol   heap_object _%icmp_object !
+
+		\ first is last run
+		tcp_transmit    taskin
+		proto_demux     taskin
+		route_ip        taskin
+
+		\ this is needed for nfs
+
+		\ seed values for random number generation
+		random %xid !
+ 		\ low level task
+		udp_echo_serv  taskin
+		ip_timeout    taskin
+[ [THEN] ]T
+
+                kernel_input_files @ @ %input_files !
+                [']  _save_input$ (save_input$) !
+                ['] _restore_input$ (restore_input$) !
+
+
+		\ task destruction needed for tcp servers
+		kill_task taskin
+
+		\ application load expects DECIMAL
+		\ and FORTH
+		ONLY
+		FORTH DEFINITIONS
+		DECIMAL
+[ #BCM550h #BCM550j + [IF] ]T
+		\ have to get internet going before the app loads
+		\ the ethernet interface
+                panic" Make nice interface object" panic_cr
+		nice_interface heap_object DROP
+
+		\ The defaults allow us to communicate over the nice network. There is no default
+		\ gateway, that has to be set in routing.html
+
+		\ Datagrams destined for local machine; have to go to the local interface
+		\ we extract the address from the nice_object so it only has to be set in one
+		\ file; nice_setup.html.
+                panic" set nice ip" panic_cr
+		%nice_object @ :ip @   \ ip
+		$FFFFFFFF              \ mask
+		$00000000 $00000000 $00000000 %local_object @ static_route
+
+		\ Datagrams broadcast to the local network go to the :broadcast method. This will see
+		\ if the datagram came in on the network, if so it is sent to the local interface, if
+		\ not it is sent out onto thte wire.
+
+		\ set the host portion to all one's
+		%nice_object @ :ip @
+		%nice_object @ :@netmask -1 XOR OR  \ ip
+		$FFFFFFFF                    \ mask
+		$00000000 $00000000 $00000000 %nice_object @ broadcast_route
+
+		\ Datagrams destined to the local network have to go to the network. There is no gateway
+		\ involved.
+
+		\ The following entry will be found after the above two because the mask is less
+		\ specific.
+		%nice_object @ :ip @ %nice_object @ :@netmask AND  \ ip, set the host portion to zero
+		%nice_object @ :@netmask                           \ mask
+		$00000000 $00000002 $00000000 %nice_object @   static_route
+
+		\ Now the extreme low level stuff. The system uses the routing table for all datagram routing.
+		\ There has to be entries for local loopback.
+		127.000.000.000 $FF000000 $00000000 $00000000 $00000000 %loopback_object @ static_route
+		255.255.255.255 $FFFFFFFF $00000000 $00000000 $00000000 %loopback_object @ broadcast_route
+
+                panic" Load routing file" panic_cr
+
+		$" flash/init/routing.html" ['] $include CATCH IF
+			panic" failed to load flash/init/routing.html"
+			DROP
+		THEN
+
+[ [THEN] ]T
+		$" flash" $swd
+		switch_error? IF
+			$" Mode switch is faulty not loading an application."
+			DUP $type %load_result !
+		ELSE
+			\ load application files if required.
+			\ A remote load can be done from any machine so we need
+			\ a local file to tell us where
+			switch_warm? IF
+				$" flash/warm.html"
+			THEN
+			\ It is expected this file will mount the required file system
+			switch_normal? IF
+				$" flash/normal.html"
+			THEN
+                  switch_cold? not IF
+				CR
+				." loading: " DUP $type
+				['] $include CATCH %load_result !
+                  THEN
+		THEN
+		\ print abort message our on terminal device
+		%load_result @ IF
+			%load_result @  $add_message
+			CR
+			." Application load aborted, message is: " %load_result @ $type
+		THEN
+
+		\ Close the terminal and swap to a tube.
+		\ open the tube with the terminal in place
+		\ just in case something goes wrong.
+		\ $error(--
+
+	[ #BCM550h #BCM550j + #BVP5551 + #BVP5552 + #BVP6551 + #BVP6552 + #ECM160 + [IF] ]T
+		$" port_tube/$1F" R/W $open
+
+		\ ##debug
+		\ %port_tube_control> $1F CELLS + @ DUP .h
+		\ $20 DUMP
+
+	[ [THEN] ]T
+
+        \ driver(--
+
+	\ a little info
+	.free
+ 	_#finished_.free !init_where
+	." about to close tyx " send
+	'abort_file @ close
+
+
+	[ #BVP6551 #BVP6552 + [IF] ]T
+ 		#vga_error_red %panic_output @ :foreground
+	[ [THEN] ]T
+
+	DUP 'output_file !
+	DUP 'input_file !
+	DUP 'abort_file !
+	DUP %operator_tube !
+
+	\ set things up so abort message stays for user
+	\ viewing.
+	%load_result @ IF
+		DUP :always_send
+	THEN
+	DROP
+
+	\ local task
+	['] prompt 'local !
+	local taskin
+	page_hold
+[ #tcp/ip_included [IF] ]T
+		\ setup clock from network, will not work if gateway
+		\ is a NT box. NT is a little bit pathetic when it comes to IP
+		\ support.
+		init_ticks
+
+		\ start the servers
+		telnet_server taskin
+
+                [ #html_server [IF] ]T
+                        html_server taskin
+                [ [THEN] ]T
+[ [THEN] ]T
+
+[ #BVP6552 [IF] ]T
+                #start_code _#bank_mem_start !           \ CPU1 can now start
+                #enable_IRQ5 _breg_EPIER C!		\ enable int5 from CPU1.
+[ [THEN] ]T
+
+ 		\ watchdog
+   		\ ##temp
+		\ start_watchdog
+ 		\ watch_task taskin
+
+            \ do bye stuff just in case we abort below
+		zero SET-ORDER
+		ALSO &COMMANDS
+		DECIMAL
+		TRUE seal W!
+                ." about to test load result" CR send
+ 		%load_result @ $ABORT
+                ." about to bye" CR send
+    		bye
+	;
+
+    target_previous
+
+
+    ( Unserviced interrupt routines) HEX
+    port_variable %icounts
+    LABEL  IRET
+		1 # %icounts AB ADD
+		_system_rte AB JMP
+
+
+    ( following executed on a restart to load the vector table)
+    LABEL DUMMIES
+    	_interrupt_vectors # A0 MOV
+		0FF  # D0 MOV
+		BEGIN
+    		IRET # A0 )+ MOV
+		1 # D0 SUB
+		CS UNTIL
+	RTS
+
+
+
+	LABEL clear_bvp560_ram
+		RMEM4 # A0 MOV
+		RMEM5 RMEM4 - 4 - # D0 MOV
+		BEGIN
+			0 # A0 )+ MOV
+			4 # D0 SUB
+		EQ UNTIL
+	RTS
+
+
+	LABEL clear_bvp560_heap
+		_#heap_start # A0 MOV
+		_#heap_end _#heap_start - 4 - # D0 MOV
+		BEGIN
+			0 # A0 )+ MOV
+			4 # D0 SUB
+		EQ UNTIL
+	RTS
+
+
+
+LABEL _start_up assembler   		\ *********************start here**************************
+
+	_#finished_in_start_up # D0 MOV
+	D0 %port_init_where AB MOV
+
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+ 	$2700 # SR W. MOV		\ disable ints
+
+        zero # D0 MOV 			\ kill cache
+        D0 ACR0 MOV
+        D0 ACR1 MOV
+        D0 ACR2 MOV
+        D0 ACR3 MOV
+
+        _#cacr_DCINVA 			\ invalid data, branch and instruction caches.
+        _#cacr_ICINVA +
+        _#cacr_BCINVA +
+  	# D0 MOV
+        D0 CACR MOV
+
+        zero # D0 MOV
+        D0 %port_running AB MOV    	\ cpu1 waits for cpu2 to initialise
+[THEN]
+
+	( set up vector base register)
+    	_interrupt_vectors # D0 MOV
+    	D0 VBR MOV
+
+#BCM550h #BCM550j + [IF]
+		_#imr_DMA3
+		_#imr_DMA2    +
+\		_#imr_DMA1    +
+		_#imr_DMA0    +
+\		_#imr_UART2   +
+\		_#imr_UART1   +
+		_#imr_MBUS    +
+		_#imr_TIMER2  +
+\		_#imr_TIMER1  +
+		_#imr_SWT     +
+\		_#imr_EINT7   +  \ buss error
+		_#imr_EINT6   +
+\		_#imr_EINT5   +  \ rti buss
+		_#imr_EINT4   +
+		_#imr_EINT3   +
+		_#imr_EINT2   +
+\		_#imr_EINT1   +  \ ethernet
+		# D0 MOV
+	D0 _lreg_IMR AB MOV
+[THEN]
+
+#BVP5552 #BVP5551 + [IF]
+
+\ commented out means it the interrupt is used
+
+		_#imr_DMA3
+		_#imr_DMA2    +
+		_#imr_DMA1    +
+		_#imr_DMA0    +
+\		_#imr_UART2   +  \ serial port.
+		_#imr_UART1   +
+		_#imr_MBUS    +
+		_#imr_TIMER2  +
+\		_#imr_TIMER1  +  ( real time clock)
+		_#imr_SWT     +
+		_#imr_EINT7   +
+		_#imr_EINT6   +
+		_#imr_EINT5   +
+		_#imr_EINT4   +
+\		_#imr_EINT3   +   \ bvp555 bank ints
+		_#imr_EINT2   +
+		_#imr_EINT1   +
+		# D0 MOV
+	D0 _lreg_IMR AB MOV
+[THEN]
+
+#BVP6552  [IF]
+
+	#No_interrupts
+        #No_global_mask XOR		\ bit 0 if set forces all to one.
+        _#imr_EINT6 	XOR		\ from rti
+        _#imr_EINT5 	XOR		\ from CPU1
+        # D0 MOV
+        D0 _lreg_IMR_l AB MOV
+
+ 	#No_interrupts
+        _#imr_PSC0	XOR		\ serial port
+   	_#imr_SLT0	XOR		\ real time clock
+	# D0 MOV
+	D0 _lreg_IMR_h AB MOV
+
+[THEN]
+
+#BVP6551 [IF]
+
+	#No_interrupts
+        #No_global_mask XOR 		\ bit 0 if set forces all to one.
+        \ _#imr_EINT1 	XOR
+        _#imr_EINT5 	XOR		\ from CPU2
+        # D0 MOV
+        D0 _lreg_IMR_l AB MOV
+
+ 	#No_interrupts
+  	_#imr_PSC0	XOR		\ serial port
+        _#imr_SLT0	XOR		\ real time clock
+	# D0 MOV
+	D0 _lreg_IMR_h AB MOV
+[THEN]
+
+#ECM160  [IF]
+
+	#No_interrupts
+        #No_global_mask XOR		\ bit 0 if set forces all to one.
+\        _#imr_EINT6 	XOR		\ from rti
+\        _#imr_EINT5 	XOR		\ from CPU1
+        # D0 MOV
+        D0 _lreg_IMR_l AB MOV
+
+ 	#No_interrupts
+        _#imr_PSC0	XOR		\ serial port
+   	_#imr_SLT0	XOR		\ real time clock
+	# D0 MOV
+	D0 _lreg_IMR_h AB MOV
+
+[THEN]
+
+    </code> </pre>
+
+<h4>Autovector control_register</h4>
+<p>
+Set to true if the external interrupt is to be auto vectored.
+There is no Autovector register on the 5474, however we use the same
+register structure as virtual registers for code re-use.
+</p>
+	<pre> <code>
+#5307 #5407 + [IF]
+
+		_#avec_AVEC1
+	#BVP5551 #BVP5552 + [IF]
+		_#avec_AVEC3 +
+		_#avec_AVEC5 +
+	[THEN]
+		_#avec_AVEC7 +   \ nmi
+		_#avec_BLK + # D0 MOV
+		D0 _breg_AVCR AB B. MOV
+[THEN]
+	</code> </pre>
+
+<h4>Interrupt control register 0</h4>
+<p>
+Watchdog timer.
+</p>
+
+	<pre> <code>
+	_#icr0_AVEC
+	_#icr0_IL   +
+	_#icr0_IP   + # D0 MOV
+	D0 _breg_int_CR0 AB B. MOV
+	</code> </pre>
+<h4>Interrupt control register 1</h4>
+<p>
+TIMER 1, real time clock
+</p>
+<pre> <samp>
+		$80 CONSTANT _#icr1_AVEC
+		$06 2 LSHIFT CONSTANT _#icr1_IL
+		$00 CONSTANT _#icr1_IP
+</samp> </pre>
+	<pre> <code>
+	_#icr1_AVEC
+	_#icr1_IL   +
+	_#icr1_IP   + # D0 MOV
+	D0 _breg_int_CR1 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 2</h4>
+<p>
+TIMER 2, general purpose.
+</p>
+	<pre> <code>
+	_#icr2_AVEC
+	_#icr2_IL   +
+	_#icr2_IP   + # D0 MOV
+	D0 _breg_int_CR2 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 3</h4>
+<p>
+MBUS
+</p>
+	<pre> <code>
+	_#icr3_AVEC
+	_#icr3_IL   +
+	_#icr3_IP   + # D0 B. MOV
+	D0 _breg_int_CR3 AB B. MOV
+	</code> </pre>
+<h4>Interrupt control register 4</h4>
+<p>
+UART 1
+</p>
+	<pre> <code>
+	_#icr4_AVEC
+	_#icr4_IL   +
+	_#icr4_IP   + # D0 MOV
+	D0 _breg_int_CR4 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 5</h4>
+<p>
+UART 2
+</p>
+	<pre> <code>
+	_#icr5_AVEC
+	_#icr5_IL   +
+	_#icr5_IP   + # D0 MOV
+	D0 _breg_int_CR5 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 6</h4>
+<p>
+DMA 0
+</p>
+	<pre> <code>
+	_#icr6_AVEC
+	_#icr6_IL   +
+	_#icr6_IP   + # D0 MOV
+	D0 _breg_int_CR6 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 7</h4>
+<p>
+DMA 1
+</p>
+	<pre> <code>
+  	#5307 #5407 + [IF] 			\ 5474 only has one combined DMA interrupt.
+		_#icr7_AVEC
+		_#icr7_IL   +
+		_#icr7_IP   + # D0 MOV
+		D0 _breg_int_CR7 AB B. MOV
+  	[THEN]
+	</code> </pre>
+
+<h4>Interrupt control register 8</h4>
+<p>
+DMA 2
+</p>
+	<pre> <code>
+ 	#5307 #5407 + [IF] 			\ 5474 only has one combined DMA interrupt.
+		_#icr8_AVEC
+		_#icr8_IL   +
+		_#icr8_IP   + # D0 MOV
+		D0 _breg_int_CR8 AB B. MOV
+  	[THEN]
+	</code> </pre>
+
+<h4>Interrupt control register 9</h4>
+<p>
+DMA 3
+</p>
+	<pre> <code>
+ 	#5307 #5407 + [IF] 			\ 5474 only has one combined DMA interrupt.
+		_#icr9_AVEC
+		_#icr9_IL   +
+		_#icr9_IP   + # D0 MOV
+		D0 _breg_int_CR9 AB B. MOV
+  	[THEN]
+	</code> </pre>
+
+<h4>Interrupt control register 10</h4>
+<p>
+Reserved
+</p>
+	<pre> <code>
+	_#icr10_AVEC
+	_#icr10_IL   +
+	_#icr10_IP   + # D0 MOV
+	D0 _breg_int_CR10 AB B. MOV
+	</code> </pre>
+
+<h4>Interrupt control register 11</h4>
+<p>
+Reserved
+</p>
+	<pre> <code>
+	_#icr11_AVEC
+	_#icr11_IL   +
+	_#icr11_IP   + # D0 B. MOV
+	D0 _breg_int_CR11 AB B. MOV
+	_#finished_int_setup # D0 MOV
+	D0 %port_init_where AB MOV
+	</code> </pre>
+
+<h4>timer 1, 10msec interrupt</h4>
+<p>
+Even if cpu locks up the 10msec interrupt has to continue.
+See <a HREF="MCF5307_constants.html#timer1"></a> for further details.
+</p>
+<pre> <code>
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+
+        _#slt0_value # D0 MOV
+        D0 _lreg_STCNT0 AB MOV
+
+        _#slt_RUN
+        _#slt_IEN	+
+        _#slt_TEN	+
+        # D0 MOV
+        D0 _lreg_SCR0 AB MOV
+
+[ELSE]
+
+	_#tmr1_PS           \ divide by 16
+	_#tmr1_CE   +       \ don't use capture mode
+	_#tmr1_OM   +       \ toggle output
+	_#tmr1_ORI  +       \ interrupt on output
+	_#tmr1_FRR  +       \ free running
+	_#tmr1_CLK  +       \ system clock
+	_#tmr1_RST  + # D0 MOV
+	D0 _wreg_TMR1 AB W. MOV
+
+	_#trr1_value # D0 MOV
+	D0 _wreg_TRR1 AB W. MOV
+
+[THEN]
+</code> </pre>
+
+<h4>Timer 2, Watchdog timer</h4>
+<p>Count increments every 20msec</p>
+	<pre> <code>
+#BCM550j [IF]
+	_#tmr2_PS           \ divide by 16
+	_#tmr2_CE   +       \ don't use capture mode
+	_#tmr2_OM   +       \ pulse output
+	_#tmr2_ORI  +       \ interrupt on output
+	_#tmr2_FRR  +       \
+	_#tmr2_CLK  +       \
+	_#tmr2_RST  + # D0 MOV
+	D0 _wreg_TMR2 AB W. MOV
+
+	_#trr2_value # D0 MOV
+	D0 _wreg_TRR2 AB W. MOV
+
+	_#finished_timer_setup # D0 MOV
+	D0 %port_init_where AB MOV
+[THEN]
+	</code> </pre>
+<h4>Internal SRAM</h4>
+<p>
+The 5307 has one 4k block. The 5407 has two 2k blocks; we configure these as one 4k block.
+The 5474 has two 4k blocks; we configure as one contiguous 8k block.
+</p>
+
+<p>We use the sram for the systems return stack, as the coldfire has no hardware support
+for the system stack all we need do now is initialise it's address.
+The interrupt code sets it up.
+</p>
+<p>
+See section 6.3.4 of user manual to see why code access is blocked.
+</p>
+	<pre> <code>
+#5307 [IF]
+	_#rambar_valid
+	_#rambar_block_user_code +
+	_#rambar_block_system_code +
+	_#rambar_block_c/i +
+	_#rambar_base + # D0 MOV
+
+	D0 RAMBAR MOV
+[THEN]
+
+#5407 #5474 + [IF]
+	\ the default connect is to the data bus.
+	_#rambar_valid
+	_#rambar_block_user_code +
+	_#rambar_block_system_code +
+	\ block cpu space
+	_#rambar_block_c/i +
+	_#rambar_base + # D0 MOV
+	D0 RAMBAR0 MOV
+
+	_#rambar_valid
+	_#rambar_block_user_code +
+	_#rambar_block_system_code +
+	_#rambar_block_c/i +
+	_#rambar_base _#rambar_block_size + + # D0 MOV
+	D0 RAMBAR1 MOV
+[THEN]
+
+	_#finished_rambar_setup # D0 MOV
+	D0 %port_init_where AB MOV
+
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+
+	\ instruction cache
+	_#acr2_address_mask
+	_#acr2_address_base +
+	_#acr2_enable +
+	_#acr2_SFIELD +
+	_#acr2_AMM  +   		\ allow less than 16 Meg masking.
+	_#acr2_CM_cached  + # D0 MOV
+	D0 ACR2 MOV
+
+	_#cacr_IEC    	\ Enable instruction cache to get thru memory clear.
+	_#cacr_BEC  +   \ branch cache enable
+	_#cacr_DF   +	\ disable fpu.
+        _#cacr_IDCM +	\ inhibit cache outside ACR's
+	    # D0 MOV
+	D0 CACR MOV
+
+
+	RMEM5 # D0 MOV
+	_%ram_clear_start # A0 MOV
+	A0 D0 SUB
+	4 # D0 SUB
+	BEGIN
+		A0 )+ CLR
+		4 # D0 SUB
+	MI UNTIL
+
+	_#finished_ram_init # D0 MOV
+	D0 %port_init_where AB MOV
+
+ 	_#cacr_BCINVA 			\ invalid branch and instruction caches.
+        _#cacr_ICINVA + 		\ cache can be enabled after interrupt vectors installed.
+ 	# D0 MOV
+        D0 CACR MOV
+
+[THEN]
+
+        _(ubase)  AB U MOV
+        _(s0)     AB S MOV
+	0 # S -) MOV
+	( switch to USER state, interrupt level 7)
+        ( haveing done this we have to use traps to enable interrupts)
+        $0700 # SR W. MOV
+        \ set R after switch to user state so this will work on 5474 as well.
+        U R MOV
+        4 # R SUB
+
+
+\ there is a bug in the 5407 that requires this.
+#5407 [IF]
+	HERE 4 + W. BSR
+	HERE 4 + W. BSR
+	HERE 4 + W. BSR
+	HERE 4 + W. BSR
+	$10 # R ADD
+[THEN]
+    	DUMMIES AB JSR
+
+#BVP6551 #BVP6552 + #ECM160 + [IF]
+	zero # %panic_output AB MOV  	\ start on comms port.
+[THEN]
+
+	_#finished_dummies # D0 MOV
+	D0 %port_init_where AB MOV
+
+	' START # R -) MOV
+
+NEXT
+
+.S .( out of init)
+    </code> </pre>
+<p>
+<h4>The first word executed</h4>
+<p>
+This code is vectored to from location 0 in the boot flash.
+It must test the dynamic memory,
+and move the forth system into dynamic memory.
+</p>
+<p>
+The first location in the RTI1000 dual port has to be set to 0x12345678 when the 
+system is fully up and running.
+While getting there we place values in that location to give the poor, overworked engineers bringing up
+this system some hint as to what in the hell is going on.
+</p>
+<p>
+_boot_to_sdram is the only word in the system that has an address relative to the base
+address of the boot flash. This word gets dynamic memory working, and then copies
+the boot flash to dynamic memory. It then jumps to a startup address in the dynamic 
+memory and continues from there. This word doesn't even set up the return stack.
+</p>
+</code> </pre>
+</body>
+</html>
+

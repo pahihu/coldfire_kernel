@@ -1,0 +1,46 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	    
+    
+    : function00 ." You have pressed function 01." send ;
+    : function01 ." You have pressed function 02." send ;
+    : function02 ." You have pressed function 03." send ;
+    : function03 ." You have pressed function 04." send ;
+    : function04 ." You have pressed function 05." send ;
+    : function05 ." You have pressed function 06." send ;
+    : function06 ." You have pressed function 07." send ;
+    : function07 ." You have pressed function 08." send ;
+    : function08 ." You have pressed function 09." send ;
+    : function09 ." You have pressed function 10." send ;
+    : function0A ." You have pressed function 11." send ;
+    : function0B ." You have pressed function 12." send ;
+
+	4
+ 	' function00 OVER keyboard_functions + dt!  4+
+ 	' function01 OVER keyboard_functions + dt!  4+
+ 	' function02 OVER keyboard_functions + dt!  4+
+ 	' function03 OVER keyboard_functions + dt!  4+
+ 	' function04 OVER keyboard_functions + dt!  4+
+ 	' function05 OVER keyboard_functions + dt!  4+
+ 	' function06 OVER keyboard_functions + dt!  4+
+ 	' function07 OVER keyboard_functions + dt!  4+
+ 	' function08 OVER keyboard_functions + dt!  4+
+ 	' function09 OVER keyboard_functions + dt!  4+
+ 	' function0A OVER keyboard_functions + dt!  4+
+ 	' function0B OVER keyboard_functions + dt!  4+
+    DROP
+
+	</code> </pre>	
+
+</body>
+</html>

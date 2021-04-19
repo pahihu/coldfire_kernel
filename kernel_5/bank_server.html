@@ -1,0 +1,211 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Used to service cpi_i file service requests.
+The request is sent to the rti without going through the local file system.
+Faster but not 100% correct as cpu1 is limited toremote files. It should in
+fact be able to get local files as well.
+</p>
+<p>
+There is a fixed memeory block in the bank that is used to \
+communicate file service requests between stage 1 and 2.
+</p>
+<p>
+The file service reqiuest is sent to the rti bus. This is in keep ing with 
+previous implementation.
+</p>
+<pre> <code>
+
+\ cupi reference to cpuii reference
+	: >local_bank ( addr -- local_addr)
+		%bank_offset @ - _#bank_mem_start +
+	;
+
+
+	: wake_bank_task ( --)
+		%bank_wake  W@
+		\ address of tasks activation area
+		%bank_file_table #flbus_facility + @ DUP IF
+			>local_bank
+			W!
+		ELSE
+			2DROP
+		THEN
+	;
+
+
+
+
+	\ this writes the data to the bank buffer, updates the count and wakes the receiving task.
+	\ Only word writes are suppoted.
+	: local_buffer>bank { ( addr count ) -- }
+		DUP %bank_file_table #flbus_count + W!
+		\ addr count (--
+		\ buffer address from my point of view
+		%bank_file_table #flbus_buffer + @
+		>local_bank  \ addr count rti_buffer(--
+		SWAP
+		\ extend count to long word
+		3 + -4 AND
+		MOVE
+		wake_bank_task
+	;
+
+
+	\ create the message in a local buffer that supports character operation
+	\ then tranfer to dual port using word operations.
+	: bank_transfer_error { ( $ ) -- }{
+		variable %card
+		variable %count }
+		\ to make life interesting we can only do word writes to
+		\ the bank memory
+		\ We will make the packet in a local buffer round the count up
+		\ to a long word and move the result to the rti buffer
+		\ $ (--
+		DUP COUNT NIP #$count_length +
+            \ $ length (--
+		\ the comand byte
+		DUP #ilan_error_string +
+                \ $ count length_total
+		%count !
+		\ addr count(--
+		%count @ get_buffer
+	      	\ $ count(--
+            	\ write the string
+            	\ $ count(--
+            	buffer #ilan_error_string +  SWAP MOVE
+            	\ write the error code
+            	#error_ilan buffer C!
+            	buffer %count @ local_buffer>bank
+		kill_buffer
+	;
+
+
+
+
+        \ we are transferring from bank memory between state I and to
+        \ dual port memeory.
+
+	: file_operation ( --)
+		rti_facility get
+		
+
+		%bank_file_table #flbus_buffer + @
+		>local_bank  \ addr count bank_buffer(--
+
+		%port_buffer %bank_file_table #flbus_count + W@
+		DUP >R
+		3 + -4 AND MOVE
+
+
+		%port_file_table %port_(file_table) !
+		%port_buffer %port_file_table #flbus_buffer + !
+		R> 
+		%port_file_table #flbus_count + W!
+		user_base activation_status %port_file_table #flbus_facility + !
+
+		xtest
+	
+		
+		TRUE %port_i_file W!
+		
+		interrupt_master
+		
+		#2sec 2*	xwait
+		
+		xtimeout? IF
+			$" CPU2: RTI master didn't process file request"  bank_transfer_error
+			rti_facility release
+			EXIT
+		THEN
+
+		%port_file_table #flbus_count + W@  
+		
+			
+		%port_file_table #flbus_buffer + @ 
+
+
+		%bank_file_table #flbus_buffer + @
+		jump 3 + -4 AND MOVE
+		%bank_file_table #flbus_count + W!
+
+		
+		wake_bank_task
+		rti_facility release
+
+	;
+
+
+	ram_variable %my_bank_facility #facility_length ram_allot
+
+
+    
+    : disk_action ( --)
+		xsleep
+		\ setting the address tells the interrupt code we are here
+		%my_bank_facility get		
+		xnext
+		\ if we get here interrupt code has waken us up.
+		file_operation
+    ;
+
+	\ There is a collection of flags that can be set on the remote side to get different services.
+	\
+	: bank_serve
+		zero _#bank_interrupt_reset W!
+	
+		\ (--
+		%bank_i_file  W@ IF
+			%my_bank_facility _#facility + @ ?DUP IF
+				wake SWAP W!
+				zero %my_bank_facility _#facility + !
+			THEN
+		THEN
+		\ (--
+		%bank_i_?who W@ IF
+			\ we really should give the slot number; sort this out when TCP is being done
+			\ I do not have time now	
+			1 %bank_who W!
+			FALSE %bank_i_?who W!	
+		THEN
+		\ (--
+	;
+
+   
+      
+    \ count of interrupts from cards
+    
+    ram_variable %bank_int 
+	interrupt: bank_interrupt ( --)
+		bank_serve
+	;interrupt
+
+  	ram_variable %bank_task
+  
+	target_also
+    &tasks 
+	target_definitions
+
+    	#clock_low port_task: bank_disk_serve  ( --)
+		BEGIN 
+			1 %bank_task +!
+			disk_action 
+		AGAIN 
+	;task
+	
+	target_previous_definitions
+	target_previous   
+
+
+ 	</code> </pre>
+</BODY>
+</HTML>

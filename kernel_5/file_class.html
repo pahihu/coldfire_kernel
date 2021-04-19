@@ -1,0 +1,711 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<h4>file_class</h4>
+<p>
+Common to all file based I/O. The device drivers have to be written in a manner that allows
+this class to work. This class has to be written in a manner that supports a wide range of 
+device drivers.
+</p>
+<p> There are two basic types of file devices.<br>
+1) Those that do not know what a file is but provide a random access data structure on which
+this class can build a file structure.<br>
+2) Devices that know what a file is thankyou very much.<br>
+This code supports both.
+</p>
+<p>
+Devices of type 1) can be opened directly and the array looked at from a device point of view.
+There Sopen words will reflect this. Devices of the 2) cannont be open as a device. To do so 
+has no meaning. Such devices will have file open words that nor allow a device open.
+</p>
+	<pre> <code>
+		\ object 
+	\ :construct
+	\ :destruct
+	\ :print
+	\	link_class
+	\	:list_head
+	\	:number_of_links
+        \           cleanup_class
+        \	    :link_cleanup
+	\	    :unlink_cleanup
+	\		parented_object
+	\		:facility
+	\		:parent_instance
+	\		:!name
+	\		:@name
+	\		:@root
+	\		:inode_head
+	\		:inode_instance
+	\			io_common
+	\			:span
+	\			:!terminal
+	\			:@terminal
+	\			:file_open
+	\			:!file_instance
+	\			:!timeout
+	\			:@timeout
+	\			:!mode
+	\			:@mode
+	\			:read
+	\			:read_line
+	\			:previous_line
+	\			:flush_file
+	\			:write
+	\			:buffer_size!
+	\			:cr
+	\			:write_line
+	\			:type
+	\			:mark
+	\			:status
+	\			:?send
+	\			:reposition_file
+	\			:file_position
+	\			:key?
+	\			:clear
+	\			:!control
+	\			:!eot
+	\			:linemode
+	\			:!device
+	\			:baud
+	\			:?page
+	\			:!?page
+	\			:character#
+	\			:line#
+	\			:page#
+	\			:page!
+	\			:line_max
+	\			:character_max
+	\			
+	\			:normal
+	\			:rev
+	\			: blink
+	\			:dim
+	\			:udl
+	\			:dim&blink
+	\			:rev&blinl
+	\			:rev&dim
+	\			:rev&udl
+	\			:rev&dim&blink
+	\			:rev&dim&udl
+	\			:tab
+	\			:page
+	\			:>|
+	\			:|>
+	\			:|i
+	\			:|o
+	\			:|v
+	\			:|h
+	\			:|n
+	\			:|tl
+	\			:|tr
+	\			:|br
+	\			:termination>code
+	\			:box
+	\			:element
+	\			:line
+	\			:zed
+	\			:labels
+	\			:shift_labels
+	\			:cursor
+	\			:no_curser
+	\			:message
+	\			:no_message
+	\			:foreground
+	\			:background
+	\			:border
+	\			:a4
+	\			:quarto
+	\			:eoj
+	\			:@control_block
+	\			:!control_block
+	\			:bye
+	\			:consume_port
+	\			:priority!
+	\			:terminal_mode!
+	\			:terminal_mode@
+	\			:inuse?
+	\			:@file_size
+	\			:!file_size
+	\			:?directory
+	\			:get_directory_name
+	\			:put_directory_name
+	\			:next_directory_cookie
+	\			:first_directory_cookie
+	\			:make_file
+	\			:remove_file
+	\			:open_inode
+	\			:close_inode
+	\			:make_directory
+	\			:format
+	\			:file_offset>device_offset
+	\			:bytes_a_zone
+	\			file_class
+	\			--
+
+	io_common class
+		\ for :read_line
+		\ points to where input is up to
+		cell% instance_variable %%last_zone_pointer
+		\ number of characters to be used
+		cell% instance_variable %%last_zone_count
+		\ base address of buffer
+		cell% instance_variable %%last_zone_buffer
+		cell% instance_variable %%last_zone_file_position
+
+		\ the file class knows about the inode_instance, nothing else does.
+		\ The device however has a pointer to the file_object and can ask.
+		cell% instance_variable %%inode_instance
+
+		\ the file position of old lines is kept
+		\ so we can display a little before errors.
+		5 CONSTANT _#kept_old_lines
+		_#kept_old_lines CELLS bytes% instance_variable %%old_lines
+
+
+
+		\ Opening a inode is a device function. Before the inode is open
+		\ the only way you know the inode is stable is to grab the device.
+		\ Once open the inode is stable until the inode instance is destroyed.
+		\ When we :destruct the file instance, it updates the inode_instance
+		\ If the inode instance falls to zero, the inode instance is destroyed also
+		\
+
+		m:  ( inode_instance parent_instance -- )
+			\ In this case the link in link object is not used.
+			\ we are not interested in the total number of open files.
+			\ they are opened against multiple devices.
+			this [parent] :construct
+			%%inode_instance !
+			this %%file_instance !
+			0 %%last_zone_buffer !
+			\ :read_line looks at %%last_zone_count to determine if input is required
+			0 %%last_zone_count !
+			%%old_lines [ _#kept_old_lines CELLS ]T LITERAL ERASE
+		; overrides :construct
+
+		m: ( -- )
+			%%inode_instance @ this :close_inode
+			%%last_zone_buffer @ IF
+				%%last_zone_buffer @ kill_free_buffer
+			THEN
+			\ If we are here the file instance is being used to destroy the object.
+			\ the device should not destroy the file instance.
+			this [parent] :destruct
+		; overrides :destruct
+
+                m: ( addr n mode )
+                        TRUE ABORT" Can't open a file from a file"
+                ; overrides :file_open
+
+		\ number of links; what should it do.
+		\ nothing links to a file. The number of times the file has been opened
+		\ is found by going back to the inode object. The user probable wants to
+		\ know how many opens are against the file
+		m: ( -- n)
+			this :inode_instance :number_of_opens
+		; overrides :number_of_links
+
+		\ the base i/o words
+		\ ------------------
+		\ If timeout is required you must
+		\ execute !timeout, it timeout occures the read bytes are set to zero.
+		\ If a timeout of zero is set there is no timeout.
+		\ The timeout and mode values are stored in the device object.
+		m:       \ compile time ( --xt)
+				 \ runtime ( timeout --)
+			%%parent_instance @ :!timeout
+		; overrides :!timeout
+
+		m:       \ compile time ( --xt)
+				 \ runtime ( timeout --)
+			%%parent_instance @ :@timeout 
+		; overrides :@timeout
+
+
+		\ !mode
+		m:       \ compile time ( --xt)
+				 \ runtime ( mode --)
+			%%parent_instance @ :!mode
+		; overrides :!mode
+
+		\ !mode
+		m:       \ compile time ( --xt)
+				 \ runtime ( mode --)
+			%%parent_instance @ :@mode
+		; overrides :@mode
+
+		: bytes_left_in_zone ( offset --n)
+			%%parent_instance @ :bytes_a_zone 1 - AND
+			%%parent_instance @ :bytes_a_zone SWAP -
+		;
+
+		\ This sets the file read policy, we will only read what
+		\ has been written.
+		\ You can however seek to nowhere, write a byte and read rubbish
+		\ in-between
+		
+		\ ##### :file_offset>device_offset should be moved into the device read
+
+		m: { ( addr n --n) }{
+			variable _%temp_buffer
+			}
+
+			\ skip zero read requests
+			DUP not IF
+				NIP 
+				EXIT
+			THEN
+
+			%%seek_pointer @
+			\ addr n base(--  
+			this :facility grab
+			
+				this ['] :@file_size CATCH
+				?DUP IF
+					this :facility release
+					$ABORT
+				THEN
+				\ addr n base end(--
+				ROT 
+				\ addr base end n(--
+				jump +
+				\ addr base end read_end(--
+				MIN
+				\ addr base actual_read_end(--
+				OVER - zero MAX 
+				\ addr base actual_n(--
+				\ seek pointer at start and addr at start to return stack
+				%%seek_pointer @ >R
+				jump >R
+					\ Well thats the simple bit
+					\ we now have to deal in zones
+					\ addr base actual_n(--
+					OVER + SWAP
+					\ addr base+actual base(--
+					?DO
+						\ addr(--
+						I this :inode_instance :inode_code this ['] :file_offset>device_offset CATCH
+						?DUP IF
+							this :facility release
+							$ABORT
+						THEN
+						\ addr disk_offset(--
+						DUP bytes_left_in_zone
+						\ addr device_offset byte_in_this
+						i' I - \ addr device_offset bytes_in_this bytes_left
+						MIN
+						\ addr device_offset bytes_to_read
+						SWAP
+						\ addr bytes_to_read device_offset(--
+						this :parent_instance :reposition_file
+						\ addr bytes_to_read(--
+						2DUP this :parent_instance ['] :read CATCH
+						?DUP IF
+							this :facility release
+							$ABORT
+						THEN
+						\ addr bytes_to_read bytes_read(--
+						TUCK <> IF
+							+
+							\ assumes ansi standard, that is leave jumps
+							\ too code after +LOOP directly
+							LEAVE
+						THEN
+						\ addr bytes_read
+						TUCK
+						+
+						SWAP
+					+LOOP
+					\ addr(--
+				R> - \ actual n
+				DUP R> + %%seek_pointer !
+			this :facility release
+		; overrides :read
+
+
+		: _seek_to_last_read ( --)
+			%%last_zone_file_position @
+			%%last_zone_pointer @ %%last_zone_buffer @ - +
+			this :reposition_file
+		;
+
+		
+		\ %%last_zone_count must contain count of bytes read
+		\ %%last_zone_pointer must be valid
+		\ %%last_zone_buffer must be valid
+		\ data in buffer mist be valid
+		: _update_pointers ( old_seek_pointer--)
+			DUP this :reposition_file
+			%%parent_instance @ :bytes_a_zone 1 -  AND
+			\ offset (--
+			%%last_zone_buffer @ OVER + %%last_zone_pointer !
+			%%last_zone_count @ SWAP - zero MAX %%last_zone_count !
+		;
+
+		: _read_data_from_disk ( --)
+				%%seek_pointer @  DUP %%parent_instance @ :bytes_a_zone 1 -  -1 XOR AND
+				\ pointers are now on a zone boundry  
+				DUP %%last_zone_file_position ! this :reposition_file
+				\ old_seek_pointer(--
+				%%last_zone_buffer @ %%parent_instance @ :bytes_a_zone this :read
+				%%last_zone_count !
+				\ old_seek_pointer(--
+				_update_pointers		
+		;
+
+		: _update_last_buffer ( --)
+			\ The file may be positioned anywhere, this code will
+			\ buffer the zone the %%seek_pointer is pointing to 
+			%%last_zone_buffer @ not IF
+				\ a buffer to work with
+				%%parent_instance @ :bytes_a_zone get_free_buffer %%last_zone_buffer !
+				_read_data_from_disk				
+				EXIT
+			THEN 
+			\ We get to here we have to update buffer. We may be dealing with
+			\ a repostion within buffer.
+			\ This code is executed every time a line read is done. We can't
+			\ be sure a repositioning has not occured between reads so we allow 
+			\ for it.
+			%%seek_pointer @ %%parent_instance @ :bytes_a_zone 1 -  -1 XOR AND
+			%%last_zone_file_position @ = IF
+				\ reposition within data in buffer
+				\ add back to count
+				%%last_zone_pointer @ %%last_zone_buffer @ -  
+				%%last_zone_count +!
+				%%seek_pointer @ _update_pointers
+				EXIT
+			THEN
+			_read_data_from_disk
+		;
+
+		\ true if character visable
+		: ?visable ( char --flag )
+			DUP BL < IF    
+				DROP FALSE EXIT
+			THEN
+			[CHAR] ~ > IF
+				FALSE EXIT
+			THEN
+			TRUE
+		;
+			
+		4 CONSTANT _#tab_spaces
+		\ The READ-LINE standard definition requires the file positioned
+		\ at the last character read after a line-read.
+		m: { variable %base_addr variable %base_count -- ( u2 flag ) }{
+				variable %output_pointer
+				variable %output_count 
+			}
+
+			\ deal with old lines
+			%%old_lines %%old_lines cell + [ _#kept_old_lines CELLS cell - ]T LITERAL MOVE
+			%%seek_pointer @ %%old_lines !
+
+			%base_addr @ %output_pointer ! 
+			\ allow room for the termination code
+			%base_count @ 1 CHARS - DUP 
+			%output_count ! %base_count !
+
+			\ allow for seeks between line reads
+			_update_last_buffer
+				BEGIN 
+					%output_count @ 
+				WHILE
+					\ %%last_zone_count is in bytes
+					%%last_zone_count @ not IF
+						_update_last_buffer 
+						%%last_zone_count @ not IF														
+							\ if we get to here we have run out of file input
+							\ the standard basically says reaching the end of file with
+							\ characters read is just another line
+							\ Reaching the end of file with zero characters read 
+							\ is the end of the operation
+							%output_pointer @ %base_addr @ - 
+							bytes>chars
+							DUP 0<>
+							#end_eof jump %base_addr @ + char!
+							EXIT
+						THEN 
+					THEN
+					\ It seems to me, if you know enough about the data to know what 
+					\ the record terminator is you know enough about it to tidy it up
+					\ for the forth interpreter.
+					\ Note however the editor uses read line, tabs will be converted to spaces
+					\ good thing I think.
+					%%last_zone_pointer @ char@ 
+					1 CHARS %%last_zone_pointer +!
+					[ 1 CHARS NEGATE ]T LITERAL %%last_zone_count +!
+					_seek_to_last_read
+					\ we have to be able to accept CRLF LF and CR as a line terminator.
+					\ To do this we don't return a null line on a CR. To deal with systems 
+					\ that need a null line to terminate a section ( such as HTML) we return a 
+					\ null line on a LF
+					DUP #cr = IF
+						%output_count @ %base_count @ <> IF
+							DROP
+							%output_pointer @ %base_addr @ - bytes>chars
+							TRUE
+							#end_eol jump %base_addr @ + char!
+							EXIT
+						THEN
+					THEN
+					DUP #lf = IF
+						DROP
+						%output_pointer @ %base_addr @ - bytes>chars
+						TRUE
+						#end_eol jump %base_addr @ + char!
+						EXIT
+					THEN
+
+					DUP ?visable IF
+						%output_pointer @ char!
+						1 CHARS %output_pointer +!
+						\ output_count is in characters
+						-1 %output_count +!
+					ELSE
+						#tab = IF
+							%output_count @ _#tab_spaces MIN zero DO
+								BL %output_pointer @ char!
+								1 CHARS %output_pointer +!
+								\ output_count is in characters
+								-1 %output_count +!
+							LOOP
+						THEN
+					THEN						
+				REPEAT
+				\ get to here the output buffer is filled and we did not
+				\ get to the line terminator
+				%base_count @ TRUE
+				#end_count jump %base_addr @ + char!
+			
+		; overrides :read_line
+
+		\ :previous_line returns the file position for an old line. You can only go back
+		\ _#kept_old_lines. This is only of use for a (list). edit has to start from
+		\ the start of the file as the file has to be unpacked.
+		m: ( n -- n true|false)
+			[ _#kept_old_lines 1 - ]T LITERAL  MIN CELLS %%old_lines + @ TRUE
+		; overrides :previous_line
+
+		\ This sets the file read policy, we will only read what
+		\ has been written.
+
+		\ ##### :file_offset>device_offset should be moved into the device read
+  </code></pre>
+  <a name=":write"></a>
+  <pre><code>
+
+		m: { ( addr n --) }{
+			variable _%temp_buffer
+			}
+			
+
+			\ zero writes can be skipped
+			DUP not IF
+				2DROP
+				EXIT
+			THEN
+
+			\ We don't buffer the line read across a write.
+			\ In that way we don't have to worry about the
+			\ line read buffer on a write.
+			%%last_zone_buffer @ ?DUP IF
+				kill_free_buffer
+				zero %%last_zone_buffer !
+				zero %%last_zone_count !
+			THEN
+			%%seek_pointer @ OVER + >R \ save exit %%seek_pointer
+
+			%%seek_pointer @ -rot
+			\ start addr n (--
+			jump 
+			OVER +
+			\ start addr n end_of_write(--
+			this :facility grab
+				DUP
+				this ['] :@file_size CATCH
+				?DUP IF
+					this :facility  release
+					$ABORT
+				THEN				
+
+				\ start addr n end_of_write end_of_write file_size(--	
+				\ The inode is stored in a different location to the
+				\ file data. The length only has to be updated once while
+				\ the data may have to be written in multiple blocks.
+				\ In some file systems it is better to update the length
+				\ as a seperate operation. In oters the length is updated
+				\ as part of the write. In the former case the :!file_size
+				\ function is implemented, in the later case the length is
+				\ dropped.
+				> IF  
+					DUP this ['] :!file_size CATCH
+					?DUP IF
+						this :facility release
+						TRUE ABORT" Failed to write file_size"
+					THEN
+				THEN
+				\ start addr n end(--
+				NIP
+				\ start addr end(--
+				ROT 
+				\ addr end start(--
+				?DO
+					\ addr(--
+					I this :inode_instance :inode_code this ['] :file_offset>device_offset CATCH
+					?DUP IF
+						this :facility release
+						$ABORT
+					THEN
+					\ addr disk_offset(--
+					DUP bytes_left_in_zone
+					\ addr device_offset byte_in_this
+					i' I - \ addr device_offset bytes_in_this bytes_left
+					MIN
+					\ addr device_offset bytes_to_write
+					SWAP
+					\ addr bytes_to_write device_offset(--
+					%%parent_instance @ :reposition_file
+					\ addr bytes_to_write(--
+					2DUP %%parent_instance @ ['] :write CATCH
+					?DUP IF
+						this :facility release
+						$ABORT
+					THEN
+					\ addr bytes_to_read
+					TUCK
+					+
+					SWAP
+				+LOOP
+				\ addr(--
+				DROP
+			this :facility release
+			R> %%seek_pointer !
+		; overrides :write
+
+		\ this is a very important bit of code; if you claim the file you claim the inode
+		m: ( --addr )
+			%%inode_instance @ :facility
+		; overrides :facility
+	
+		\ The file size has to be retrieved from the device
+		m: (  --filesize)
+			%%parent_instance @ :@file_size
+		; overrides :@file_size
+	
+		\ Set the files size
+		\ The file size is stored on the device.
+		m: ( filesize --)
+			%%parent_instance @ :!file_size
+		; overrides :!file_size
+
+		\
+		\ file version
+		m: ( --flag)
+			%%parent_instance @ :?directory
+		; overrides  :?directory
+
+
+		\
+		\ file version
+		m: ( cookie addr max -- actual )
+			%%parent_instance @ :get_directory_name
+		; overrides  :get_directory_name
+
+		\
+		\ file version
+		\ Is it a directory inode
+		\ The file size is stored on the device.
+		m: ( addr num dir_entry %handle --)
+			%%parent_instance @ :put_directory_name
+		; overrides  :put_directory_name
+
+		\ Return false if no more directory entries
+		m: ( cookie1  -- cookie2 true|false)
+			this :parent_instance :next_directory_cookie
+		; overrides :next_directory_cookie
+
+		m: ( -- cookie1)
+			this :parent_instance :first_directory_cookie
+		; overrides :first_directory_cookie
+
+		m: ( addr n --inode)
+			this :parent_instance :make_file
+		; overrides :make_file
+
+		m: ( addr n--)
+			this :parent_instance :remove_file
+		; overrides :remove_file
+
+		m: ( -- inode)
+			%%inode_instance @
+		; overrides :inode_instance
+		
+		\ The head of the inode list.
+		\ It is contained within the device class. That is every device 
+		\ that uses inodes has it's
+		\ own inode head.
+		m: ( --addr)
+			this :parent_instance :inode_head 
+		; overrides :inode_head
+
+		\ a opened inode is one that has an instance to control it.
+		\ Multiple files can be using the same inode instance
+		m: ( inode --instance)
+			this :parent_instance :open_inode
+		; overrides :open_inode
+	
+		m: ( inode_instance--)
+			this :parent_instance :close_inode
+		; overrides :close_inode
+
+
+		m: ( parent_inode -- inode )
+			this :parent_instance :make_directory
+		; overrides :make_directory
+
+		m: ( file_offset inode_code -- device_offset )
+			this :parent_instance :file_offset>device_offset
+		; overrides :file_offset>device_offset
+
+		m: ( --n )
+			%%parent_instance @ :bytes_a_zone 
+		; overrides :bytes_a_zone
+
+		m: ( indent --)
+			CR DUP SPACES ." file | " ." Object: " this .h 
+			CR DUP SPACES ." seek_value: " %%seek_pointer @ .h 
+					SPACE ." timeout: " %%timeout @ .h
+					SPACE ." Number of opens: " this :number_of_links .h 
+					\ indent(--
+			DROP
+			send
+		; overrides :print
+
+	end_class file_class
+	</code></pre>
+	<p>
+	The object print words detail data contained in the object. That means we can tie the info together in different
+	ways <i>.file</i> is one of the ways.
+	</p>
+	<pre><code>
+	: .file ( object --)
+		0 OVER :print
+		4 OVER :inode_instance :print
+		4 OVER :parent_instance :print
+		DROP
+	;	
+	</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,137 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<h1>Watchdog</h2>
+<p>
+The watchdog sub system allows one to add requirments that particular 
+tasks get regularly executed. The common code supports that function.
+This stuff is here because coldforth is sometimes used for critical 
+control applications.
+</p>
+<p>
+The card specific stuff is in the card sub directories.
+</p>
+<pre> 
+<code>
+    
+ 
+
+     _create_listhead watchdog_list
+   
+   
+    zero
+    DUP    CONSTANT _#watch_link             4+
+    DUP    CONSTANT _#watch_delay            2+
+    DUP    CONSTANT _#watch_address          4+
+    DUP    CONSTANT _#watch_timeout_word     4+
+    CONSTANT _#watch_user
+
+    zero
+    DUP    CONSTANT _#wdata_last_execution   4+
+    DUP    CONSTANT _#wdata_between          4+
+    DUP    CONSTANT _#wdata_active           1+
+    DUP    CONSTANT _#wdata_fault            1+
+    CONSTANT _#watch_localdata
+    
+	</code> </pre>
+<p>
+We do two tests, we look to see if the code has been executed within
+the set time. And we look to see if the time between execution ( as last set) 
+is within the delay time. As (watchcheck) is often at a lower priority
+than the code being looked at we sometimes only get to look at a sub
+sample of the delay between execution times.
+</p>
+	<pre> <code>
+    : watchcheck ( -- )
+    	watchdog_list
+		BEGIN
+			@ DUP
+		WHILE
+			DUP _#watch_address + @                \ list data(--
+			\ we don't look until executed once.
+			DUP _#wdata_active + C@ IF
+				\ If we have timed out once don't bother again.
+				DUP _#wdata_fault + C@ not IF      \ list data (--
+					\ complain if it hasn't been executed for a while.
+					DUP _#wdata_last_execution + @ \ list data last(--
+					jump _#watch_delay + W@ +      \ list data timeout_time(--
+					xclock- @ + 0> not IF        \ list data(--
+						TRUE OVER _#wdata_fault + C!
+						set_timeout_led
+		  				\ Note we don't stop the system because of a user timeout 
+		  				\ that is up to the users routine
+    	  				OVER DUP _#watch_timeout_word + @execute  
+					ELSE
+						\ compalin if the task records execution delays that
+						\ are too wide.
+						DUP _#wdata_between + @ 
+						jump _#watch_delay + W@ > IF
+							TRUE OVER _#wdata_fault + C!
+							set_timeout_led
+							\ Note we don't stop the system because of a user timeout 
+		  					\ that is up to the users routine
+    	  					OVER DUP _#watch_timeout_word + @execute 
+						THEN
+					THEN
+				THEN
+			THEN
+			DROP
+		REPEAT
+		DROP
+		trigger_clock
+	;
+	</code> </pre>
+<p>
+The WATCHDOG words update the data areas. The watchdog task looks at the
+update values and executes <i>watchdog</i> if the values are not acceptable.
+</p>
+  	<pre> <code>    
+    | : watchdog_error ( addr --)
+      TRUE OVER _#watch_user + @ C!
+      pfa>cfa cfa>nfa
+      panic" ?< WATCHDOG " .HEAD SPACE ."  TIMEOUT >?" ;
+	</code> </pre>
+<pre> <samp>
+ram_variable %timeout
+%timeout #1sec watchdog execution_check
+</samp> ></pre>
+<p>
+The task that is being checked now has to execute execution_check every second or less. If not the watch_task will time it out. On timeout a panic message will be sent out the front port and %timeout will be set. It is up to other code to take more dastric actions such as bringing the machine to a halt.
+</p>
+<p>
+Hardware will bring the processor to a halt if the watch_task routine isn't executed eabout very 4 seconds.
+</p>
+<pre> <code>	
+	: watchdog ( addr_of_byte_to_set n --)
+    	CREATE watchdog_list link_here
+    	W, ( maximum time between executions)
+    	ram_here , ( Last execution time storage address)
+    	['] watchdog_error , 
+		, ( address of byte to set)
+    	_#watch_localdata ram_allot 
+		DOES>
+			_#watch_address + @  \ data(-- 
+			DUP _#wdata_active + C@ IF
+				xclock+ @
+				OVER _#wdata_last_execution + @ -
+				OVER _#wdata_between + !
+				xclock+ @ SWAP _#wdata_last_execution + !
+			ELSE
+				TRUE OVER _#wdata_active + C!
+				xclock+ @ SWAP _#wdata_last_execution + !
+			THEN
+	;
+
+
+	</code> </pre>    
+    
+
+</body>
+</html>

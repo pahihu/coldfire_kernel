@@ -1,0 +1,867 @@
+<HTML>
+<HEAD>
+<META NAME="GENERATOR" Content="Microsoft Developer Studio">
+<META HTTP-EQUIV="Content-Type" content="text/html; charset=iso-8859-1">
+<TITLE>Document Title</TITLE>
+</HEAD>
+<BODY>
+<pre> <code>
+Original sender: ForthCAD <mail@forthcad.com>
+This is my pre-final OOF system. The final version will be send in +- 3 =
+months because I think its now time to use it in reals applications to =
+validate some (theorical) choises. Also I must now terminates other =
+works...
+
+The system use normals Forth definitions without any preambule nor =
+postambule. So there is NO overhead on methods.=20
+
+The overhead on data will be minimized: its just a offset calculation =
+always necessary when seeking data in a buffer. (The same in any STRUCT =
+systems)
+
+Encapsulation is done by using unnnamed normal Forth wordlist.
+
+Thanks to Will Baden: I think his proposal is very good: its a minimum =
+that enable multiple models, with a very clear syntax. ( sometime I =
+regret the BUILD word existence, but... )
+
+So I hope this minimum will become near a ANSI standard extension.
+
+Already some extra on the Yerk version are:=20
+
+- easy to write: no multiple SELF, (ouf!)
+- easy to read: same syntax as normal Forth, natural word sequence
+- fastest: no pre/postambule on methods inside a class
+- array of class: (I think Yerk only use "indexed objects" )
+- virtual functions with constant small overhead
+- true encapsulation: Yerk place all methods in the same vocabulary
+
+(Source from here, wordset description at the bottom)
+\
+\ ANSI-CLASS minimum system
+\ Version 0.9 - 31/01/1999
+\ Author: Charles Melice
+\ MAIL: mail@forthcad.com
+\ WEB:  www.forthcad.com
+\
+
+ONLY FORTH ALSO DEFINITIONS
+
+\ EMPTY
+
+\ ------------------------------------------------
+\ TO DEFINE IF MISSING
+\ ------------------------------------------------
+
+\ : @REL  POSTPONE @ ; IMMEDIATE
+\ : !REL  POSTPONE ! ; IMMEDIATE
+\ : ,REL  POSTPONE , ; IMMEDIATE
+\ +TO to replace by equivalence
+
+\ ------------------------------------------------
+\ WORDLISTS ENCAPSULATION
+\ ------------------------------------------------
+
+WORDLIST CONSTANT CLASS-WORDLIST
+
+CLASS-WORDLIST SET-CURRENT
+
+WORDLIST DUP CONSTANT PRIVATE-WORDLIST
+
+FORTH-WORDLIST SWAP CLASS-WORDLIST 3 SET-ORDER
+
+
+\ ------------------------------------------------
+\ IMPORTANT VALUES
+\ ------------------------------------------------
+
+FORTH-WORDLIST SET-CURRENT
+
+0 VALUE THIS    \ seek the object-data base
+0 VALUE ^CLASS  \ seek the in-context class
+
+
+\ ------------------------------------------------
+\ SOME IMPLEMENTATION WORDS
+\ ------------------------------------------------
+
+PRIVATE-WORDLIST SET-CURRENT
+
+
+CREATE  ^PREV-ORDER 33 CELLS ALLOT
+0 VALUE PREV-CURRENT
+
+\ used later to define VIRTUAL:
+DEFER attach-class-vtable
+DEFER inherit-to-vtemp
+
+<b>
+\ Because I am slow lets define the class offsets
+zero
+DUP CONSTANT _#class_wid> CELL+
+DUP CONSTANT _#class_parent> CELL+
+DUP CONSTANT _#class_size> CELL+
+DUP CONSTANT _#class_vtable> CELL+
+\ I have no idea what this is used for but look at
+\ the definition of USER>
+DUP CONSTANT _#class_user> CELL+
+DROP
+</b>
+
+<b>
+\ I assume made immediate because the optimizer  can't get rid of the 0 +
+</b>
+: WID>      ( class -- addr )  _#class_wid + ; IMMEDIATE
+: PARENT>   ( class -- addr )  _#class_parent + ;
+: SIZE>     ( class -- addr )  _#class_size + ;
+: VTABLE>   ( class -- addr )  _#class_vtable +  ;
+
+: ^SIZE     ( -- addr )             ^CLASS SIZE> ;
+: ^VTABLE   ( -- addr )             ^CLASS VTABLE> ;
+: ^PARENT   ( -- addr )             ^CLASS PARENT> ;
+
+
+: SaveSearchOrder   ( -- )
+    get-order dup                   \ s: widn .. wid1 n n
+    ^prev-order !                   \ s: widn .. wid1 n
+    ^prev-order over cells +        \ s: widn .. wid1 n addrmax
+    swap 0                          \ s: widn .. wid1 addrmax n 0
+    ?DO dup >r ! r> cell- LOOP
+    drop ;
+
+<b>
+\ This version doesn't assumes the default search order is only a single wid
+\ The way I read the spec it does not guarantee the min search order will
+\ only be one wid. This has nothing to do with the issue at hand.
+
+: RestoreSearchOrder ( --)
+ ^prev-order @ DUP >R
+ 1+ CELLS  [ 1 CELLS ] LITERAL ?DO
+  I ^prev-order + @
+ [ 1 CELLS ] LITERAL +LOOP
+ R> SET-ORDER
+;
+</b>
+
+\ : RestoreSearchOrder   ( -- )
+\    only
+\    ^prev-order @ 1+ 1              \ s: n 0
+\    ?DO                             \ s: -
+\        i cells ^prev-order +
+\        @ context ! also
+\    LOOP
+\    previous ;
+
+
+: AlsoClassSearchOrder  ( ^class -- )
+    dup parent> @rel ?dup   \ have a parent ?
+    IF RECURSE THEN         \ yes -> SetParentClassSearchOrder
+    also @ context ! ;
+
+<b>
+I think words should respect the search order, I wouldn't
+include "only forth".
+</b>
+: SetClassSearchOrder   ( -- )
+    only forth
+    also class-wordlist context !
+    ^class AlsoClassSearchOrder ;
+
+
+: ResetClassSearchOrder ( -- )
+    ^class
+    BEGIN                             \ s: -
+        previous
+        PARENT> @REL
+        ?dup 0=
+    UNTIL ;
+
+
+: ClassView             ( ^CLASS -- )
+    to ^class SetClassSearchOrder ;
+
+
+\ ------------------------------------------------
+\ CLASS DEFINITION
+\ ------------------------------------------------
+
+FORTH-WORDLIST SET-CURRENT
+
+<b>
+It is very important to have a object constructor and destructor. You
+have proposed an object is set to zero. Not even close to being ok.
+
+Lets say I want to create objects and have them linked back to the class,
+a very valid think to do. I can then search the created objects for one that
+meets some criteria. With a contructor and destructor this is a non event.
+
+Lets say I want to count the objects contructed, once again a non event with
+a contructor destructor.
+
+Lets say I want to construct an object with a pointer to a string ( a string class
+perhaps), can be done with a constructor destructor.
+
+I think I can see your trade off, you have added instance objects,
+and so that you don't have to execute the constructors destructors
+you have done away with them.
+
+Anton overcome the problem by not allowing instance objects.
+
+If you plan on doing the job properly neither option is valid. Instance objects
+should be put in a instance list and the should be initialized, this involves
+recursion. Ok it's hard code to write but it is no big deal.
+
+If you have to select between the two then Antons option is better, at least the
+user gets control over object initialization.
+
+If you accept the need for object constructors/destructors then all objects have
+to be derived from a base object
+( which to my mind should have debug methods as well). In that case SUBCLASS should
+be named CLASS, and what you have names as CLASS should be named as base-class or
+simple not exist.
+</b>
+
+: CLASS   ( <<name>> ^parent -- ) \ replace VOCABULARY
+    wordlist
+    create here to ^class       \ S: ^parent ^wid
+    ,                           \ S: ^parent
+    dup ,rel                    \ S: ^parent
+    dup IF size> @ THEN ,       \ S: -  PFA: <wid><parent><size>
+    0 ,REL                      \ vtable^
+    SaveSearchOrder
+    get-current to prev-current
+    SetClassSearchOrder
+    ^class wid> @ set-current   \ definitions
+    inherit-to-vtemp
+    DOES> ; ( -- ^CLASS )
+
+
+: base_class         ( <<name>> -- )
+    0 SUBCLASS ;
+
+
+CLASS-WORDLIST SET-CURRENT
+
+<b>
+I think END-CLASS would be better, there are things other than CLASS END-CLASS
+that go in pairs. I think it would be better if END was left alone there is less of
+a risk that the new words will interfere with current code.
+</b>
+: END   ( -- )
+    attach-class-vtable
+    RestoreSearchOrder
+    prev-current set-current ;
+
+
+\ ------------------------------------------------
+\ DATA DEFINITION
+\ ------------------------------------------------
+
+CLASS-WORDLIST SET-CURRENT
+
+<b>
+I would prefer BYTES, to me a BUFFER is something that comes and goes, but 
+I see it is used in this manner a pity really.
+
+I like the idea of using the same words to define instance data areas, but you also
+need to be able to create class specific data areas. The head of liked lists, the
+variable used to count objects, the buffer structure common to all open files,
+etc. etc. I note your default is to have the CLASS-WORDLIST searched before forth.
+I would prefer the opposite so you would have code
+
+object CLASS name
+ VARAIABLE class_vcariable
+ 100 BYTES class_data_area
+ ==instance==
+ VARIABLE instance_variable
+ 100 BTYTES instance data_area
+ ==end_instance==
+END-CLASS
+
+But I accept that is a preference thing.
+</b>
+
+
+: BUFFER:   ( <<name>> size -- )
+    create
+    ^size @ ,
+    ^size +!
+    DOES>   ( body -- offset+THIS )
+        @ this + ;
+
+
+: VARIABLE  ( <<name>> -- ) cell BUFFER: ;
+
+
+\ ------------------------------------------------
+\ SPECIAL WORDLIST LOOKUP
+\ ------------------------------------------------
+
+CLASS-WORDLIST SET-CURRENT
+
+<b>
+Anton used PARENT, I think that word has more meaning than SUPER.
+</b>
+: SUPER     ( <<name>> -- )
+    ^class cell+ @rel
+    dup 0=3D abort" class have no parent"
+    ^class >r to ^class
+    previous
+    '
+    state @
+    IF compile, ELSE execute THEN
+    r> to ^class
+    also ^class wid> @ context ! ;
+                                IMMEDIATE
+<b>
+Any person that redefines a forth word as a method deserves to be taken out
+and shot at dawn, I don't think you need this word.
+</b>
+
+: COMMON    ( <<name>> -- )
+    RestoreSearchOrder
+    '
+    state @
+    IF compile, ELSE execute THEN
+    SetClassSearchOrder ;
+                         IMMEDIATE
+
+
+
+\ ------------------------------------------------
+\ CLASS-OBJECTS INSTANCE
+\ ------------------------------------------------
+
+PRIVATE-WORDLIST SET-CURRENT
+
+\ TODO: Possibles optimisations:
+\ case...
+\   A - data exist - size > 0
+\   B - data exist with offset
+\   C - virtual method exist vtable <> 0
+\
+\   A   B   C   TODO:
+\   --  --  --  ---------------
+\   0   0   0   compile,
+\   0   0   1   save-class compile, restore
+\   0   1   0   -
+\   0   1   1   -
+\   1   0   0   compile,
+\   1   0   1   save-class compile, restore
+\   1   1   0   save-this +to compile, restore
+\   1   1   1   save-class-this compile, restore
+\
+
+<b>
+At first I didn't like it, but I think the ^class pointer is a good idea.
+In antons model you can get to the class from THIS, but he doesn't allow instance
+objects.
+
+Using a ^class pointer allows this to point to the containing class while
+dealing with a instance.
+
+It does however increase the THROW/CATCH and task switch overhead, all things that
+have to be dealt with. ( This is why attempting to write a object package in standard
+forth is a nonsense).
+</b>
+
+: execute-ivar      ( ^obj xt -- )  \ not optimal
+    ^class this 2>R
+    swap
+    dup @REL to ^class \ must because virtuals
+    cell+ @ +to this
+    execute
+    2R> to this to ^class ;
+
+: execute-ivar[]    ( index ^obj xt -- )  \ not optimal
+    ^class this 2>R
+    swap
+    dup @REL to ^class  \ must because virtuals
+    cell+ @             \ S: index xt offset
+    rot ^size @ * +     \ S: xt offset+index*size
+    +to this
+    execute
+    2R> to this to ^class ;
+
+
+: execute-iobj      ( ^obj xt -- )  \ not optimal
+    ^class this 2>R
+    swap
+    dup @REL to ^class \ must because virtuals
+    cell+ to this
+    execute
+    2R> to this to ^class ;
+
+: execute-iobj[]    ( index ^obj xt -- )
+    ^class this 2>R
+    swap
+    dup @REL to ^class      \ must because virtuals
+    cell+ rot               \ S: xt ^base index=20
+    ^size @ * +             \ S: xt offset
+    to this
+    execute
+    2R> to this to ^class ;
+
+
+CLASS-WORDLIST SET-CURRENT
+<b>
+Well now we get to the central issue, when do you bind. Antons' default is
+late binding and you can force early. Yours is early, but I can see that
+with the addition of two words ( defined later ) you can have late.
+</b>
+
+: BUILD     ( <<objname>> ^CLASS -- )
+<b>
+\    ^class >R ClassView \ set new class context
+\    ^size @ ^CLASS      \ S: SIZE CLASS
+\   R> ClassView        \ set original class context
+\ What have I missed
+ DUP size> @ SWAP
+</b>
+    create
+    ,REL ^size @ ,      \ PFA: <OBJCLASS><OFFSET>
+    ^size +!            \ S: -
+    IMMEDIATE
+    DOES>
+        ^class >r       \ save prev context
+        dup @REL        \ S: ^obj CLASS
+        ClassView       \ S: ^obj
+        '               \ S: ^obj xt=20
+        STATE @
+        IF
+            postpone 2literal
+            postpone execute-ivar
+        ELSE
+            execute-ivar
+        THEN
+        r> dup to ^class
+        ClassView ;
+<b>
+Note to myself
+--------------
+assume BUILD child is fred, can fred be made into a useful object that can
+use late binding.
+
+['] fred >BODY
+
+will return a a data structure containing
+class>
+offset>
+
+Yes neat coding method would require come thought but all is not lost.
+</b>
+
+
+<b>
+I was calling the "method object" thing neon, but I see your calling it yerk.
+The version I saw attempted to support arrays of objects, but it had bugs.
+I think the fact that there where bugs indicates how useful it was.
+
+Objects that had constuctors and destrutors would be far more useful. than
+arrays of data areas set to zero, which after all is all this is.
+</b>
+
+: BUILD[]    ( <<objname>> count ^class -- )
+    create
+    dup ,REL ^size @ ,  \ PFA: <OBJCLASS><OFFSET>
+    size> @ * ^size +!  \ S: -
+    IMMEDIATE
+    DOES>   ( index ^obj -- )
+        ^class >r       \ save prev context
+        dup @REL        \ S: index ^obj CLASS
+        ClassView       \ S: index ^obj
+        '               \ S: index ^obj xt
+        STATE @
+        IF
+            postpone 2literal
+            postpone execute-ivar[]
+        ELSE
+            execute-ivar[]
+        THEN
+        r> dup to ^class
+        ClassView ;
+
+
+
+FORTH-WORDLIST SET-CURRENT
+<b>
+Once again default is early binding, it does raise the question,
+why use the v table, in the body of xt is the offset, the object
+points to the class at compile time what's stopping
+you doing a compile time resolution of the jump. If this is going to
+be the common form the vtable is a waste.
+</b>
+: BUILD     ( <<objname>> ^class -- )
+    create
+    dup ,rel
+    here swap           \ S: here ^class
+    size> @ dup allot   \ PFA: <CLASS><..DATA..>
+    0 fill              \ proposal is to initialize
+    IMMEDIATE
+    DOES>
+        SaveSearchOrder
+        dup @REL        \ S: ^obj CLASS
+        ClassView       \ S: ^obj
+        '               \ S: ^obj xt
+        STATE @
+        IF
+            postpone 2literal
+            postpone execute-iobj
+        ELSE
+            execute-iobj
+        THEN
+        RestoreSearchOrder ;
+
+
+: BUILD[]   ( <<objname>> count ^class -- )
+    create
+    dup ,rel            \ S: count  ^class
+    size> @ *           \ S: count*size
+    here swap           \ S: here count*size
+    dup allot           \ PFA: <CLASS><..DATA..>
+    0 fill              \ proposal is to initialize
+    IMMEDIATE
+    DOES>   ( index ^obj -- )
+        SaveSearchOrder
+        dup @REL        \ S: index ^obj CLASS
+        ClassView       \ S: index ^obj
+        '               \ S: index ^obj xt
+        STATE @
+        IF
+            postpone 2literal
+            postpone execute-iobj[]
+        ELSE
+            execute-iobj[]
+        THEN
+        RestoreSearchOrder ;
+
+
+
+\ ------------------------------------------------
+\ (optional) VIRTUAL: ( <<name>> -- )
+\ define a virtual method
+\ ------------------------------------------------
+
+<b>
+I would of built it in the ALLOCATE area as anton did, then there
+is no arbitrary limit.
+</b>
+
+PRIVATE-WORDLIST SET-CURRENT
+
+100 constant MAX-VIRTUAL
+
+create vTblTemp 0 , MAX-VIRTUAL 2* cells allot
+
+: virt-count    ( -- addr )
+    ^VTABLE @REL ;
+
+: vtable[]      ( n -- addr )
+    2* 1+ cells virt-count + ;
+
+
+:noname [ IS inherit-to-vtemp ]  ( -- )
+    0 vTblTemp !
+    ^parent @REL
+    IF
+        ^class >r
+        ^parent @REL to ^class
+        ^vtable @REL
+        IF
+            virt-count @ vTblTemp !
+            vTblTemp cell+
+            virt-count @ 0
+            ?DO
+                i vtable[] @REL over !REL
+                cell+
+                i vtable[] cell+ @REL over !REL
+                cell+
+            LOOP
+            drop
+         THEN
+         r> to ^class
+    THEN
+    vTblTemp ^vtable !REL ;
+
+
+:noname [ IS attach-class-vtable ]  ( -- )
+    virt-count @
+    IF
+        here
+        virt-count dup @    \ S: body addr count
+        dup , 0             \ S: body addr count 0
+        ?DO                 \ S: body addr
+            cell+ dup @REL ,REL
+            cell+ dup @REL ,REL
+        LOOP
+        drop
+        ^vtable !REL
+     ELSE
+        0 ^vtable !REL
+     THEN ;
+
+
+: in-vtable         ( body^ -- pos true | false )
+    virt-count @ 0
+    ?DO
+        i vtable[] cell+ @REL over
+        IF drop i TRUE unloop EXIT THEN
+    LOOP
+    drop FALSE ;
+
+
+: append-to-vtable  ( body^ -- n )
+    \ later, we should use allocate/resize
+    virt-count @
+    dup MAX-VIRTUAL >= abort" virtual table overflow - see =
+MAX-VIRTUAL"
+
+    vtable[] cell+ !REL
+    virt-count @
+    dup 1+ virt-count ! ;
+
+
+: CreateVirtual:    ( <<method>> -- vn )
+    Create here             \ S: bod
+    append-to-vtable        \ S: vn
+    dup 2* 1+ cells ,       \ S: byte-offset
+                            \ offset in bytes to speed-up
+    DOES>                   \ TODO: better optimisation
+        @ ^vtable @REL +    \ this is the virtual overhead
+        @REL execute ;
+
+
+\ ------------------------------------------------
+\ Extra words - not defined in ANSI proposal
+\ ------------------------------------------------
+
+CLASS-WORDLIST SET-CURRENT
+
+: VIRTUAL:          ( <<name>> -- )
+    >IN @
+    bl word find
+    IF                      \ S: in^ xt
+        >body in-vtable
+        IF
+   <b>
+   \ defined just return the vn, we are about to override
+            </b>
+   nip             \ S: vn
+        ELSE
+   <b>
+   \ going to redefine a forth word, I would tell
+   \ the programer he is about to make a big mistake
+   \ but thats my view.
+            </b>
+   >IN !
+            CreateVirtual:  \ S: vn
+        THEN
+    ELSE                    \ S: in^ cstr
+  <b>
+  \ new word.
+        </b>
+  drop >IN !          \ S: -
+        CreateVirtual:      \ S: vn
+    THEN
+ \ start the compiler add the address to the vtable.
+    :noname swap            \ S: xt vn
+    vtable[] !REL ;
+
+
+
+FORTH-WORDLIST SET-CURRENT
+<b>
+\ only valid for objects not for instances.
+</b>
+: >THIS     ( ^object -- ^membase ) \ usage ' obj >this
+    >body cell+ ;
+
+
+: >CLASS    ( ^object -- ^class )   \ usage ' obj >class
+    >body @REL ;
+
+<b>
+This is the only word that talks about something at this location
+I wonder what he has in mond
+</b>
+: USER>     ( ^class -- addr )      \ ' obj >class user> @
+    [ 4 CELLS ] LITERAL + ;
+
+
+: NEW       ( ^class -- ^obj )
+    dup SIZE> @ cell+
+    allocate abort" memory allocation error"
+    swap over !REL ;
+<b>
+Ok to have an obj have to use it to set current, something like this
+
+ class NEW
+ set_object
+  method
+ reset_object
+
+: set_object      ( ^obj -- )  \ not optimal
+    ^class this 2>R
+    dup @REL to ^class \ must because virtuals
+    cell+ to this
+;
+
+: reset_object
+    2R> to this
+ to ^class
+;
+</b>
+
+
+: NEW[]     ( count ^class -- ^obj )
+    dup SIZE> @ rot * cell+
+    allocate abort" memory allocation error"
+    swap over !REL ;
+
+
+\ FREE DROP can be used - so no collision with RELEASE
+
+
+<b>
+I think these take an extry string out of the input area, used in the form
+
+->" object" instance method
+
+But it's only a guess
+</b>
+
+: ->"      ( <<obj]>> <<method>> -- )
+    [char] " word count evaluate
+    ^class >R
+    dup @REL to ^class  \ S: ^obj
+    ^class AlsoClassSearchOrder
+    '                   \ S: ^obj xt
+    state @
+    IF
+        postpone 2literal
+        postpone execute-iobj
+    ELSE
+        execute-iobj
+    THEN
+    ResetClassSearchOrder
+    R> to ^class ;
+                    IMMEDIATE
+
+: []->"      ( index <<obj]>> <<method>> -- )
+    [char] " word count evaluate
+    ^class >R
+    dup @REL to ^class  \ S: index ^obj
+    ^class AlsoClassSearchOrder
+    '                 \ S: index ^obj xt
+    state @
+    IF
+        postpone literal
+        postpone execute-iobj[]
+    ELSE
+        execute-iobj[]
+    THEN
+    ResetClassSearchOrder
+    R> to ^class ;
+                    IMMEDIATE
+
+
+: .CLASSINFO ( ^class -- )
+    SaveSearchOrder
+    CR 0 >r
+    BEGIN
+        dup body> >name count
+        swap over CR r@ spaces type CR
+        r@ spaces 0 ?DO [char] - emit LOOP
+        dup wid> @ context !
+        CR r@ spaces words CR
+        parent> @rel ?dup 0=
+        r> 3 + >r=20
+    UNTIL
+    r> drop
+    RestoreSearchOrder ;
+
+
+: SIZEOF    ( ^class -- size )
+    size> @ ;
+
+
+ONLY FORTH ALSO DEFINITIONS
+
+\ ------------------------------------------------
+\                    SOURCE END
+\ ------------------------------------------------
+
+</code>
+Wil Baden ANSI Class wordset = proposal
+
+CLASS
+    CLASS class
+    Construct a class.
+    A class is a defining word for a collection of future definitions.
+
+SUBCLASS
+    class SUBCLASS classname
+    Construct an extension or specialization of a class.
+
+
+VARIABLE                WITHIN A CLASS
+    VARIABLE membername
+    Define a variable member of a class.
+
+BUFFER:                 WITHIN A CLASS
+    n CHARS BUFFER: membername
+    n CELLS BUFFER: membername
+    Define a data area member of a class.
+
+CONSTANT                WITHIN A CLASS
+    n CONSTANT membername
+    Define a constant member of a class.
+
+<b>
+This was changed to VIRTUAL:
+</b>
+:                       WITHIN A CLASS
+    : membername ... ;
+    Define a function member of a class.
+
+;                       WITHIN A CLASS
+    : membername ... ;
+    Terminate the definition of a function member of a class.
+
+END                     WITHIN A CLASS
+    END
+    Terminate the construction of a class.
+
+BUILD
+    class BUILD objectname
+    Build object objectname as an instance of class .
+    Objects are used object member .
+
+COMMON                  WITHIN A CLASS
+    COMMON forthword
+    Compile forthword from standard dictionary.
+
+SUPER                   WITHIN A CLASS
+    SUPER member
+    Compile a member, beginning lookup for it in the superclass.
+    This disambiguates members with the same name.
+
+
+My extension in the above =  object base memory adress.
+
+^CLASS
+    This value return the context class body adress.
+
+
+<b>
+In conclusion, neither of the three methods on offer are perfect, If I had my
+way I would combine the best from this model and anton's. If I have to pick
+between the two anton's is the go. The lack of contructors and destructors
+and the difficulty of late binding lets this model down.
+
+Anton also defined interfaces. But I don't see that as a big issue.
+</b>
+
+
+</BODY>
+</HTML>

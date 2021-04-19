@@ -1,0 +1,1027 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+CREATE  _boot_to_sdram assembler
+	</code> </pre>
+<p>
+Preset registers so early exception displays look nice.
+</p>
+	<pre> <code>
+	$C0DE00 # D0 MOV
+	$C0DE01 # D1 MOV
+	$C0DE02 # D2 MOV
+	$C0DE03 # D3 MOV
+	$C0DE04 # D4 MOV
+	$C0DE05 # D5 MOV
+	$C0DE06 # D6 MOV
+	$C0DE07 # D7 MOV
+	$C0DE08 # A0 MOV
+	$C0DE09 # A1 MOV
+	$C0DE0A # A2 MOV
+	$C0DE0B # A3 MOV
+	$C0DE0C # A4 MOV
+	$C0DE0D # A5 MOV
+	$C0DE0E # A6 MOV
+	$C0DE0F # A7 MOV
+	</code> </pre>
+<p>
+Set module base address register.
+</p>
+	<pre> <code>
+	#mba _#mbar_valid_bit + # D0 MOV
+	D0 MBAR MOV
+	</code> </pre>
+
+<p>
+As we want to write to duel port memory setting up the chip select registers is the next
+thing that needs to be done.
+</p>
+
+<p>
+Chip Select zero.
+</p>
+
+	<pre> <code>
+	_#boot_flash_base #16 RSHIFT # D0 MOV
+	D0 _wreg_CSAR0 AB W. MOV
+
+	_#cscr0_wait_states 
+	_#cscrx_AA          + \ auto acknowledge
+	_#cscr0_port_size   +  # D0 MOV
+	D0 _wreg_CSCR0 AB W. MOV
+
+	_#boot_flash_size 1 - FFFF0000 forth AND assembler  # D0 MOV 
+	D0 _lreg_CSMR0 AB MOV
+
+	_#boot_flash_size 1 - FFFF0000 forth AND assembler
+        \ CE 6 Nov 2001
+        _#csmrx_C/I +
+	_#csmrx_V + # D0 MOV
+	D0 _lreg_CSMR0 AB MOV
+	</code> </pre>
+
+
+<p>
+Chip Select one.
+</p>
+
+	<pre> <code>
+	_#application_flash_base #16 RSHIFT # D0 MOV
+	D0 _wreg_CSAR1 AB W. MOV
+
+	_#cscr1_wait_states 
+	_#cscrx_AA          + \ auto acknowledge
+	_#cscr1_port_size   +  # D0 MOV
+	D0 _wreg_CSCR1 AB W. MOV
+
+	_#application_flash_size 1 - FFFF0000 forth AND assembler # D0 MOV
+	D0 _lreg_CSMR1 AB MOV
+
+	_#application_flash_size 1 - FFFF0000 forth AND assembler
+        \ CE 6 Nov 2001
+        _#csmrx_C/I +
+	_#csmrx_V + # D0 MOV
+	D0 _lreg_CSMR1 AB MOV
+
+	</code> </pre>
+<p>
+Synchronious static memory
+</p>
+	<pre> <code>
+	_#cscr2_wait_states
+	_#cscrx_AA          + \
+	_#cscr2_port_size   +
+	 # D0 MOV
+	D0 _wreg_CSCR2 AB W. MOV
+
+	_#Synch_static_ram_base #16 RSHIFT # D0 MOV
+	D0 _wreg_CSAR2 AB W. MOV
+
+	_#Synch_static_ram_size 1 - FFFF0000 forth AND assembler # D0 MOV
+	D0 _lreg_CSMR2 AB MOV
+
+	_#Synch_static_ram_size 1 - FFFF0000 forth AND assembler
+        \ CE 6 Nov 2001
+        _#csmrx_C/I +
+        _#csmrx_V + # D0 MOV
+	D0 _lreg_CSMR2 AB MOV
+	</code> </pre>
+<p>
+stage 1 and 2 dual port
+</p>
+	<pre> <code>
+	_#cscr3_wait_states
+	_#cscrx_AA          +
+	_#cscr3_port_size   +
+	_#cscrx_BEM         +
+	    # D0 MOV
+	D0 _wreg_CSCR3 AB W. MOV
+
+	_#RTI1000_dual_port_base #16 RSHIFT # D0 MOV
+	D0 _wreg_CSAR3 AB W. MOV
+
+	_#RTI1000_dual_port_size 1 - FFFF0000 forth AND assembler # D0 MOV
+	D0 _lreg_CSMR3 AB MOV
+
+	_#RTI1000_dual_port_size 1 - FFFF0000 forth AND assembler
+        _#csmrx_C/I +
+        _#csmrx_V + # D0 MOV
+	D0 _lreg_CSMR3 AB MOV
+
+	\ Just played with chip select, put in a NOP just in case problems occur.
+	NOP
+
+	\ finished chip select init
+	_#finished_chip_select # D0 MOV
+	D0 %port_init_where  AB MOV
+
+</code> </pre>	
+<p>
+We want to use the stop instruction, so we had better enable it.
+</p>
+<pre> <code>
+
+	_#pllcr_ENBSTOP  \ enable stop
+	_#pllcr_PLLIPL   + # D0 MOV \ phase lock loop interrupt priority.
+
+        \ finished chip select init
+	D0 _breg_PLLCR AB B. MOV
+
+</code> </pre>
+<p>
+Test that dual port memory is working correctly, and copy start string.
+</p> 
+<pre> <code>
+#BVP555x_dp_test [IF]
+
+	0x087654321 # D7 MOV			\ code to let S2 continue
+	%port_init_where # A1 MOV		\ report fault
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	BEGIN
+		A0 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	BEGIN
+		A0 D2 MOV
+		A0 )+ D1 MOV
+		D1 D2 CMP NE IF
+			_#dpram_addr_error # D0 MOV
+			D0 [ A1 ]+ MOV
+			A0 [ A1 ]+ MOV
+			D1 [ A1 ] MOV
+			BEGIN
+				D7 _#RTI1000_dual_port_base AB MOV		\ let S2 continue
+			BRA
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	0x055555555 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#dpram_55_error # D0 MOV
+			D0 %port_init_where AB MOV
+			BEGIN
+				D7 _#RTI1000_dual_port_base AB MOV		\ let S2 continue
+			BRA
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	0x0AAAAAAAA # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#dpram_AA_error # D0 MOV
+			D0 %port_init_where AB MOV
+			BEGIN
+				D7 _#RTI1000_dual_port_base AB MOV		\ let S2 continue
+			BRA
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	0x0FFFFFFFF # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#dpram_FF_error # D0 MOV
+			D0 %port_init_where AB MOV
+			BEGIN
+				D7 _#RTI1000_dual_port_base AB MOV		\ let S2 continue
+			BRA
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#RTI1000_dual_port_base # A0 MOV
+	_#RTI1000_dual_port_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 OR
+		4 # D0 SUB
+	EQ UNTIL
+
+	D1 TST NE IF
+		_#dpram_0_init_error # D0 MOV
+		D0 %port_init_where AB MOV
+		BEGIN
+			D7 _#RTI1000_dual_port_base AB MOV		\ let S2 continue
+		BRA
+	THEN
+
+	D7 _#RTI1000_dual_port_base AB MOV		\ let S2 know we are finished.
+[THEN]
+
+	\ copy string to start of dual port
+	\ we want the prom address of the sting not the DRAM address
+	 _$chip_select _prom_kernel_start - _#boot_flash_base + # A0 MOV
+	 _#RTI1000_dual_port_base # A1 MOV
+	 0 # D0 MOV
+	 A0 ) D0 B. MOV
+	 1 # D0 ADD
+	 BEGIN
+	 	A0 )+ A1 )+ B. MOV
+		1 # D0 SUB
+	 LE UNTIL
+
+
+ </code> </pre>
+<h4>Getting the sdram started</h4>
+<p>
+User's manual section 11.6.2.1.2 discusses the problem.
+</p>
+<p>
+After Power is applied and all clocks are running and stable
+a 100usec delay is required. Then the SDRAM accepts commands.
+During this time the MCF5307 SDRAM controller registers can
+be setup.
+</p>
+
+<h4>Setting up the timer for DRAM startup timing</h4>
+<p>
+We have decided to use only one time delay 100 usec.
+At 45Mhz ( timer input clock) 100 usec is.
+100 / .022222 = 4500 cycles. This is well within the
+range of the counter with no prescaling.
+</p>
+<table>
+<caption><b>Timer Mode Register</b></caption>
+<tr><th>field</th><th>value</th><th>comment</th></tr>
+<tr><td>PSt->PS0</td><td>00000000</td><td>Divide by 1</td></tr>
+<tr><td>CE1->CE0</td><td>00</td><td>Disable interrupt on capture event</td></tr>
+<tr><td>OM</td><td>0</td><td>Don't care</td></tr>
+<tr><td>ORI</td><td>0</td><td>No interrupts</td></tr>
+<tr><td>TRR</td><td>0</td><td>Free run</td><tr>
+<tr><td>CLK1->CLK0</td><td>01</td><td>System clock/1</td><tr>
+<tr><td>RST</td><td>1</td><td>Enable tinmer</td><tr>
+</table>
+<p>
+Set the timer mode register to 03.
+</p>
+
+	<pre> <code>
+	\ disable timer
+	0 # D0 MOV
+	D0 _wreg_TMR1 AB W. MOV
+	\ enable as we require
+	03 # D0 MOV
+	D0 _wreg_TMR1 AB W. MOV
+
+
+        _#finished_setup_timer # D0 MOV
+	D0 %port_init_where AB MOV
+
+	</code> </pre>
+<p>
+See <a HREF="MCF5307_constants.html#DCR">DCR</a> for further disscussion.
+</p>
+	<pre> <code>
+        _#dcr_syncronous_mode
+	_#dcr_refresh_timing   +
+	_#dcr_refresh_count    + # D0 MOV
+	D0 _wreg_DCR AB W. MOV
+
+	_#sdram0_base
+	_#dacrx_CASL            + \ Column address strobe latency 10 ( for 3 cycles)
+	_#dacrx_CBM             + \ Command and bank mux address line 22 and up
+	_#dacrx_PM              + \ consinuous page mode
+	_#dacrx_PS              + # D0 MOV \ Port size 32 bit
+	D0 _lreg_DACR0 AB MOV
+
+	_#dmrx_address_mask
+	_#dmrx_addr_modifiers +
+	_#dmrx_valid + # D0 MOV
+	D0 _lreg_DMR0 AB MOV
+	</code> </pre>
+<p>
+These 5 registers complete the MCF5307 SDRam register setup phase.
+</p>
+<p>
+Wait 100usecs. This can be generated in whatever manner desired but as
+CPU timeing is now very complex we have set up a timer for non interrupt operation
+and are about to poll the count.
+</p>
+	<pre> <code>
+
+
+
+
+	0 # D0 MOV
+	BEGIN
+		_wreg_TCN1 AB D0 W. MOV
+		\ COLDFORTH supports # as a decimal number indicator
+		#5400 # D0 CMP
+	GT UNTIL
+
+	_#finished_first_wait # D0 MOV
+	D0 %port_init_where AB MOV
+
+
+
+
+	</code> </pre>
+<p>
+Issue a "pre-charge all" command by setting the IP bit in the DACRx register
+to a one and then accessing any memory location in the associated SDRam.
+</p>
+	<pre> <code>
+	\ bank 0
+	_lreg_DACR0 AB D0 MOV
+	_#dacrx_IP  # D0 OR    \ Initiate precharge all
+	D0 _lreg_DACR0 AB MOV
+	D0 _#sdram0_base AB MOV
+
+
+	\ wait until finished
+	\ This should be a very short wait
+	BEGIN
+		_lreg_DACR0 AB D0 MOV
+		_#dacrx_IP # D0 AND
+	EQ UNTIL
+
+
+	_#finished_precharge # D0 MOV
+	D0 %port_init_where AB MOV
+
+
+	</code> </pre>
+<p>
+On completion of the pre-charge command the SDRam enters an idle state.
+</p>
+ <p>
+Enable refresh by setting the RE bit in the DACRx register to a one.
+</p>
+	<pre> <code>
+	\ bank 0
+	_lreg_DACR0 AB D0 MOV
+	_#dacrx_RE  # D0 OR    \ Initiate refresh
+	D0 _lreg_DACR0 AB MOV
+	</code> </pre>
+<p>
+Once the Refresh commands have been enabled wait for at least eight refresh cycles
+to be completed ( user's manual 11.6.2.1.2), 2 cycles ( page 8 MT48L4M16A2 data sheets).
+The time taken for a refresh cycle is dependent on the value written to
+<a HREF="MCF5307_constants.html#DCR">DCR</a> .
+We have the value set for a refresh cycle every 15.28 usec.<br>
+</p>
+<p>
+Wait 15.28 * 3 = 45.84 usec, make it 100usec.
+</p>
+	<pre> <code>
+	\ disable timer
+	0 # D0 MOV
+	D0 _wreg_TMR1 AB W. MOV
+	\ enable as we require
+	03 # D0 MOV
+	D0 _wreg_TMR1 AB W. MOV
+	BEGIN
+		_wreg_TCN1 AB D0 W. MOV
+		\ COLDFORTH supports # as a decimal number indicator
+		#4500 #  D0 CMP
+	GT UNTIL
+
+
+	_#finished_refresh_wait # D0 MOV
+	D0 %port_init_where AB MOV
+
+
+	</code> </pre>
+
+<h4>The mode</h4>
+<p>
+If you set IMRS in _lreg_DACRx you can write to the SDRAM mode register.
+The value written depends on the address present on the address bus when the ram is next
+written to after IMRS is set. The address is not multiplexed (section 11.6.2.1.3). So you have to work
+out the value you want written and then work out which coldfire address lines you need
+active to put the value on the sdram address lines.
+</p>
+<p>
+Lets work out the value first.
+</p>
+<table>
+<tr><th>Sdram Address Pin</th><th>Coldfire Address Pin</th><th>Comment</th><th>value</th><tr>
+<tr><td>0</td><td>15</td><td>burst length 0(1)</td><td>0</td></tr>
+<tr><td>1</td><td>14</td><td>burst length 1</td><td>0</td></tr>
+<tr><td>2</td><td>13</td><td>burst length 2</td><td>0</td></tr>
+<tr><td>3</td><td>12</td><td>Burst type(2)</td><td>0</td></tr>
+<tr><td>4</td><td>11</td><td>CAS latency(3)</td><td>0</td></tr>
+<tr><td>5</td><td>10</td><td>CAS latency</td><td>1</td></tr>
+<tr><td>6</td><td>9</td><td>CAS latency</td><td>0</td></tr>
+<tr><td>7</td><td>17</td><td>Operating Mode(4)</td><td>0</td></tr>
+<tr><td>8</td><td>18</td><td>Operating mode</td><td>0</td></tr>
+<tr><td>9</td><td>19</td><td>Write burst type(5)</td><td>1</td></tr>
+<tr><td>10</td><td>21</td><td>Reserved</td><td>0</td></tr>
+<tr><td>11</td><td>20</td><td>Reserved</td><td>0</td></tr>
+</table>
+<br>
+(1)Burst length is set to 1 as required section 11.6.2.1.3 of user's manual.<br>
+(2)Burst is not used, value should not matter.<br>
+(3)Bus running at 45 mHz 2 cycles is enough.<br>
+(4)Only one mode defined.<br>
+(5)0 or 1 should work. Set to 1<br>
+<p>
+So the the value to write is 0x220
+</p>
+<p>
+Now the translation. We need to set A5 and A9 on the chip, the address isn't
+multiplexed. write 80400. That is A10 and A19 on the coldfire.
+</p>
+<pre> <code>
+
+#BVP5551_dram [IF]
+
+	\ bank 0
+	_lreg_DACR0 AB D0 MOV
+	_#dacrx_IMRS # D0 OR  \ Initiate mode register set
+	D0 _lreg_DACR0 AB MOV
+	\ Value written doesn't matter, the address does.
+	D0 _#sdram0_base 80400 + AB MOV
+
+
+	\ bank 1
+\	_lreg_DACR1 AB D0 MOV
+\	_#dacrx_IMRS # D0 OR  \ Initiate mode register set
+\	D0 _lreg_DACR1 AB MOV
+\	\ value written doesn't matter, the address does.
+\	D0 _#sdram1_base 80400 + AB MOV
+
+	\ finished sdram init
+	_#finished_sram_init # D0 MOV
+	D0 %port_init_where AB MOV
+
+
+	</code> </pre>
+<p>
+The dram is ready to run. Wasn't too hard now was it.
+</p>
+<p>
+Now to test it. Basic read and write
+</p>
+	<pre> <code>
+	\ Can we write zero to bank 0?
+	0 # D0 MOV
+	D0 _#sdram0_base AB MOV
+	_#sdram0_base AB D0 MOV NE IF
+
+		0x2700 # STOP
+	THEN
+
+	_#finished_zero_write0 # D0 MOV
+	D0 %port_init_where AB MOV
+
+
+	\ Can we write -1 to bank 0?
+	-1 # D0 MOV
+	D0 _#sdram0_base AB MOV
+	_#sdram0_base AB D0 MOV 
+
+
+	</code> </pre>
+<p>
+Write value read back so fault can be looked at if it occures
+</p>
+	<pre> <code>
+	D0 %port_init_where 4 + AB MOV
+	-1 # D0 CMP NE IF
+
+		0x2700 # STOP
+	THEN
+
+	_#finished_one_write0 # D0 MOV
+	D0 %port_init_where AB MOV
+	</code> </pre>
+<p>
+The byte operations bank0
+</p>
+	<pre> <code>
+	87 # D0 MOV
+	D0 _#sdram0_base AB B. MOV
+	_#sdram0_base AB D0 MOV
+	0x87FFFFFF # D0 CMP NE IF
+ 		D0 %port_init_error AB MOV
+                BEGIN
+                    _#sdram0_base AB D0 MOV
+                BRA
+\		0x2700 # STOP
+	THEN
+
+	\ Byte operations work bank0 
+	_#finished_byte_op0a # D0 MOV
+	D0 %port_init_where AB MOV
+
+	65 # D0 MOV
+	D0 _#sdram0_base 1+ AB B. MOV
+	_#sdram0_base AB D0 MOV
+	0x8765FFFF # D0 CMP NE IF
+		0x2700 # STOP
+	THEN
+	\ Byte operations work bank0 
+	_#finished_byte_op0b # D0 MOV
+	D0 %port_init_where AB MOV
+
+	43 # D0 MOV
+	D0 _#sdram0_base 2 + AB B. MOV
+	_#sdram0_base AB D0 MOV
+	0x876543FF # D0 CMP NE IF
+		0x2700 # STOP
+	THEN
+	\ Byte operations work bank0 
+	_#finished_byte_op0c # D0 MOV
+	D0 %port_init_where AB MOV
+
+	21 # D0 MOV
+	D0 _#sdram0_base 3 + AB B. MOV
+	_#sdram0_base AB D0 MOV
+	0x87654321 # D0 CMP NE IF
+		0x2700 # STOP
+	THEN
+
+	\ Byte operations work bank0 
+	_#finished_byte_op0d # D0 MOV
+	D0 %port_init_where AB MOV
+
+	</code> </pre>
+<p>
+Ok now we have to test the whole thing, to keep the startup time
+reasonable, this things has to perform, so we enable cache.
+</p>
+	<pre> <code>
+	\ Prom instruction cache
+	\ set ACR3 ( instruction access).
+	_#acr3_address_mask
+	_#acr3_address_base +
+	_#acr3_enable + 
+	_#acr3_SFIELD +
+	_#acr3_CM_cached  + 
+	_#acr3_WP + # D0 MOV
+	D0 ACR3 MOV
+	
+
+	\ invalidate all the caches.
+	_#cacr_DCINVA \ data cache invalidate
+	_#cacr_BCINVA + \ branch cache invalidate
+	_#cacr_ICINVA + \ Instruction cache invalidate
+	    # D0 MOV
+	D0 CACR MOV
+
+	\ enable the instruction and branch cache.
+	\ as we want to test memory it is best to leave the
+	\ data cache disabled.
+	_#cacr_IEC             \ Enable instruction cache	
+	_#cacr_BEC +           \ branch cache enable
+	    # D0 MOV
+	D0 CACR MOV
+	</code> </pre> 
+<p>
+Can we set the memory sub system to AAAAAAAA.
+</p>
+	<pre> <code>
+	_#par_value # D0 MOV
+	D0 _wreg_PAR AB W. MOV
+	_#paddr_value # D0 MOV
+	D0 _wreg_PADDR AB W. MOV
+	_wreg_PADAT AB D0 W. MOV
+	_#restart_method_bits # D0 AND
+	_#cold_restart # D0 CMP EQ W. IF
+
+		
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0xAAAAAAAA # D1 MOV
+		0 # D3 MOV
+		BEGIN
+			D1 A0 ) MOV
+			D1 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+		D3 TST NE IF
+
+				0x2700 # STOP
+				BEGIN
+					0 # D0 MOV
+				BRA
+		THEN
+
+		_#finished_AAAAAAAA_0 # D0 MOV
+		D0 %port_init_where AB MOV
+
+
+		</code> </pre>
+	<p>
+	Can we set the memory sub system to 55555555.
+	</p>
+		<pre> <code>
+
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0x55555555 # D1 MOV
+		0 # D3 MOV
+		BEGIN
+			D1 A0 ) MOV
+			D1 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+		D3 TST NE IF
+				BEGIN
+					0 # D0 MOV
+				BRA	
+				0x2700 # STOP
+		THEN
+
+
+		_#finished_55555555_0 # D0 MOV
+		D0 %port_init_where AB MOV
+
+		</code> </pre>
+	<p>
+	Can we set sdram to its address in ascending order
+	</p>
+		<pre> <code>
+
+		_#sdram0_base # A0 MOV
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			A0 A0 )+ MOV
+			4 # D0 SUB
+		EQ UNTIL
+		
+		_#sdram0_base _#sdram0_size 2 / + # A0 MOV
+		A0 D1 MOV 4 # D1 ADD
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			D1 A0 )+ MOV
+			4 # D1 ADD
+			4 # D0 SUB
+		EQ UNTIL
+		
+			
+		_#sdram0_base # A0 MOV
+		_#sdram0_size 2/  # D0 MOV
+
+		0 # D3 MOV
+		BEGIN
+			A0 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+
+		_#sdram0_base _#sdram0_size 2 / + # A0 MOV
+		A0 D1 MOV 4 # D1 ADD
+		_#sdram0_size 2 / # D0 MOV
+		BEGIN
+			D1 D3 ADD
+			A0 )+  D3 SUB
+			4 # D1 ADD
+			4 # D0 SUB
+		EQ UNTIL
+
+
+		D3 TST NE IF				
+				BEGIN
+					0 # D0 MOV
+				BRA
+				0x2700 # STOP
+		THEN
+		_#finished_up_address_0 # D0 MOV
+		D0 %port_init_where AB MOV
+
+
+	
+
+		</code> </pre>
+	<p>
+	Can we set the sdram to its address in decending order
+	</p>
+		<pre> <code>
+
+		_#sdram0_base _#sdram0_size + # A0 MOV
+		_#sdram0_size # D0 MOV
+		BEGIN
+			4 # A0 SUB
+			A0 A0 ) MOV
+			4 # D0 SUB
+		EQ UNTIL	
+		_#sdram0_base # A0 MOV
+		_#sdram0_size # D0 MOV
+		0 # D3 MOV
+		BEGIN
+			A0 D3 ADD
+			A0 )+ D3 SUB 
+			4 # D0 SUB
+		EQ UNTIL	
+
+		D3 TST NE IF
+			BEGIN
+				0 # D0 MOV
+			BRA
+			0x2700 # STOP
+		THEN
+
+		_#finished_down_address_0 # D0 MOV
+		D0 %port_init_where AB MOV
+	
+	THEN
+	
+	</code> </pre>
+<p>
+I think we have to say the dynamic ram is ok. Set it to zero.
+</p>
+	<pre> <code>
+
+	_#sdram0_base # A0 MOV
+	_#sdram0_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL	
+
+[ELSE]		\ using static ram instead.
+
+</code> </pre>
+<p>
+Test static ram and set to zero.
+</p>
+<pre> <code>
+	_#par_value # D0 MOV			\ init PP lines.
+	D0 _wreg_PAR AB W. MOV
+	_#paddr_value # D0 MOV
+	D0 _wreg_PADDR AB W. MOV
+
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	BEGIN
+		A0 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	BEGIN
+		A0 D2 MOV
+		A0 )+ D1 MOV
+		D1 D2 CMP NE IF
+			_#sram_addr_error # D0 MOV
+			D0 %port_init_where AB MOV
+			0x2700 # STOP
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	0x055555555 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#sram_55_error # D0 MOV
+			D0 %port_init_where AB MOV
+			0x2700 # STOP
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	0x0AAAAAAAA # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#sram_AA_error # D0 MOV
+			D0 %port_init_where AB MOV
+			0x2700 # STOP
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	0x0FFFFFFFF # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 CMP NE IF
+			_#sram_FF_error # D0 MOV
+			D0 %port_init_where AB MOV
+			0x2700 # STOP
+		THEN
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		D1 A0 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+	
+	_#Synch_static_ram_base # A0 MOV
+	_#Synch_static_ram_size # D0 MOV
+	0 # D1 MOV
+	BEGIN
+		A0 )+ D2 MOV
+		D2 D1 OR
+		4 # D0 SUB
+	EQ UNTIL
+
+	D1 TST NE IF
+		_#sram_0_init_error # D0 MOV
+		D0 %port_init_where AB MOV
+		0x2700 # STOP
+	THEN
+
+[THEN]
+
+</code> </pre>
+<p>
+We now need to copy the boot code into the sdram or sram.
+</p>	
+	<pre> <code>
+        \ copy the kernel image
+	_#boot_flash_base # A0 MOV
+	_prom_kernel_start # A1 MOV
+	_prom_kernel_size # D0 MOV
+	BEGIN
+		A0 )+ A1 )+ MOV
+		4 # D0 SUB
+	EQ UNTIL
+
+	_#finished_copied_boot # D0 MOV
+	D0 %port_init_where AB MOV
+	</code> </pre>
+<p>
+Setup caching. Instruction cahe will now cache dynamic ram; the data cache will 
+still not cache dynamic ram. We need it this way so we can write the TRAP3 vector
+and have it work, The trap 3 vector is used for the cache flush.
+</p>
+	<pre> <code>
+
+
+        \ data cache inhibited.
+	_#acr0_address_mask
+	_#acr0_address_base +
+	_#acr0_enable +
+	_#acr0_SFIELD +
+	_#acr0_CM_inhibited  + # D0 MOV
+	D0 ACR0 MOV
+
+	\ data cache inhibited.
+	_#acr1_address_mask
+	_#acr1_address_base +
+	_#acr1_enable +
+	_#acr1_SFIELD +
+	_#acr1_CM_inhibited  + # D0 MOV
+	D0 ACR1 MOV
+
+
+	\ instruction cache
+	_#acr2_address_mask
+	_#acr2_address_base +
+	_#acr2_enable +
+	_#acr2_SFIELD +
+	_#acr2_CM_cached  + # D0 MOV
+	D0 ACR2 MOV
+
+        \ Sync ram
+	\ set ACR3 ( instruction access).
+	_#run_acr3_address_mask
+	_#run_acr3_address_base +
+	_#acr3_enable +
+	_#acr3_SFIELD +
+	_#acr3_CM_cached +  # D0 MOV
+	D0 ACR3 MOV
+
+	_#cacr_DDPI     \ Disable data CPUSHL invalidate.
+        _#cacr_DCM  +   \ Data cache mode; non cachable imprecise
+    \ These two have been enabled previously
+  	_#cacr_BEC  +   \ branch cache enable
+	_#cacr_IEC  +   \ Enable instruction cache
+		# D0 MOV
+
+	D0 CACR MOV
+
+
+	_#cacr_DEC      \ Data enable cache
+	_#cacr_ESB  +   \ enable store buffer
+	_#cacr_DDPI +   \ Disable data CPUSHL invalidate. This is what we want. We have to
+	                \ clear the data cache when compiling we want it to run
+	                \  as quickly as possible.
+      _#cacr_DCM  +   \ Data cache mode; non cachable inprecise
+	_#cacr_BEC  +   \ branch cache enable
+	_#cacr_IEC  +   \ Enable instruction cache
+	    # D0 MOV
+	D0 CACR MOV
+
+	</code> </pre>
+<p>
+And jump to the start routine, this is now in dynamic memory.
+</p>
+	<pre> <code>
+	_start_up AB JMP
+	</code> </pre>
+<p>	
+Change the address so it is a boot prom reference.
+patch it into the start of the boot prom.
+</p>
+	<pre> <code>
+	HOST
+	HERE   
+        _prom_kernel_start org   0 t,  _boot_to_sdram _prom_kernel_start - _#boot_flash_base + t,
+        org
+	</code> </pre>
+</body>
+</html>
+

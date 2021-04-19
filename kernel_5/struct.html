@@ -1,0 +1,511 @@
+<html>
+<head>
+<title>Yet another Forth structures package</title>
+<META NAME="Author" CONTENT="M.Anton Ertl">
+<META NAME="keywords" CONTENT="structure forth"> 
+<META NAME="description" CONTENT="structure words for forth">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Yet another Forth structures package</h3>
+<h4>by M.Anton Ertl</h4>
+<a HREF="http://www.complang.tuwien.ac.at/forth/objects.zip">get original source</a>
+<p>
+Codeing changed to suit COLDFORTH standards by Charles Esson.<br>
+Cross compiler support for struc added by Charles Esson. 
+</p>
+<p>
+Data structures (like C structs)
+</p>
+<p>
+This file retains M.Anton Ertl copyright:
+This file is in the public domain. NO WARRANTY.
+</p>
+<h5>Usage</h5>
+<p>
+You can define a structure for a (data-less) linked list with 
+</p>
+<pre> <samp>
+	struct
+		cell% field <b>list_next</b>
+	end_struct <b>list%</b>
+</samp> </pre>
+
+<p>
+With the address of the list node on the stack, you can compute the 
+address of the field that contains the address of the next node with 
+list-next. E.g., you can determine the length of a list with the code: 
+</p>
+
+<pre> <samp>
+	\ "list" is a pointer to the first element of a linked list
+	\ "n" is the length of the list
+	: list-length ( list -- n )
+	    0 BEGIN ( list1 n1 )
+	        OVER
+	    WHILE ( list1 n1 )
+	        1+ SWAP <b>list_next</b> @ SWAP
+	    REPEAT
+	    NIP 
+	;
+</samp> </pre>
+
+<p>
+You can reserve memory for a list node in the dictionary with: 
+</p>
+<pre> <samp>
+	list% %allot 
+</samp> </pre>
+<p>
+This leaves the address of the list node on the stack. For the equivalent
+allocation on the heap you can use:
+</p>
+<pre> <samp>
+	list% struct_alloc 
+</samp> </pre>
+<p>
+For an allocate-like stack effect (i.e., with ior), use:
+<pre> <samp>
+	list% struct_allocate
+</samp> </pre> 
+<p>
+You can also include a structure foo% as field of another structure, with: 
+</p>
+<pre> <samp>
+	struct
+	...
+	    foo% field ...
+	...
+	end_struct ...
+</samp> </pre>
+<p>
+Instead of starting with an empty structure, you can also extend an 
+existing structure. E.g., a plain linked list without data, as 
+defined above, is hardly useful;
+You can extend it to a linked list of integers, as follows: 
+</p>
+<pre> <samp>
+	list%
+		cell% field intlist_int
+	end_struct intlist%
+</samp> </pre>
+<p>
+<i>intlist%</i> is a structure with two fields: 
+<i>list_next</i> and <i>intlist_int</i>. 
+</p>
+<p>
+This feature is also known as extended records. It is the main innovation in the Oberon language; in other words, adding this feature to Modula-2
+led Wirth to create a new language, write a new compiler etc. 
+Adding this feature to Forth just requires a few lines of code. 
+</p>
+<p>
+You can specify an array type containing n elements of type <i>foo%</i> like this: 
+</p>
+<pre> <samp>
+	foo% n *
+</samp> </pre>
+<p>
+This code will supply alignment and size.You can use this array type 
+in any place where you can use a normal type, e.g., 
+when defining a field, or with %allot.
+</p> 
+<p>
+The first field is at the base address of a structure and the word 
+for this field (e.g., list-next) actually does not change the address 
+on the stack. You may be tempted to leave it away in the interest 
+of run-time and space efficiency. This is not necessary, because 
+the structure package optimizes this case and compiling such words 
+does not generate any code. So, in the interest of readability and 
+maintainability you should include the word for the field when
+accessing the field.
+</p> 
+
+<h5>Implementation</h5>
+<p>
+The central idea in the implementation is to pass the data about the 
+structure being built on the stack, not in some global variable. 
+Everything else falls into place naturally once this design decision 
+is made.
+</p> 
+<p>
+The type description on the stack is of the form ( align size --) 
+Keeping the size on the top-of-stack makes dealing with arrays very simple. 
+</p>
+<p>
+<i>field</i> is a defining word that uses <i>CREATE</i> and 
+<i>DOES></i>. The body of the field contains the offset of the field, 
+and the normal <i>DOES></i> action is <i>@ +</i>. That is add 
+the offset to the address, giving the stack effect ( addr1 -- addr2 ) 
+for a field child word. 
+</p>
+<p>
+This simple structure is slightly complicated by the optimization for 
+fields with offset 0, which requires a different <i>DOES></i> part 
+(because we cannot rely on there being something on the stack if such 
+a field is invoked during compilation). Therefore, we put the different 
+<i>DOES></i> parts in separate words, and decide
+which one to invoke based on the offset. For a zero offset, the field 
+is basically a noop; it is immediate, and therefore no code is 
+generated when it is compiled. 
+</p>
+x<p>
+addr_aligned is the aligned version of addr1 with the alignment size n
+</p>
+
+	<pre> <code>
+	: _n_align ( addr1 n -- addr_aligned )
+		1- 
+		TUCK	\ n addr1 n(--
+		+ 	 
+		SWAP 	\ addr2 n(--
+		INVERT	\ addr2 -n(-- 
+		AND     \ addr1_aligned(--
+	;
+
+
+\ for the xcompiler
+forth : _n_align ( addr1 n -- addr_aligned )
+		forth 1- 
+		      TUCK	\ n addr1 n(--
+		      + 	 
+		      SWAP 	\ addr2 n(--
+		      INVERT	\ addr2 -n(-- 
+		      AND     \ addr1_aligned(--
+	;
+
+HOST
+
+
+	</code> </pre>
+
+<p>
+Runtime for field, two different version, one for when the offset is zero.
+One for all other cases.
+</p>
+
+	<pre> <code>
+	: _do_field ( -- )
+		DOES> ( name execution: addr1 -- addr2 )
+	 	  	@ + 
+	;
+
+\ for the xcompiler
+forth : _do_field ( n -- )
+		HOST
+		\ This lays down the action of the child word in the target
+		_recover_cfa  
+		2016 tw, \ ##code S ) D0 MOV
+		0680 tw, \ ##code n # D0 ADD
+		t,
+		2C80 tw, \ ##code D0 S ) MOV
+		4E75 tw, \ ##code RTS
+		\ This lays down the action of the child word in the host.
+		\ As structures have to available to the target compiler it 
+		\ has to be this way.
+		forth
+		DOES> ( name execution: addr1 -- addr2 )
+			@ + 
+	;
+HOST
+
+	: _do_zero_field ( -- )
+		IMMEDIATE
+		DOES> ( name execution: -- )
+			DROP
+	;
+
+.S .( _do_zero_field )
+forth : _do_zero_field ( -- )
+		HOST  _recover_cfa
+		      4E75 tw,   \ ##code RTS
+		      inline  \ Tell system child word is pure code, in fact no code.
+		forth
+		DOES>
+			DROP
+	;
+HOST
+
+	</code> </pre>
+<p>
+Create the fields head and body, perform the stack manipulation required
+as fields are defined. Or in other words fields compile time action.
+This word is used in the object.html file.
+</p>
+	<pre> <code>
+	: _create_field ( align1 offset1 align size "name" --  align_out offset_out )
+		CREATE   \ align1 offset1 align size(--
+ 		SWAP     \ align1 offset1 size align(--
+		ROT      \ align1 size align offset(-- 
+		OVER     \ align1 size align offset align(--
+		_n_align \ align1 size align offset2(-- 
+		DUP ,    \ align1 size align offset2(-- 
+		ROT      \ align1 align offset2 size(-- 
+		+        \ align1 align offset3(--
+		>R 
+		_n_align \ align2(-- 
+		R>       \ align2 offset3(--
+	;
+
+\ for the xcompiler
+forth : _create_field ( align1 offset1 align size "name" --  align_out offset_out )
+		HOST  CREATE   \ align1 offset1 align size(--
+ 		forth SWAP     \ align1 offset1 size align(--
+		      ROT      \ align1 size align offset1(-- 
+		      OVER     \ align1 size align offset1 align(--
+		HOST  _n_align \ align1 size align offset2(-- 
+		forth DUP 
+		\ for the host version
+		\ horible kludge requiring knowedge of the cross compiler
+		\ recovering the constant_host value
+		forth  -4 ALLOT 
+		forth  ,        \ align1 size align offset2(-- 
+		      ROT      \ align1 align offset2 size(-- 
+		      +        \ align1 align offset3(--
+		      >R 
+		HOST  _n_align \ align2(-- 
+		forth R>       \ align2 offset3(--
+	;
+HOST
+	</code> </pre>
+
+<h5>field <i>parent</i> ( align1 offset1 align size "name" 
+--  align2 offset2 )</h5>
+<p>
+Used between struct and end_struct. <i>field</i> creates a child work 
+that adds the fields offset onto the top stack item.
+</p>
+ 
+	<pre> <code>
+	: field \ parent ( align1 offset1 align size "name" --  align2 offset2 )
+	        \ child  ( addr1 -- addr2)
+		jump               \ align1 offset1 align size offset1(-- 
+		>R                 \ this uglyness is just for optimizing 
+		                   \ with _do_zero_field
+		_create_field
+		R> IF \ offset<>0
+			_do_field
+		ELSE
+			_do_zero_field
+		THEN 
+	;
+
+\ for the xcompiler
+forth : field \ parent ( align1 offset1 align size "name" --  align2 offset2 )
+	        \ child  ( addr1 -- addr2)
+		forth jump               \ align1 offset1 align size offset1(-- 
+		      >R                 \ this uglyness is just for optimizing 
+		                   \ with _do_zero_field
+		HOST  _create_field
+		forth R> ?DUP IF \ offset<>0
+			HOST  _do_field
+		forth ELSE
+			HOST  _do_zero_field
+		forth THEN 
+	;
+HOST
+	</code> </pre>
+
+<h5>end_struct ( align size "name" -- )</h5>
+<p> 
+Used at the end of a structure, creates a child word that returns the
+alignment of the structure and the size of the stucture
+</p>
+	<pre> <code>
+	: end_struct \ parent ( align size "name" -- )
+	             \ child  ( -- align size)
+		OVER _n_align \ pad size to full alignment
+		2CONSTANT 
+	;
+
+\ for the xcompiler
+forth : end_struct \ parent ( align size "name" -- )
+	             \ child  ( -- align size)
+		forth OVER 
+		HOST  _n_align \ pad size to full alignment
+		HOST  2CONSTANT 
+		forth
+;
+HOST
+
+
+
+	</code> </pre>
+
+<h5>struct ( align size)</h5>
+<p>
+A null strcuture is used to start the structure, however the structure 
+can be started with any other structure.
+</p>
+
+	<pre> <code>
+	\ This creates a host and target version
+	1 0 end_struct struct
+	</code> </pre>
+
+<h5>The basic data types</h5>
+<p>
+The basis data types return their alignment and size.
+</p>
+
+	<pre> <code>
+	1           1         2CONSTANT byte%
+	1 ALIGNED   2         2CONSTANT word%
+	1 ALIGNED   1 CELLS   2CONSTANT cell%
+	1 CHARS     1 CHARS   2CONSTANT char%
+	1 ALIGNED   2 CELLS   2CONSTANT double%
+
+
+	: bytes% ( n -- 1 n )
+		1 SWAP
+	;
+
+	forth : bytes% ( n -- 1 n )
+		1 SWAP
+	;
+	HOST
+	</code> </pre>
+
+<h5>memory allocation words</h5>
+
+	<pre> <code>
+	: struct_alignment ( align size -- align )
+		DROP 
+	;
+
+	: struct_size ( align size -- size )
+		NIP 
+	;
+	</code> </pre>
+<p>
+Allocate a structure in the ram space. One version for kernel runtime,
+another version for xcompile time.
+</p>
+	<pre> <code>
+	: _ram_align ( align size -- )
+		DROP   \ align
+		ram_here   \ align here(--
+		SWAP   \ here align(--
+		_n_align \ alighned_here(--
+		ram_here    
+		-      \ number_of_bytes(--
+		ram_allot
+	;
+
+	: struct_ram_allot ( align size -- addr )
+		TUCK     \ size align size(--
+		_ram_align   \ size(--
+		ram_here  
+		SWAP     \ here size(-- 
+		ram_allot
+	;
+
+\ allocation of ram space when compiling kernel
+forth : _ram_align ( align size -- )
+		forth DROP   \ align
+		HOST  ram_here   \ align here(--
+		forth SWAP   \ here align(--
+		HOST  _n_align \ alighned_here(--
+		HOST  ram_here    
+		forth -      \ number_of_bytes(--
+		HOST  ram_allot
+		forth
+	;
+	HOST
+
+forth : struct_ram_allot ( align size -- addr )
+		forth TUCK     \ size align size(--
+		HOST  _ram_align   \ size(--
+		HOST  ram_here  
+		forth SWAP     \ here size(-- 
+		HOST  ram_allot
+		forth
+	;
+	HOST
+	</code> </pre>
+
+<p>
+Allocate a structure in the dictioanry space. 
+One version for kernel runtime, another version for xcompile time.
+</p>
+<p>
+These should only be used if you want to preset the data at compile time.
+Remeber the dictionary is a limited resource using it it for data areas
+that don't have to be preset is a waste of the resource.
+</p>
+
+	<pre> <code>
+	: _struct_align ( align size -- )
+		DROP   \ align
+		HERE   \ align here(--
+		SWAP   \ here align(--
+		_n_align \ alighned_here(--
+		HERE    
+		-      \ number_of_bytes(--
+		ALLOT
+	;
+
+	:  struct_allot ( align size -- addr )
+		TUCK     \ size align size(--
+		_struct_align   \ size(--
+		HERE  
+		SWAP     \ here size(-- 
+		ALLOT
+	;
+
+\ for allocation of dictionary space when compiling kernel
+forth : _struct_align ( align size -- )
+		forth DROP   \ align
+		HOST  HERE   \ align here(--
+		forth SWAP   \ here align(--
+		HOST  _n_align \ alighned_here(--
+		HOST  HERE    
+		forth -      \ number_of_bytes(--
+		HOST  ALLOT
+		forth
+	;
+	HOST
+
+forth :  struct_allot ( align size -- addr )
+		forth TUCK     \ size align size(--
+		HOST  _struct_align   \ size(--
+		HOST  HERE  
+		forth SWAP     \ here size(-- 
+		HOST  ALLOT
+		forth
+	;
+	HOST 
+.S .( struct_allot)
+	</code> </pre>
+
+<p>
+Allocate a structure from the heap. This has no meaning at
+xcompile time.
+</p>
+
+	<pre> <code>
+	: struct_allocate ( align size -- addr ior )
+		NIP ALLOCATE 
+	;
+
+
+	: struct_heap_allot ( align align-- addr )
+		struct_allocate THROW 
+	;
+	
+	\ No use creating on heap if we can't destroy it
+
+	: struct_free ( addr -- ior )
+		FREE
+	;
+
+	: struct_heap_free ( addr -- )
+		struct_free THROW 
+	;
+	</code> </pre>
+
+</code>
+</pre>
+</body>
+</html>
+

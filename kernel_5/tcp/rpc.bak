@@ -1,0 +1,1279 @@
+<html>
+<head>
+<title>RPC</title>
+<META NAME="Author" CONTENT="Charels Esson">
+<META NAME="keywords" CONTENT="objects forth">
+<META NAME="description" CONTENT="object extension for forth">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1014.html">RFC1014 XDR</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1057.html">RFC1057 RPC</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1094.html">RFC1094 NFS</a><br>
+<p>
+Three spec looks hard doesn't it. RFC1014 describes a method to describe data,
+nothing more. RFC1057 describes a data structure to send for a RPC and the
+reply to expect. RFC1094 describes the functions available for NFS.
+</p>
+<p>
+It is almost as if sun went to great lengths to hide the elegent simplicity of
+NFS.
+</p>
+<h5> The mount class</h5>
+<p>
+In this OS you only use mount to mount a remote file system. mount machine/file
+creates an object. The mounting precess need rfc, rfc needs the mount object
+so we start off with null methods and then flesh it out after the rfc code
+has been defined.
+</p>
+	<pre> <code>
+
+| #32 CONSTANT _#fh_size
+
+
+	zero
+|	DUP CONSTANT    _#fattr_type      4+
+|	DUP CONSTANT	_#fattr_mode      4+
+|	DUP CONSTANT	_#fattr_nlink     4+
+|	DUP CONSTANT	_#fattr_uid       4+
+|	DUP CONSTANT	_#fattr_gid       4+
+|	DUP CONSTANT	_#fattr_size      4+
+|	DUP CONSTANT	_#fattr_blocksize 4+
+|	DUP CONSTANT    _#fattr_rdev      4+
+|	DUP CONSTANT    _#fattr_blocks    4+
+|	DUP CONSTANT    _#fattr_fsid      4+
+|	DUP CONSTANT    _#fattr_fileid    4+
+|	DUP CONSTANT    _#fattr_atime     8+
+|	DUP CONSTANT    _#fattr_mtime     8+
+|	DUP CONSTANT    _#fattr_ctime     8+
+|	    CONSTANT    _#fattr_length
+	zero
+|       DUP CONSTANT _#fopen_error_code 4+
+|       DUP CONSTANT _#fopen_fhandle    _#fh_size +
+|       DUP CONSTANT _#fopen_attr       _#fattr_length +
+|       CONSTANT _#fopen_length
+
+
+ram_variable %rpc_debug
+
+\ linked list of mount objects
+ram_variable %mounts
+
+	link_class class
+		\ the mount machine as a number
+		cell% instance_variable %%mount_machine
+		\ the mount machine as a string
+		cell% instance_variable %%mount_machine>
+		\ the udp handle we have to use to access the file system
+                \ this is a udp client. For this to work the udp_client has to
+                \ be reenterent code as the mount object can be used by
+                \ multiple tasks.
+		cell% instance_variable %%nfs_udp_handle
+
+                \ string object that gives the mount string name.
+                cell% instance_variable %%nfs_name>
+
+		\ the file handle we have to supply to the remote device.
+                \ followed by attr
+		_#fopen_length bytes% instance_variable %%fh_mount
+
+
+                \ the classes that set out data areas are responsible for unsetting them not us.
+                m: ( --)
+                        this [parent] :destruct
+                ; overrides :destruct
+
+                \ We defined the data it is our responsibility to set the defaults
+                m: ( --)
+                        this [parent] :construct
+                        zero %%mount_machine> !
+				zero %%nfs_udp_handle !
+                        zero %%nfs_name> !
+                ; overrides :construct
+
+                m: ( --addr)
+                        %mounts
+                ; overrides :list_head
+
+                \ a number
+                m: ( -- ip)
+			%%mount_machine @
+		; method :mount_ip
+
+                \
+                | CREATE _$not_set ," not set"
+		m: ( -- addr n)
+                        _$not_set COUNT
+		; method :Smount_ip
+
+               m: ( -- addr n )
+                        _$not_set COUNT
+                ; method :Smount_file
+
+
+                m: ( --handle)
+			%%nfs_udp_handle @
+		; method :nfs_udp_handle
+
+
+		m: ( --fhandle)
+			%%fh_mount
+		; method :nfs_fhandle
+
+		m: ( indent --)
+			CR DUP SPACES ." _mount_class | " ." Object: " this .h
+			DROP send
+		; overrides :print
+
+| 	end_class _mount_class
+
+        \ this is the object used by the nfs driver. The object is task specific.
+|	uvariable %mount_object
+</code> </pre>
+<h5>The request</h5>
+<pre> <code>
+\ describe constant part of rpc header
+\ we use 4 not cell as this is defined in rfc1057
+zero
+| DUP	CONSTANT	_#rpcc_xid          4+
+| DUP	CONSTANT	_#rpcc_code         4+  \ = zero for call
+| DUP	CONSTANT	_#rpcc_rpc_version  4+  \ RPC1057 page 10 The version of the rpc spec, must equal 2
+| DUP	CONSTANT	_#rpcc_program      4+  \
+| DUP	CONSTANT	_#rpcc_version      4+
+| DUP	CONSTANT	_#rpcc_procedure    4+
+| DUP	CONSTANT	_#rpcc_cred_flavour 4+
+\ RFC1057 page 6 opague<400>
+\ RFC1014 page 8 opague starts with a 4 byte count and is followed by the data.
+| DUP	CONSTANT	_#rpcc_cred_length  4+
+| DUP CONSTANT    _#rpcc_cred_data    4+
+DROP
+
+\ define the verf header
+zero
+| DUP CONSTANT	_#rpcc_verf_flavour 4+
+| DUP	CONSTANT	_#rpcc_verf_length  4+
+| DUP CONSTANT	_#rpcc_verf_data    4+
+DROP
+
+\ xdr_aligned
+\ all data must be on 4 byte boundries
+| : xdr_aligned ( valuein -- valueut)
+	3 + -4 AND
+;
+
+\ If archetecture is little edian these would be a little more complex.
+\ they should be used for portability.
+
+\ xdr data fetch
+| : x@ @ ; inline
+
+\ xdr data store
+| : x! ! ; inline
+
+\ get the base address verf, this follows the cred.
+\ A count field in the cred determines how long it is.
+| : _rpcc_verf ( udp_data -- verf_base )
+	DUP _#rpcc_cred_length + x@ \ addr count(--
+	xdr_aligned +            \ addr(--
+	_#rpcc_cred_data +         \ addr(--
+;
+
+| : _rpcc_parameters ( udp_data -- parameters)
+	_rpcc_verf
+	DUP _#rpcc_verf_length + @ +
+	_#rpcc_verf_data + @
+;
+
+</code> </pre>
+<h5>The responce</h5>
+<pre> <code>
+zero
+| DUP	CONSTANT	_#rpcr_xid	 4+     \ equals xid sent
+| DUP	CONSTANT	_#rpcr_code	 4+		\ Must be a 1
+| DUP	CONSTANT	_#rpcr_status 4+	\ MSG_ACCEPTED or MSG_DENIED
+
+\ following is for case where status is zero ( MSG_ACCEPTED )
+| DUP	CONSTANT	_#rpcr0_verf_flavour	4+
+| DUP	CONSTANT	_#rpcr0_verf_length	4+
+| DUP	CONSTANT	_#rpcr0_verf_data	4+
+DROP
+
+\ following is for the rejected reply ( MSG_DENIED)
+_#rpcr_status	4+
+| DUP	CONSTANT	_#rpcr1_reject_status	4+ \ RPC_MISMATCH, AUTH ERROR
+| DUP	CONSTANT	_#rpcr1_reject_data
+DROP
+\ following is for rpc_mismatch ( rpc version not = 2)
+_#rpcr1_reject_data 4+
+| DUP CONSTANT	_#rpcr10_data_low	4+
+| DUP	CONSTANT	_#rpcr10_data_high 4+
+DROP
+\ folowing is for auth_error
+_#rpcr1_reject_data 4+
+| DUP	CONSTANT	_#rpcr11_auth_stat \ AUTH_BADCRED,AUTH_REJECTEDCRED,AUTH_BADVERF etc.
+DROP
+	</code> </pre>
+	<h5>msg_type</h5>
+	<p>Send to the server as a call, you will get back a reply, RFC1057 page 8</p>
+	<pre> <code>
+zero
+| DUP CONSTANT	_#rpc_call 1+
+| 	CONSTANT	_#rpc_reply
+	</code> </pre>
+	<h5>reply_stat</h5>
+	<p>Rejected if authentication is bad, or if version number not 2, RFC1057 page 8</p>
+	<pre> <code>
+zero
+| DUP	CONSTANT	_#rpc_msg_accepted 1+
+| 	CONSTANT	_#rpc_msg_denied
+	</code> </pre>
+	<h5>reject_stat</h5>
+	<p>Why this field was not combined with the previous beats me, but this is the way it
+	is speced. If the reply_stat equals _#rpc_msg_denied, it is followed by a field that
+	gives a reason.
+	</p>
+	<pre> <code>
+zero
+| DUP CONSTANT	_#rpc_reject_version 1+
+| 	CONSTANT    _#rpc_reject_auth
+	</code> </pre>
+	<h5>accept_state</h5>
+	<p>If the call was accepted ( authentication ok and version ok),
+	the call can still be in error, this field is used to return the error,
+	it is located after the verf</p>
+	<pre> <code>
+
+\ accept codes
+zero
+| DUP CONSTANT	_#rpc_accept_success 1+
+| DUP CONSTANT	_#rpc_accept_prog_unavail 1+
+| DUP CONSTANT	_#rpc_accept_prog_mismatch 1+
+| DUP CONSTANT	_#rpc_accept_proc_unavail 1+
+| DUP CONSTANT	_#rpc_acceptgarbage_args 1+
+DROP
+
+\ auth codes
+zero
+| DUP	CONSTANT	_#auth_null 1+
+| DUP	CONSTANT	_#auth_unix 1+
+| DUP	CONSTANT	_#auth_short 1+
+| DUP	CONSTANT	_#auth_des 1+
+DROP
+
+
+| 2 CONSTANT _#rpc_version_code
+
+\ resons why authentication can fail
+| CREATE $auth_buggered        ," RPC auth failed unknown reason"
+| CREATE $auth_badcred         ," RPC auth failed bad credentials (seal broken)"
+| CREATE $auth_rejectedcred    ," RPC auth failed client must begin new session"
+| CREATE $auth_badverf         ," RPC auth failed bad verifier (seal broken)"
+| CREATE $auth_rejectedverf    ," RPC auth failed verifier expired or replayed"
+| CREATE $auth_tooweak         ," RPC auth failed rejected for security reasons"
+
+| CREATE _auth_fail
+	7 tw,
+	$auth_buggered       t,
+	$auth_badcred        t,
+	$auth_rejectedcred   t,
+	$auth_badverf        t,
+	$auth_rejectedverf   t,
+	$auth_tooweak        t,
+	$auth_buggered       t,
+
+\ desctibe the above table
+zero
+| DUP	CONSTANT	_#tbl_count	2+
+|	CONSTANT	_#tbl_data
+
+| : _auth_fail$ ( code -- addr )
+	_auth_fail _#tbl_count + W@ MIN
+	zero MAX
+	CELLS _auth_fail + _#tbl_data + @
+;
+
+| CREATE	$accept??           ," RPC call failed for unknown reasons"
+| CREATE	$accept_prog??      ," RPC call failed program not available"
+| CREATE  $accept_version??   ," RPC call failed version not available"
+| CREATE	$accept_procedure?? ," RPC call failed no precedure"
+| CREATE  $accept_arguments?? ," RPC call failed bad arguments"
+
+| CREATE _accept_fail
+		6 tw,
+		$accept??           t,
+		$accept_prog??      t,
+		$accept_version??   t,
+		$accept_procedure?? t,
+		$accept_arguments?? t,
+		$accept??           t,
+		</code> </pre>
+		<p>
+		An accepted call can still fail.
+		The accept status can take many non zero values that represent errors.
+		This word converts those values into the address of a string describing
+		the problem.
+		</p>
+		<pre> <code>
+| : _accept_fail$ ( code -- $ )
+	_accept_fail _#tbl_count + W@ MIN
+	zero MAX
+	CELLS _accept_fail + _#tbl_data + @
+;
+		</code> </pre>
+		<p><i>addr_in</i> is the base address of the data area
+		<i>addr_out</i> is the address of the accept_status cell.
+		</p>
+		<pre> <code>
+| : _rpcr_accept_status ( addr -- addr )
+	DUP _#rpcr0_verf_length + @ xdr_aligned +
+	_#rpcr0_verf_data +
+;
+
+| : _rpcr_parameters ( udp_data -- param_addr)
+	_rpcr_accept_status
+	4+
+;
+		</code> </pre>
+		<p>
+		ABORTS if all is not OK. Flag is true if the reply is for the message sent,
+		false if it is not related.
+		</p>
+		<pre> <code>
+| : _reply_ok ( pep_sent pep_reply --flag)
+	ep_protodata + @  \ pep_send udp_reply(--
+	SWAP
+	ep_protodata + @
+	SWAP
+	\ udp_send udp_reply(--
+	OVER _#rpcc_xid + x@ OVER _#rpcr_xid + x@ <> IF
+		\ this may be a valid result, just isn't the right one.
+		\ remember we can get duplicate datagrams
+		2DROP FALSE
+		EXIT
+	THEN
+	NIP
+	\ udp_reply(--
+	DUP _#rpcr_code + x@ _#rpc_reply <> ABORT" RPC call code was not a reply"
+	\ udp_reply(--
+	DUP _#rpcr_status + x@ _#rpc_msg_accepted <> IF
+		DUP _#rpcr_status + x@ _#rpc_msg_denied = IF
+			DUP _#rpcr1_reject_status + x@ _#rpc_reject_version
+			= ABORT" RPC version number wrong"
+			DUP _#rpcr1_reject_status + x@ _#rpc_reject_auth = IF
+				_#rpcr11_auth_stat + x@ _auth_fail$
+				$ABORT
+			THEN
+			\ status value unknown
+			TRUE ABORT" RPC call reject status value out of range"
+		THEN
+		TRUE ABORT" RPC call status value out of range"
+	THEN
+	\ ok move onto accept status, this is after the verifier
+	_rpcr_accept_status
+	x@ DUP _#rpc_accept_success <> IF
+		_accept_fail$ $ABORT
+	THEN
+	DROP
+	TRUE
+;
+	</code> </pre>
+	<p>
+	%xid just rotates. It is expected the call packet is only made once.
+	This means the higher code must copy the call packet as the call could
+	timeout and have to be resent.
+	</p>
+	<pre> <code>
+        \ name of remote machine
+	: nfs_name  ( -- addr n )
+		%mount_object @ ?DUP IF
+			 :Smount_ip
+		ELSE
+			TRUE ABORT" Remote files system must be mounted"
+		THEN
+	;
+
+        \ ip of remotemachine
+	: nfs_ip ( -- ip)
+		%mount_object @ ?DUP IF
+			:mount_ip
+		ELSE
+			TRUE ABORT" Remote file system must be mounted"
+		THEN
+	;
+
+
+| : _auth_unix { variable %addr -- }
+		\ stamp
+                \ 0
+		zero %addr @ ! 4 %addr +!
+		\ local machine name
+                %localhost @ :string@
+                \ addr num (--
+		\ count
+                \ 4
+                DUP %addr @ ! 4 %addr +!
+		%addr @ OVER xdr_aligned %addr +!
+                \ addr_from num addr_to(--
+		SWAP MOVE
+		\ uid
+                \ 08
+		zero %addr @ ! 4 %addr +!
+		\ gid
+                \ 0C
+		zero %addr @ ! 4 %addr +!
+		\ gids put us in group zero
+                \ 10
+                07 %addr @ ! 4 %addr +!
+                00 %addr @ ! 4 %addr +!
+		01 %addr @ ! 4 %addr +!
+		02 %addr @ ! 4 %addr +!
+                \ 20
+                03 %addr @ ! 4 %addr +!
+		04 %addr @ ! 4 %addr +!
+		06 %addr @ ! 4 %addr +!
+		0A %addr @ ! 4 %addr +!
+                \ 30
+;
+
+| : _auth_unix_length ( -- num )
+		%localhost @ :string@ NIP xdr_aligned
+		\ stamp, string count, uid, gid, gids count
+                \ number of addition bytes written by above code.
+                $30 +
+;
+
+
+|	ram_variable %xid
+
+| : _setup_rpc_head ( program version proc pep_in -- addr_parameters )
+	[ _#rpcc_cred_data _#rpcc_verf_data + ]T LITERAL
+	_auth_unix_length +
+	OVER add_to_udp
+	ep_protodata + @
+	_lock_word
+	%xid @	1 %xid +!
+	_unlock_word
+	\ stuff program version proc pep_in xid(--
+	OVER _#rpcc_xid + x!
+	\ stuff program version proc addr_in(--
+	_#rpc_call OVER _#rpcc_code + x!
+	_#rpc_version_code OVER _#rpcc_rpc_version + x!
+	SWAP OVER _#rpcc_procedure + x!
+	SWAP OVER _#rpcc_version + x!
+	SWAP OVER _#rpcc_program + x!
+	_auth_unix_length IF
+		_#auth_unix OVER _#rpcc_cred_flavour + !
+	ELSE
+		_#auth_null OVER _#rpcc_cred_flavour + !
+	THEN
+	_auth_unix_length OVER _#rpcc_cred_length + !
+	DUP _#rpcc_cred_data + _auth_unix
+	\ stuff addr1(--
+	_rpcc_verf
+	\ stuff addr2(--
+	_#auth_null OVER _#rpcc_verf_flavour + !
+	zero OVER _#rpcc_verf_length + !
+	_#rpcc_verf_data +
+;
+	</code> </pre>
+	<p><i>n</i> is the number of parameters</p>
+	<pre> <code>
+
+| : _rpc_packet { ( data_size program version proc ) variable %handle  -- ( parameters pep ) }{
+	variable %pep }
+	\ have to get n, oh well as much as I hate ROLL
+	3 ROLL
+	ep_data +
+	ip_options +
+	udp_data +
+	 _#rpcc_cred_data +
+	 _auth_unix_length +
+	 _#rpcc_verf_data +
+	get_free_buffer
+	\ stuff version proc addr(--
+	%pep !
+	%pep @ %handle @ :setup_protocol
+	%pep @ _setup_rpc_head
+	%pep @
+;
+
+\ we don't send another unless we timeout waiting for a reply.
+\ or we have received a reply. It is therefor acceptable to
+\ force the datagram onto the queue.
+| : _send_datagram ( pep --)
+	queue_ip_force
+;
+
+\ this can abort
+| : _receive_datagram ( handle -- pep2)
+	:read_protocol
+	2DROP
+;
+</code></pre>
+<p>
+The input pep is consumed. We return a pep otherwise input stack
+has to describe how to unpack the parameters. The unpack could
+depend on reply values so it is just not worth this word getting
+involved.
+</p>
+<p>
+It is a linear backoff, see code below.
+You have to remember that RPC is intended for local networks.
+Comms failures are not common, but connecting to wrong machine is.
+</p>
+<pre><code>
+
+
+\ we are responsible for the returning of pep_in
+| : _rpc_call { ( pep_in handle)  -- ( pep_out|zero)  }{
+	\ number of times we have resent _rpc datagram
+	variable %tries
+	\ if your not happy with rpc efforts to get through ajust these.
+	06  CONSTANT _#max_tries
+	#50 CONSTANT _#rpc_timeout
+	 }
+	_#rpc_timeout OVER :!timeout
+	zero %tries !
+	BEGIN
+		%rpc_debug @ IF
+			.S ." pep handle(-- Sending rpc_request"
+                        OVER ep_protodata + @ $80 DUMP
+		THEN
+		\ pep handle(--
+		OVER
+		_clone_datagram DUP IF
+			\ pep_in handle pep(--
+			_send_datagram
+			\ pep_in handle(--
+			DUP ['] _receive_datagram CATCH ?DUP IF
+				\ the receive aborted
+				\ pep_in handle handle $(--
+				>R
+				2DROP
+				kill_free_buffer
+				R>
+				%rpc_debug @ IF
+					.S ." $(--failed to read reply datagram"
+				THEN
+				$ABORT
+			THEN
+			%rpc_debug @ IF
+				.S ." pep_in handle pep_out(--received rpc reply"
+			THEN
+			\ pep_in handle  pep_out(--
+			\ pep_out will be zero if timeout
+			?DUP IF
+				\ pep_in handle pep_out(--
+				jump OVER
+				\ pep_in handle pep_out pep_in pep_out(--
+				\ will abort for many reasons related to returned data
+				['] _reply_ok CATCH ?DUP IF
+					%rpc_debug @ IF
+						.S ." pep_in handle pep_out ? ? $(--failed dismally"
+					THEN
+					\ abort message to stack
+					>R
+					\ parameters that where to be used by _reply_ok
+					2DROP
+					\ pep_in handle pep_out(--
+					kill_free_buffer
+					\ pep_in handle(--
+					DROP
+					\ pep_in(--
+					kill_free_buffer
+					R>
+					\ closing the handle is someone elses problem
+					$ABORT
+				THEN
+				\ pep_in handle pep_out flag(--
+				IF
+					\ reply ok
+					%rpc_debug @ IF
+						.S ." pep_in handle pep_out(--reply ok"
+                                                DUP ep_protodata + @ $80 DUMP
+                                        THEN
+
+					\ pep_in handle pep_out(--
+					>R
+					DROP
+					\ pep_in(--
+					kill_free_buffer
+					R>
+					EXIT
+				THEN
+				%rpc_debug @ IF
+					.S ." pep_in handle pep_out(--irrelevent reply"
+				THEN
+
+				\ we get here if the reply was irrelevent
+				\ pep_in handle pep_out(--
+				kill_free_buffer
+			ELSE
+				%rpc_debug @ IF
+						.S ." pep_in handle(--udp receive timeout"
+				THEN
+			THEN
+			\ pep_in handle(--
+			\ ok what happens if it fails forever
+			1 %tries +!
+			\ add a little more.
+			DUP :@timeout _#rpc_timeout + OVER :!timeout
+			%tries @ _#max_tries > IF
+				DROP
+				kill_free_buffer
+				zero EXIT
+			THEN
+		ELSE
+			%rpc_debug @ IF
+					.S ." pep_in handle(--not enough memeory"
+			THEN
+			\ pep_in handle(--
+			\ not enough free memory
+			DROP
+			kill_free_buffer
+			zero EXIT
+		THEN
+	AGAIN
+	;
+
+	cell 4 ??=
+
+	\ This is a shit of a word, breaks all good coding rules.
+	\ Makes assumptions on stack direction cell size, and assumes
+	\ the stack can be read as normal memory. But the parameters
+	\ are stored in order.
+| 	: _move_parameters {  ( parameters ) variable %n variable %to_addr --  }{
+		variable %from_addr }
+		\ [parameters] (--
+		@s %n @ 1- 4* +  %from_addr !
+		\ [parameters] base_addr(--
+		%n @ zero ?DO
+			%from_addr @ @
+			%to_addr @ !
+			4 %to_addr +!
+			-4 %from_addr +!
+		LOOP
+		\ drop n parameters
+		@s %n @ 4* + !s
+	;
+
+|	: _data_to_stack ( addr n -- data cells)
+		xdr_aligned
+		\ number of cells put on stack
+		DUP 4/ >R
+		zero ?DO
+			DUP I + @ SWAP
+		4 +LOOP
+		DROP
+		R>
+	;
+
+|	: _string_to_stack ( addr n -- length ?? n)
+		SWAP OVER _data_to_stack 1+
+	;
+
+
+	</code> </pre>
+	<p>
+	The base rpc takes a number of parameters from the stack, first on top
+	creates a packet for the parameters, gets a reply pep and returns it.
+	The structure of this work makes it quite clear how you would create
+	other words to setup the input parameters in any manner desired.
+	</p>
+	<pre> <code>
+
+        \ this can abort.
+| : _rpc ( parameters n  program version proc handle -- reply_rpc|zero )
+        %rpc_debug @ IF
+                .S ." _rpc | paremeters n program version proc handle (--"
+        THEN
+	2>R 2>R
+	DUP 4* \ the paremeters size is determined by the protocol spec
+	2R> 2R>
+	\ save handle on return stack
+	DUP >R
+	\ paramerters n size program version proc handle(--
+	_rpc_packet
+	\ parameters n parameters_addr pep (--
+	\ lets write this so you put the parameters on the stack
+	\ in order documented in C function descriptions
+	>R
+	\ parameters n addr(--
+	OVER 4* >R
+	_move_parameters
+	\ add to the udp_datagram
+	2R>
+	OVER add_to_udp
+	\ pep (--
+	R>
+	\ pep handle(--
+	_rpc_call
+;
+
+
+| : _rpc+nfsdata { ( parameters n addr n  program version proc handle
+                  -- reply_rpc|zero ) }{
+				  variable %addr
+				  variable %n
+	              variable %pep
+	              variable %parameters }
+       %rpc_debug @ IF
+                        .S ." _rpc+nfsdata | paremeters n addr n program version proc handle (--"
+        THEN
+        2>R 2>R
+        %rpc_debug @ IF
+                2DUP DUMP
+        THEN
+	%n !
+	%addr !
+	\ parameters n(--
+	DUP 4* %n @ xdr_aligned 4+ + \
+	2R> 2R>
+	\ save handle on return stack
+	DUP >R
+	\ paramerters n size program version proc handle(--
+	_rpc_packet
+	%pep ! %parameters !
+	\ parameters n(--
+	\ lets write this so you put the parameters on the stack
+	\ in order documented in C function description
+	\ parameters n addr(--
+	%parameters @ OVER 4* >R
+	_move_parameters
+	\ add to the udp_datagram
+	R@ %pep @
+	add_to_udp
+	R> %parameters +!
+	\ (--
+	%n @ xdr_aligned 4+ %pep @
+	add_to_udp
+	\ (--
+	%n @ %parameters @ x!
+	%addr @  %parameters @ 4+ %n @ MOVE
+	%pep @ R>
+	\ pep handle(--
+	_rpc_call
+;
+
+
+
+|	CREATE _uxFF ," Unknown unix error"
+|	CREATE _ux01 ," Operation not permitted"
+|	CREATE _ux02 ," No such file or directory"
+|	CREATE _ux03 ," No such process"
+|	CREATE _ux04 ," Interrupted system call"
+|	CREATE _ux05 ," I/O error"
+|	CREATE _ux06 ," No such device or address"
+|	CREATE _ux07 ," Arg list too long"
+|       CREATE _ux08 ," Exec format error"
+|	CREATE _ux09 ," Bad file number"
+|	CREATE _ux10 ," No child process"
+|	CREATE _ux11 ," Try again"
+|	CREATE _ux12 ," Out of memeory"
+|	CREATE _ux13 ," Permission denied"
+|	CREATE _ux14 ," Bad address"
+|	CREATE _ux15 ," Block device required"
+|	CREATE _ux16 ," Device or resource busy"
+|	CREATE _ux17 ," File exists"
+|	CREATE _ux18 ," Cross-device link"
+|	CREATE _ux19 ," No such device"
+|	CREATE _ux20 ," Not a directory"
+|	CREATE _ux21 ," Is a directory"
+|	CREATE _ux22 ," Invalid argument"
+|	CREATE _ux23 ," File table overflow"
+|	CREATE _ux24 ," Too many open files"
+|	CREATE _ux25 ," Not a printer"
+|	CREATE _ux26 ," Text file busy"
+|	CREATE _ux27 ," File too large"
+|	CREATE _ux28 ," No space left on device"
+|	CREATE _ux29 ," Illegal seek"
+|	CREATE _ux30 ," Read only file system"
+|	CREATE _ux63 ," Name too long"
+|	CREATE _ux66 ," Not empty"
+|	CREATE _ux69 ," Disk quota exceeded"
+|	CREATE _ux70 ," Fhandle not valid"
+|	CREATE _ux99 ," Cache flushed"
+
+|	CREATE _unix_errors
+	 01 tw, _ux01 t,
+	 02 tw, _ux02 t,
+         03 tw, _ux03 t,
+         04 tw, _ux04 t,
+	 05 tw, _ux05 t,
+	 06 tw, _ux06 t,
+         07 tw, _ux07 t,
+         08 tw, _ux08 t,
+         09 tw, _ux06 t,
+         #10 tw, _ux10 t,
+	 #11 tw, _ux11 t,
+         #12 tw, _ux12 t,
+         #13 tw, _ux13 t,
+	 #14 tw, _ux14 t,
+         #15 tw, _ux15 t,
+         #16 tw, _ux16 t,
+         #17 tw, _ux17 t,
+         #18 tw, _ux18 t,
+	 #19 tw, _ux19 t,
+	 #20 tw, _ux20 t,
+	 #21 tw, _ux21 t,
+         #22 tw, _ux22 t,
+         #23 tw, _ux23 t,
+	 #24 tw, _ux24 t,
+         #25 tw, _ux25 t,
+         #26 tw, _ux26 t,
+	 #27 tw, _ux27 t,
+	 #28 tw, _ux28 t,
+	 #29 tw, _ux29 t,
+	 #30 tw, _ux30 t,
+	 #63 tw, _ux63 t,
+	 #66 tw, _ux66 t,
+	 #69 tw, _ux69 t,
+	 #70 tw, _ux70 t,
+	 #99 tw, _ux99 t,
+	 -1  tw, _uxFF t,
+
+	: unix_code>string { variable %code -- ( $ ) }{
+		\ describe above table
+		0 CONSTANT _#unix_error_code
+		2 CONSTANT _#unix_error$
+		6 CONSTANT _#unix_error_length
+		}
+		_unix_errors
+		BEGIN
+			\ table terminator
+			DUP _#unix_error_code + W@ $FFFF = IF
+				_#unix_error$ + @
+				EXIT
+			THEN
+			DUP _#unix_error_code + W@ %code @ = IF
+				_#unix_error$ + @
+				EXIT
+			THEN
+			_#unix_error_length +
+		AGAIN
+	;
+
+
+        \ give an ip address and work out how many mounts
+        : mounts { ( ip -- n) }{
+                variable %count }
+                zero %count !
+                %mounts @ BEGIN
+                        DUP
+                WHILE
+                        \ ip link(--
+                        DUP link>object :mount_ip
+                        \ ip link ip
+                        jump = IF
+                                1 %count +!
+                        THEN
+                        @
+                REPEAT
+                2DROP
+                %count @
+        ;
+
+
+
+	</code> </pre>
+	<h4>NFS Mount</h4>
+	<pre> <code>
+
+
+|	#100003 CONSTANT _#nfs_program
+|	#2      CONSTANT _#nfs_version
+
+
+|	0 CONSTANT _#nfs_null
+|	1 CONSTANT _#nfs_getattr
+|	2 CONSTANT _#nfs_setattr
+|	3 CONSTANT _#nfs_root
+|	4 CONSTANT _#nfs_lookup
+|	5 CONSTANT _#nfs_readlink
+|	6 CONSTANT _#nfs_read
+|	7 CONSTANT _#nfs_writecache
+|	8 CONSTANT _#nfs_write
+|	9 CONSTANT _#nfs_create
+|	#10 CONSTANT _#nfs_remove
+|	#11 CONSTANT _#nfs_rename
+|	#12 CONSTANT _#nfs_link
+|	#13 CONSTANT _#nfs_symlink
+|	#14 CONSTANT _#nfs_mkdir
+|	#15 CONSTANT _#nfs_rmdir
+|	#16 CONSTANT _#nfs_readdir
+|	#17 CONSTANT _#nfs_statfs
+
+
+	\ the type codes
+
+        | zero CONSTANT _#nf_non
+	| 1    CONSTANT _#nf_reg
+	| 2    CONSTANT _#nf_dir
+	| 3    CONSTANT _#nf_blk
+	| 4    CONSTANT _#nf_chr
+	| 5    CONSTANT _#nf_link
+
+       \ can abort.
+        | : _get_attr_call { variable %fhandle variable %udp_handle -- ( %pep|0) }
+                        %fhandle @ _#fh_size _data_to_stack \ data n (--
+		        _#nfs_program _#nfs_version _#nfs_getattr %udp_handle @ _rpc
+        ;
+
+	_mount_class class
+
+
+	        | #100000 CONSTANT _#pm_program
+		| #2      CONSTANT _#pm_version
+
+		\ the port mapper routines
+		| 0 CONSTANT _#pm_null
+		| 1 CONSTANT _#pm_set
+		| 2 CONSTANT _#pm_unset
+		| 3 CONSTANT _#pm_getport
+		| 4 CONSTANT _#pm_list
+		| 5 CONSTANT _#pm_callit
+
+		| #17     CONSTANT _#pm_udp
+		| #6      CONSTANT _#pm_tcp
+
+
+
+		| #100005 CONSTANT _#mountd_program
+		| #1      CONSTANT _#mountd_version
+
+
+		\ mountd routines
+		| 0 CONSTANT _#mountd_null
+		| 1 CONSTANT _#mountd_mount
+		| 2 CONSTANT _#mountd_dump
+		| 3 CONSTANT _#mountd_umount
+		| 4 CONSTANT _#mountd_umount_all
+		| 5 CONSTANT _#mountd_export
+
+
+
+
+		| : _open_pm ( -- addr)
+			%%mount_machine @ #111 $" (udp_client)" zero $open
+		;
+
+		| : _get_nfs_port { ( -- port) }{
+			variable %pm_handle }
+			_open_pm %pm_handle !
+			%pm_handle @ not ABORT" Can't open port mapper"
+			_#nfs_program _#nfs_version _#pm_udp 0 4 \ end of call parameters
+			_#pm_program _#pm_version _#pm_getport %pm_handle @ _rpc
+			%pm_handle @ close
+			?DUP IF
+				DUP ep_protodata + @ _rpcr_parameters @
+				SWAP  kill_free_buffer
+			ELSE
+				TRUE ABORT" port mapper not responding"
+			THEN
+		;
+
+		| : _get_mountd_port { ( -- port) }{
+			variable %pm_handle  }
+			_open_pm %pm_handle !
+			_#mountd_program _#mountd_version _#pm_udp 0 4 \ end of call parameters
+			_#pm_program _#pm_version _#pm_getport %pm_handle @ _rpc
+			%pm_handle @ close
+			?DUP IF
+				DUP ep_protodata + @ _rpcr_parameters x@
+				SWAP
+				kill_free_buffer
+			ELSE
+				TRUE ABORT" port mapper not responding"
+			THEN
+		;
+
+
+		| : _open_mountd ( -- addr)
+			%%mount_machine @
+                         _get_mountd_port $" (udp_client)" zero
+                        $open
+		;
+
+		| : _mount_nfs { ( add n --) }{
+			variable %mountd_handle  }
+			_open_mountd
+			%mountd_handle !
+			%mountd_handle @ IF
+				_string_to_stack \ data n(--
+				_#mountd_program _#mountd_version _#mountd_mount %mountd_handle @
+				['] _rpc CATCH ?DUP IF
+                                        %mountd_handle @ close
+                                        $ABORT
+                                THEN
+				?DUP IF   \ out_pep(--
+					DUP ep_protodata + @ _rpcr_parameters
+					DUP @ not IF
+						\ out_pep parameters(--
+						4+
+						%%fh_mount _#fh_size MOVE
+						kill_free_buffer
+						%mountd_handle @ close
+						EXIT
+					ELSE
+						@ unix_code>string
+						SWAP
+						kill_free_buffer
+						%mountd_handle @ close
+						$ABORT
+					THEN
+				ELSE
+                                        %mountd_handle @ close
+					TRUE ABORT" mountd won't talk"
+				THEN
+			ELSE
+				TRUE ABORT" Can't open mountd"
+			THEN
+		;
+
+ 		| : _unmount_nfs { ( add n --) }{
+			variable %mountd_handle  }
+			_open_mountd
+			%mountd_handle !
+			%mountd_handle @ IF
+				_string_to_stack \ data n(--
+				_#mountd_program _#mountd_version _#mountd_umount %mountd_handle @
+
+                                ['] _rpc CATCH ?DUP IF
+                                        %mountd_handle @ close
+                                        $ABORT
+                                THEN
+
+                                ?DUP IF   \ out_pep(--
+                                        kill_free_buffer
+				        %mountd_handle @ close
+				        EXIT
+				ELSE
+                                        %mountd_handle @ close
+					TRUE ABORT" mountd won't talk"
+				THEN
+			ELSE
+				TRUE ABORT" Can't open mountd"
+			THEN
+		;
+</code>
+\ doesn't clean up on a linux system
+		| : _umount_all { ( --) }{
+			variable %mountd_handle  }
+			_open_mountd
+			%mountd_handle !
+			%mountd_handle @ IF
+                                \ parameter count
+                                zero
+				_#mountd_program _#mountd_version _#mountd_umount_all %mountd_handle @
+				_rpc
+				?DUP IF   \ out_pep(--
+
+				        \ out_pep parameters(--
+				        kill_free_buffer
+				        %mountd_handle @ close
+				        EXIT
+				ELSE
+					TRUE ABORT" mountd won't talk"
+				THEN
+			ELSE
+				TRUE ABORT" Can't open mountd"
+			THEN
+		;
+<code>
+		| : _open_nfs_udp ( --addr)
+			%%mount_machine @ _get_nfs_port $" (udp_client)" zero $open
+		;
+
+
+		m: { ( addr num --) }{
+                        variable %total_mounts
+                        }
+ 			\ just in case we abort. the close will still work as required.
+			this [parent] :construct
+
+			[CHAR] / remove_leading
+			[CHAR] / left_split
+			\ addr_machine count_machine addr_file count_file(--
+			2SWAP DUP IF \ machine specified
+				2DUP Sresolve_address %%mount_machine !
+				string_class heap_object %%mount_machine> !
+			ELSE
+				\ no remote machine speced
+				TRUE ABORT" remote machine must be given"
+			THEN
+ 			\ addr_file count_file(--
+                        \ it would seem unix doesn remove the leadinf \
+			\ [CHAR] / remove_leading
+			\ addr_file count_file (--
+			DUP not IF
+				\ try for root
+				2DROP S" /"
+			THEN
+                        \ addr n (--
+                        \ create a string object
+                        string_class heap_object
+                        \ addr n object
+                        %%nfs_name> !
+			\ justin case it was mounted remotly.
+                        \ remember we have already checked too see if
+                        \ mounted locally.
+                        %%nfs_name> @ :string@ _unmount_nfs
+                        \ get the file handle
+			%%nfs_name> @ :string@  _mount_nfs
+			_open_nfs_udp %%nfs_udp_handle !
+                        %%fh_mount %%nfs_udp_handle @ _get_attr_call
+ 		        \ pep(--
+		        ?DUP IF
+			        DUP ep_protodata + @ _rpcr_parameters
+			        \ pep parameters(--
+			        DUP x@ not IF
+		        		\ all went well
+                                        \ make sure we mounted a directory.
+			        	\ pep parameters(--
+                                        \ skip the status
+                                        4+
+                                        \ copy the attributes into the file handle.
+                                        \ The mount only does half the job
+                                        DUP %%fh_mount _#fh_size + _#fattr_length MOVE
+                                        \ offset to mode
+                                        _#fattr_mode + @
+                                        \ pep mode(--
+                                        _#mode_dir AND not
+                                        SWAP
+				        kill_free_buffer
+                                        ABORT" Not a directory."
+        			ELSE
+	        			x@ unix_code>string
+		        		SWAP kill_free_buffer
+			        	$ABORT
+			        THEN
+        		ELSE
+	        		TRUE ABORT" nfs not responding"
+		        THEN
+ 		; overrides :construct
+
+
+ 		m:
+                        \ unlinks us from mount files
+			this [parent] :destruct
+                         \ get rid of the string
+                        %%nfs_name> @ ?DUP IF
+                                heap_object_free 0 %%nfs_name> !
+                        THEN
+                        %%mount_machine> @ ?DUP IF
+                                heap_object_free 0 %%mount_machine> !
+                        THEN
+			%%nfs_udp_handle @ ?DUP IF
+                                close 0 %%nfs_udp_handle !
+                        THEN
+                ; overrides :destruct
+
+                \ must be set because of the way construct is written
+                m: ( -- addr n)
+			%%mount_machine> @ :string@
+		; overrides :Smount_ip
+
+                \ must be set because of the way construct is written.
+               m: ( -- addr n )
+                        %%nfs_name> @ :string@
+                ; method :Smount_file
+
+
+		m: ( indent --)
+			CR DUP SPACES ." mount_class | " ." Object: " this .h
+			DROP send
+		; overrides :print
+
+	end_class mount_class
+
+        | : _mount_file_equal ( addr n object --flag)
+                :Smount_file
+                \ addr n addr n(--
+                COMPARE not
+        ;
+
+        \ go through the current mounts and see if the file is allready mounted.
+        \ if it is just return the mount object. multiple taskcan use the one mount object.
+        | : _find_mount { ( addr n -- object TRUE | FASLE) }{
+                variable %machine }
+                [CHAR] / remove_leading
+                [CHAR] / left_split
+                \ addr_machine count_machine addr_file count_file(--
+                2SWAP DUP IF \ machine specified
+                        Sresolve_address %machine !
+                        \ addr n (-- file
+                        \ It would seem unix doesn remove the leading /
+                        \ [CHAR] / remove_leading
+                        %mounts @ BEGIN
+                                \ addr n link(--
+                                DUP
+                        WHILE
+                                %machine @ OVER link>object :mount_ip = IF
+                                        \ same machine
+                                        >R
+                                        2DUP
+                                        R@ link>object _mount_file_equal IF
+                                                2DROP
+                                                R> link>object
+                                                TRUE
+                                                EXIT
+                                        THEN
+                                        R>
+                                        \ addr n link(--
+                                THEN
+                                @
+                        REPEAT
+                        \ addr n zero(--
+                        DROP 2DROP
+                ELSE
+                        \ no machine speced
+                        \ addr n addd n(--
+                        2DROP 2DROP
+                THEN
+                \ (--
+                \ failed
+                FALSE
+        ;
+
+ 	: Smount ( add n --)
+                 2DUP _find_mount IF
+                        %mount_object !
+                        2DROP				
+                        EXIT
+                THEN
+		mount_class heap_object
+		%mount_object !
+	;
+
+
+	: $mount ( $ --)
+		COUNT Smount
+	;
+
+	: mount ( [string] --)
+		BL WORD $mount
+	;
+
+        \ Effects the task, the actual mount remains.
+        \ We don't keep track of how many tasks use a mount object,
+        \ so we just leave it alone. Look at it as a mount cache.
+        : umount ( --)
+                0 %mount_object !
+        ;
+
+        \ if no handle return value is zero
+	| : nfs_fhandle ( -- addr)
+		%mount_object @ DUP not IF
+                        \ 0(--
+			EXIT
+		THEN
+		:nfs_fhandle
+	;
+
+
+
+
+
+</code> </pre>
+</body>
+</html>

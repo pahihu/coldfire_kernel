@@ -1,0 +1,80 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre>
+In rti device add to to make sure we are running from a port task.
+
+1) #Done# Correct "system_entry" and "system_rte" - very important!
+
+2) Add terminal facility to Stage_I via bank memory.
+
+3) # Not an issue# Bank memory: currently you are using bank 3, you mentioned that you wished to use bank 0 and for me to use
+1, 2 and 3. Do you still want to do this?
+
+4) There seems to be a problem with all types of emitting words. Specifically, I came across "CR", "TAB" and ".".
+Currently I redefined these words in the application by adding a "send" after each word. Is this ok? Note also a
+space is missing after the "." word.
+
+5) The "empty" word is still not 100% ok. If a task is defined empty does not appear to work to well...You have
+to empty twice. Also activating the "empty" command while operating in &tasks will kill the system.
+
+6) The ability to kill a task in interrupt code...wishful thinking on my part.
+
+7) A more user friendly way to destroy a task.
+
+8) Rename interrupt levels - something more generic. Also, currently we have to fetch the interrupt head from
+xheads...This could be made more user friendly.
+
+
+Currently the application overwrites the control register for CS2 through to CS6. Should this continue?
+
+11) Currently BUS-ERROR is enabled by the application...Should this continue?
+
+12) Currently the IMR register is overwritten by the application...Should this continue?
+
+#done# 13) Assembler:
+#had been fixed# a) Check address offset if within limits ie. +127 to -128 and +32767 to -32768
+
+
+#bug found# b) Check address offset in BSR instruction if over +32767 to -32768
+#bug in MULU only# c) Check long word MULU/MULS as per immediate value mode. Immediate values are
+only allowed in word operations not LONG WORD.
+#was ok# d) Ditto above to DIVU/DIVS. I think its ok...but would be good if you check.
+
+14) Something to perhaps to think about...determining which coldfire mask we are using and setting an
+appropriate variable. IE. a %Coldfire_mask variable.
+
+15) #Done# Check application flash; Formatting. Reading and writing.
+
+16) Correct file size error when loading via terminal ie. re Maths_Functions.4th. I have not had this problem when
+loading from the front serial ports or on Stage_I.
+
+17) Addition: it would be nice if you add a word like .TASKS from the old system.
+
+18) Addition: it would also be nice if you make the heading and title variables accessible.
+
+19) System stack into static ram.
+
+20) ed doesn't work
+
+21) edit_close leaves a value on stack and file doesn't doesn't come up
+
+22) `````````````````dir abort should close file
+
+23) Copy over file aborts correctly but all files are not closed.
+
+24) Not releasing free buffers
+
+25) Make buffer area bigger in BVP
+</pre>
+ 
+</body>
+</html>

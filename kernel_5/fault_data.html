@@ -1,0 +1,112 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+
+<p>
+On fault you often want to alter the return address ( not much
+use re-executing the fault instruction). This word is the word to use.
+</p>
+	<pre> <code>
+	| : int_return! ( xt --)
+		_#l_PC @int_stack_frame + !
+	;
+	</code> </pre>
+	<pre> <code>
+
+
+	</code> </pre>
+<p>
+On a fault the interrupt stack is saved, along with the current value of
+lp. This can be used latter to work out what was going on.
+</p>
+	<pre> <code>
+
+
+	ram_create _%fault_data _#l_length ram_allot
+
+	: save_fault_stack ( --)
+		@int_stack_frame _%fault_data _#l_length  MOVE
+	;
+
+	</code> </pre>
+<p>
+Once we have determined that we are dealing with an interrupt: stack frame, we use this word
+to print out the register details.
+</p>
+
+	<pre> <code>
+	| : .int_stack_frame ( addr --)
+		CR
+		." Registers"
+		CR
+		." D0 " DUP _#l_D0 + @ .h BL EMIT
+		." D1 " DUP _#l_D1 + @ .h BL EMIT
+		." D2 " DUP _#l_D2 + @ .h BL EMIT
+		." D3 " DUP _#l_D3 + @ .h
+		CR
+		." D4 " DUP _#l_D4 + @ .h BL EMIT
+		." D5 " DUP _#l_D5 + @ .h BL EMIT
+		." D6 " DUP _#l_D6 + @ .h BL EMIT
+		." D7 " DUP _#l_D7 + @ .h
+		CR
+		." A0 " DUP _#l_A0 + @ .h BL EMIT
+		." A1 " DUP _#l_A1 + @ .h BL EMIT
+		." A2 " DUP _#l_A2 + @ .h BL EMIT
+		." A3 " DUP _#l_A3 + @ .h
+		CR
+		." A4 " DUP _#l_A4 + @ .h BL EMIT
+		." A5 " DUP _#l_A5 + @ .h BL EMIT
+		." A6 " DUP _#l_A6 + @ .h BL EMIT
+		." A7 " DUP _#l_A7 + @ .h
+		CR
+		." SR " DUP _#l_format + @ .h BL EMIT
+		." PC " DUP _#l_PC + @  .h
+		send
+		DROP
+		;
+
+
+
+	</code> </pre>
+<a name=".fault"></a>
+<p>
+Because we now set up a forth process to service interrupt, and because
+such a process can abort, it is possible to get interrupt exceptions
+and for there to be a valid description of what happen.
+</p>
+
+<p>
+If the interrupt has been reset, and things aren't in a complete mess
+the system will even recover.
+</p>
+
+<p>
+To print out layered interrupt stack frames we have to trace down the lp link.
+So poor old .FAULT gets a little more complex.
+</p>
+
+	<pre> <code>
+	: .fault ( --)
+                .bad_buffer
+                _%fault_data .int_stack_frame
+        ;
+
+        \ <a name=".fault_reset"></a>
+	: .fault_reset ( --)
+		.fault
+[ #BCM550h #BCM550j + [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault -1 XOR AND
+		_breg_SS1 C!
+[ [THEN] ]T
+	;
+	  </code> </pre>
+</body>
+</html>

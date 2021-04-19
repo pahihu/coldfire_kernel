@@ -1,0 +1,28 @@
+.( a comment) 
+HEX
+: ??= = not ABORT" problem" ;
+8 CONSTANT #test_size
+ram_variable %test_table #test_size CELLS ram_allot
+\ open for recieve machine 04 any port
+111111 07 04 -1 0 0  %test_table #test_size demux_socket_add
+0 ??=
+444444 07 04 -1 0 0  %test_table #test_size demux_socket_add
+.S
+not 0 ??=
+\ open for receive machine 04 socket 8000
+222222 07 04 -1 8000 -1 %test_table #test_size demux_socket_add
+0 ??=
+555555 07 04 -1 8000 -1 %test_table #test_size demux_socket_add
+.S
+not 0 ??=
+\ open for receive in port 07 any port any machine
+333333 07 00 00 00 00 %test_table #test_size demux_socket_add
+0 ??=
+666666 07 04 -1 8000 -1 %test_table #test_size demux_socket_add
+not 0 ??=
+
+
+
+
+
+

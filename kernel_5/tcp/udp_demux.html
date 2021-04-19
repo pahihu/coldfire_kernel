@@ -1,0 +1,337 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>proto class</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0768.html">RFC768</a><br>
+<p>
+When system starts there has to be a udp object contructed, but only one.
+</p>
+<p>
+Structure of a UDP datagram
+</p>
+	<pre> <code>
+	zero 
+	DUP CONSTANT udp_src      2+
+	DUP CONSTANT udp_dst      2+
+	DUP CONSTANT udp_len      2+
+	DUP CONSTANT udp_checksum 2+
+	    CONSTANT udp_data     
+	</code> </pre>
+<p>
+checksum will work as long as all the data is in host order, or all the data
+is in network order. We do the checksum in host order as the source and 
+destination IP are in HOST order. This means received datagrams have to go
+throught udp_net<>host before calling this routine
+</p>
+	<pre> <code>
+	: udp_checksum_calculation { variable %pep ( --checksum) }{
+		variable %ipdata }
+		%pep @ ep_ipdata + @ %ipdata !
+		zero
+		%pep @ [ ep_data ip_src + ]T LITERAL + 
+		\ zero addr(--
+		\ source and destination address
+		DUP [ IP_ALEN 2* ]T LITERAL + SWAP DO
+			I W@  +
+		2 +LOOP
+		\ protocol
+		%pep @ [ ep_data ip_proto + ]T LITERAL + C@ +
+		\ length
+		%ipdata @ udp_len + W@ +
+		\ If length is odd pad udp out with zero. Buffers lengths
+		\ are always divisible by cell so there is room to place 
+		\ the byte
+		\ checksum(--
+		%ipdata @ udp_len + W@ 
+		DUP 01 AND IF
+			\ checksum len(--
+			zero 					
+			OVER %ipdata @ + C!
+		THEN
+		\ checksum length(--
+		%ipdata @ + %ipdata @ DO
+			I W@ +
+		2 +LOOP
+		\ checksum(--
+		DUP $10 RSHIFT SWAP $0FFFF AND +
+		DUP $10 RSHIFT + 
+		-1 XOR
+		$0FFFF AND
+	;		 
+		
+	
+	\ The last port supplied by the OS.
+	ram_variable _%udp_last_port
+	\ so the upd object can be found without doing a
+	\ _udp_find
+	ram_variable _%udp_object
+	</code> </pre>
+<p>	
+The more lists the faster the demux, the more memory you use.
+Set as desired.
+</p>
+	<pre> <code>
+	$80 CONSTANT _#udp_head_num
+	ram_variable _%udp_table _#udp_head_num CELLS ram_allot
+	</code> </pre>
+<p>
+_udp_find and _udp_release will be used in the protocol object.
+_udp_add, _udp_free? and _udp_release will be used in the io_common object for 
+open and close.
+</p>
+	<pre> <code>
+	: _udp_find ( local_port remote_ip remote_port --addr|zero)
+		_%udp_table _#udp_head_num demux_socket_find
+	;
+
+	: _udp_add ( object local_port remote_ip remote_ip_mask remote_port remote_port_mask -- $| addr 0 )
+		_%udp_table _#udp_head_num  demux_socket_add
+	;
+
+	: _udp_release ( addr --)
+		demux_release
+	;
+
+	: _udp_free? ( io_object port --)
+		_%udp_table _#udp_head_num _demux_socket_free?
+	;
+	</code> </pre>
+	<pre> <code>
+	\ you use this when you want the os to supply a source port, that
+	\ is when you are a client.
+	$8000 CONSTANT _#first_udp_system_port
+	$10000 CONSTANT _#last_udp_system_port
+	\ used to work out wrap around
+	_#last_udp_system_port _#first_udp_system_port - 2 / CONSTANT _#udp_range
+
+
+	: _udp_port { 
+			variable %object 
+			variable %remote_ip
+			variable %remote_ip_mask
+			variable %remote_port
+			variable %remote_port_mast -- ( record ) }
+		_lock_word
+		_%udp_last_port @
+		_#first_udp_system_port _#last_udp_system_port WITHIN not IF
+			_#first_udp_system_port _%udp_last_port !
+		THEN
+		_unlock_word
+		_%udp_last_port @
+		\ if two tasks are trying at the same time
+		\ one will get in first and the other will keep
+		\ going.
+		\ port(--
+		BEGIN 
+			%object @ OVER %remote_ip @ %remote_ip_mask @ 
+			%remote_port @ %remote_port_mast @ _udp_add
+		WHILE
+			1+ 
+			DUP _#first_udp_system_port _#last_udp_system_port WITHIN not IF
+				DROP _#first_udp_system_port
+			THEN
+		REPEAT
+		\ port record(--
+		SWAP
+		\ when we store the up to port we must make sure
+		\ the task with the highest used port wins. It is a circular number
+		_lock_word
+		_%udp_last_port @ 2DUP - ABS _#udp_range > IF
+			\ wraped around 
+			MIN
+		ELSE
+			MAX
+		THEN
+		_%udp_last_port !
+		_unlock_word
+		\ record(--
+	;
+
+	</code> </pre>
+<a name=":proto_demux"></a>
+	<pre> <code>
+
+protocol class
+		cell% instance_variable %%udp_in_errors
+		m: ( --)
+			this [parent] :construct
+                        \ now we start receiving packets.
+                        IPT_UDP   %%protocol_number !
+		; overrides :construct
+
+		\ called if the byte order has to be swaped for network
+		\ transmission. This is done in the interface just prior
+		\ to transmission. On reception it is done after the protocol
+		\ demux, otherwise we would have to demux twice.
+
+		: udp_host<>net  ( ipdata --)
+		\	DUP udp_src + W@ hs2net OVER udp_src + W!
+		\	DUP udp_dst + W@ hs2net OVER udp_dst + W!
+		\	DUP udp_len + W@ hs2net OVER udp_len + W!
+		\	DUP udp_checksum + W@ hs2net OVER udp_checksum + W!
+		;
+
+		m: ( pep --)
+			DROP
+		\   ep_ipdata + @
+		\   usp_host<>net
+		; overrides :proto_host<>net
+
+
+		\ used by the proto task to get rid of the packet.
+		m: { ( pep -- ) }{
+			variable %ipdata }
+			DUP ep_ipdata + @ %ipdata !
+
+			\ the udp protocol has a fixed header
+			DUP ep_ipcount + @ udp_data - OVER ep_protocount + !
+			%ipdata @ udp_data +  OVER ep_protodata + !
+
+
+
+
+			\ The rules are only checksum if the checksum is non zero.
+			%ipdata @ udp_checksum + W@ IF
+				DUP udp_checksum_calculation
+				\ checksum calc includes checksum and result should be zero
+				IF
+					 kill_free_buffer
+					 1 %%udp_in_errors +!
+					 EXIT
+				THEN
+			THEN
+			\ checksum is good
+			%ipdata @ udp_dst + W@
+			OVER [ ep_data ip_src + ]T LITERAL + @ 
+			%ipdata @ udp_src + W@ 
+			\ pep local_port remote_ip remote_port(--
+			_udp_find DUP IF
+				\ pep table(--
+				\ this is a method in io_common
+				TUCK _#demux_bucket_object + @ ?DUP IF 
+					:consume_port
+				ELSE
+					kill_free_buffer
+				THEN 
+				_udp_release
+				EXIT
+			THEN
+			\ pep zero(--
+			DROP
+			\ the port is unreachable
+			\ send a error message and destroy pep
+			_#icc_port_unreached SWAP icmp_error_message
+		; overrides :proto_demux
+
+
+		m: { variable %pep -- }{
+			variable %ipdata 
+			variable %returned_hl }
+			%pep @ ep_ipdata + @ %ipdata !
+			%ipdata @ ic_data + _ip>ip_hlen
+			\ header_length_returend_datagram(--
+			%returned_hl !
+			%pep @ ep_ipcount + @ ic_data - %returned_hl @ - udp_data < IF \ >
+				\ (--
+				\ didn't return udp header
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			\ extracting source port etc.and have a go at queueing packet.
+			\ At this stage ep_error is set, this will be seen by the
+			\ io_common object and result in a error output.
+			\ header_length_returned_datagram(--
+			\ remember the datagram is as we sent it
+			\ the destination is the remote.
+			%ipdata @ ic_data + %returned_hl @ + udp_src + W@
+			%ipdata @ ic_data + ip_dst + @
+			%ipdata @ ic_data + %returned_hl @ + udp_dst + W@
+			_udp_find ?DUP IF
+				\ table(--
+				\ this is a method in io_common
+				%pep @ OVER _#demux_bucket_object + @ ?DUP IF 
+					:consume_port 
+				ELSE
+					kill_free_buffer
+				THEN
+				_udp_release
+				EXIT
+			THEN
+			\ get here and there is nowhere for error to go
+			\ give up
+			%pep @ kill_free_buffer
+		; overrides :proto_error
+
+
+		\ UDP requires checksuming
+		\ after the source ip address is known.
+		\ The source ip address should be determined by 
+		\ the interface over which the packet is sent.
+		\ Instead of guessing the source ip address we provide
+		\ the protocol object and the interface calls :proto_checksun
+		\ just before doing the ip checksum, and before converting
+		\ the ip header to network order.
+		m: { ( pep --) }{
+			variable %ipdata }
+			DUP ep_ipdata + @ %ipdata !
+			zero %ipdata @ udp_checksum + W!
+			\ pep(--
+			udp_checksum_calculation DUP not IF
+				$0FFFF XOR
+			THEN
+			\ checksum(--
+			%ipdata @ udp_checksum + W!
+		; overrides :proto_checksum	
+		
+		\ tell the world about ourselves
+		m: ( offset --)
+			CR DUP SPACES ." udp_protocol  | " ." Object: " this .h 
+			              ." protocol_number: " %%protocol_number @ .h
+			DROP
+			send
+		; overrides :print
+end_class udp_protocol
+
+
+	: .udp_demux ( --)
+		CR
+		." lc port  "
+		." users    "
+		." object   "
+		." rm port  "
+		." rm p mk  "
+		." rm ip    "
+		." rm ip mk "
+		." live tm  "
+		_%udp_table _#udp_head_num CELLS + _%udp_table DO
+			I 
+			BEGIN
+				@ DUP
+			WHILE
+				CR
+				\ addr(--
+				DUP _#demux_local_port + @ .h 
+				DUP _#demux_users + @ .h
+				DUP _#demux_object + @ .h
+				DUP _#demux_remote_port + @ .h
+				DUP _#demux_remote_port_mask + @ .h
+				DUP _#demux_remote_ip + @ .h
+				DUP _#demux_remote_ip_mask + @ .h
+				DUP _#demux_live_time + @ .h
+			REPEAT
+			DROP
+		cell +LOOP
+	;
+
+		</code> </pre>
+
+</BODY>
+</HTML>

@@ -1,0 +1,125 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre><code>
+
+	: &lt;html&gt;  ( -- )
+		BEGIN                                    
+			BEGIN
+				BL (word) DUP  
+			WHILE                                
+				2DUP  S" &lt;/html&gt;"  COMPARE 
+				0= IF                             
+					2DROP                        
+					EXIT
+				THEN                              
+				2DUP  S" &lt;code&gt;"  COMPARE 
+				0= IF                               
+					2DROP                        
+					EXIT
+				THEN                              
+				2DROP
+			REPEAT  2DROP                           
+		REFILL 0=  UNTIL                          
+	;  IMMEDIATE
+	
+
+	: &lt;/code&gt;  ( -- )
+		BEGIN                                    
+			BEGIN
+				BL (word) DUP  
+			WHILE                                
+				2DUP  S" &lt;/html&gt;"  COMPARE 
+				0= IF                             
+					2DROP                        
+					EXIT
+				THEN                              
+				2DUP  S" &lt;code&gt;"  COMPARE 
+				0= IF
+					2DROP
+					EXIT
+				THEN
+				2DROP
+		  REPEAT  2DROP
+		REFILL 0=  UNTIL
+	;  IMMEDIATE
+
+	: &lt;HTML&gt;  ( -- )
+		BEGIN
+			BEGIN
+				BL (word) DUP
+			WHILE
+				2DUP  S" &lt;/HTML&gt;"  COMPARE
+				0= IF
+					2DROP
+					EXIT
+				THEN
+				2DUP  S" &lt;CODE&gt;"  COMPARE
+				0= IF
+					2DROP
+					EXIT
+				THEN
+				2DROP
+			REPEAT  2DROP
+		REFILL 0=  UNTIL
+	;  IMMEDIATE
+
+   	: &lt;/CODE&gt;  ( -- )
+		BEGIN
+			BEGIN
+				BL (word) DUP
+			WHILE
+				2DUP  S" &lt;/HTML&gt;"  COMPARE
+				0= IF
+					2DROP
+					EXIT
+				THEN
+				2DUP  S" &lt;CODE&gt;"  COMPARE 
+				0= IF                               
+					2DROP                        
+					EXIT
+				THEN                              
+				2DROP
+		  REPEAT  2DROP                           
+		REFILL 0=  UNTIL
+	;  IMMEDIATE
+
+
+	: &lt;!DOCTYPE  ( -- )
+		BEGIN
+			[CHAR] ) (word) 2DROP TIB  &gt;IN @ + 1- C@ [CHAR] &gt; = IF
+				EXIT
+			THEN
+			REFILL 0=
+		UNTIL
+	;  IMMEDIATE
+
+
+        \ &lt; stuff&gt;name &lt;/a&gt; is treated as name.
+
+        \ so hyper links can be added directly to forth code
+ 	: &lt;a  ( -- )
+                [CHAR] > PARSE 2DROP
+	;  IMMEDIATE
+
+        \ so hyper links can be added direclty to forth code
+ 	: &lt;A  ( -- )
+                [CHAR] > PARSE 2DROP
+	;  IMMEDIATE
+
+         \ so hyper links can be added direclty to forth code
+ 	: &lt;/A&gt; ( -- )
+	;  IMMEDIATE
+
+         \ so hyper links can be added direclty to forth code
+ 	: &lt;/a&gt; ( -- )
+	;  IMMEDIATE
+

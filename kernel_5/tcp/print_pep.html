@@ -1,0 +1,156 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+	<pre> <code>
+	| : .hwa ( addr --)
+		BASE @ >R
+		HEX
+		DUP @ u>d \ lo hi (--
+		#picture_min get_buffer
+		buffer #picture_min
+		[# # # # # # # # # #] TYPE
+		\ addr(--
+		4+ W@ u>d
+		buffer #picture_min [# # # # # #] TYPE
+		kill_buffer
+        	R> BASE !
+	;
+
+
+	| : .word ( value )
+		BASE @ >R
+		HEX
+		u>d \ lo hi (--
+		#picture_min get_buffer
+		buffer #picture_min [# # # # # #] TYPE
+		kill_buffer
+        	R> BASE !
+		SPACE
+	;
+
+	| : .byte ( value )
+		BASE @ >R
+		HEX
+		u>d \ lo hi (--
+		#picture_min get_buffer
+		buffer #picture_min [# # # #] TYPE
+		kill_buffer
+        	R> BASE !
+		SPACE
+	;
+
+
+	| : .flags ( value-- )
+		BASE @ >R
+
+		binary
+		u>d \ lo hi (--
+		#picture_min get_buffer
+		buffer #picture_min [# # # # # # # # # #] TYPE
+		kill_buffer
+        	R> BASE !
+		SPACE
+	;
+
+
+	| : .unknown { variable %ip_data }
+		CR
+		." IP DATA:" %ip_data @ .h
+		CR
+		%ip_data @ $10 DUMP
+	;
+
+ 	| : .tcp { variable %ip_data -- }
+		CR ." TCP: " %ip_data @ .h
+		CR
+		." scr  : " %ip_data @ #tcp_src + W@ .word 7 SPACES
+		." dst  : " %ip_data @ #tcp_dst + W@ .word 7 SPACES
+		." seq  : " %ip_data @ #tcp_seq + @  .h    3 SPACES
+		." ack  : " %ip_data @ #tcp_ack + @  .h    3 SPACES
+
+		CR
+		." hlen : " %ip_data @ #tcp_offset + B@  $F0 AND 2 RSHIFT .byte 9 SPACES
+		." flags: " %ip_data @ #tcp_flags  + B@ .flags 3 SPACES
+		." wind : " %ip_data @ #tcp_window + W@ .word 7 SPACES
+		." check: " %ip_data @ #tcp_checksum + W@ .word 7 SPACES
+		CR
+		." urg_p: " %ip_data @ #tcp_urgptr + W@ .word 7 SPACES
+	;
+
+	| $12 CONSTANT #.proto_max
+	| CREATE .proto_table
+	' .unknown t,  \ 0
+	' .unknown t,  \ 1 - icmp
+	' .unknown t,  \ 2
+	' .unknown t,  \ 3
+	' .unknown t,  \ 4
+	' .unknown t,  \ 5
+	' .tcp t,  \ 6 - tcp
+	' .unknown t,  \ 7
+	' .unknown t,  \ 8
+	' .unknown t,  \ 9
+	' .unknown t,  \ 0A
+	' .unknown t,  \ 0B - udp
+	' .unknown t,  \ 0C
+
+       \ <a name=".ip"></a>
+
+	: .ip { variable %ip -- }
+		." IP: " %ip @ .h CR
+		." vers : " %ip @ ip_verlen + C@ F0 AND 4 RSHIFT .byte 9 SPACES
+		." hlen : " %ip @ ip_verlen + C@ 0F AND 2 LSHIFT .byte 9 SPACES
+		." tos  : " %ip @ ip_tos + C@ .flags 3 SPACES
+		." iplen: " %ip @ ip_len + W@ .word 7 SPACES
+		CR
+		." id   : " %ip @ ip_id + W@  .word  7 SPACES
+		." frag : " %ip @ ip_fragoff + W@ .word 7 SPACES
+		." ttl  : " %ip @ ip_ttl + B@ .byte 7 SPACES
+		." proto: " %ip @ ip_proto + B@ .byte 9 SPACES
+		CR
+		." chksm: " %ip @ ip_cksum + W@ .word 7 SPACES
+		." src  : " %ip @ ip_src + @ .h 3 SPACES
+		." dst  : " %ip @ ip_dst + @ .h 3 SPACES
+		." ip_op: " %ip @ _ip>ip_hlen ip_options - #12 .l
+		\ the protocol may not be installed so we need to use
+		\  local definitions to print out protocol portion of packet.
+		%ip @ _ip>ipdata
+		%ip @ ip_proto + C@ #.proto_max MIN 4* .proto_table +
+		@execute
+
+
+	;
+        \ <a name=".pep"></a>
+
+	: .pep { variable %pep -- }
+		CR ." HEADER: " %pep @ .h
+		CR
+		." ln_fw: " %pep @ ep_link + @ .h 3 SPACES
+		." ln_bk: " %pep @ ep_back + @ .h 3 SPACES
+		." time : " %pep @ ep_xclock+ + @ .h 3 SPACES
+		%pep @ ep_error + @ IF
+			CR
+			." error: " %pep @ ep_error + @ ?DUP IF $type  THEN
+		THEN
+		CR
+		." p_obj: " %pep @ ep_proto_obj + @ .h 3 SPACES
+		." nif  : " %pep @ ep_nif_received + @ .h 3 SPACES
+		." hop  : " %pep @ ep_nexthop + @ .h 3 SPACES
+		." len  : " %pep @ ep_len + @ .h 3 SPACES
+		CR
+		." dst  : " %pep @ ep_dst + .hwa
+		." src  : " %pep @ ep_src + .hwa
+		." type : " %pep @ ep_type + W@ .word 7 SPACES
+		CR
+		%pep @ ep_data + .ip
+	;
+	</code> </pre>
+
+
+</body>
+</html>

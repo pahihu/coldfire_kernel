@@ -1,0 +1,2363 @@
+<html>
+<head>
+<title>COLDFORTH FLOATS</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+	<body>
+	<ul>
+	<li>1.0 Tested and released for use.</li>
+	<li>1.1 Change infinity so it is a saturated number; not an exception. 
+		Infinity divide by 2 is now 1/2 infinity. Zero is not a special 
+		case; it's a floating</li>
+	<li>1.0 Tested and released for use.</li>
+	<li>1.1 Change infinity so it is a saturated number; not an exception. Infinity
+                divide by 2 is now 1/2 infinity. Zero is not a special case; it's a floating
+		point number with an error like all the others. n/0 is not an error just
+		a large number.</li>
+	</ul>
+	<pre><code>
+	: .float_version ( --)
+	." v1.02 5307/5407 MAC 25/01/01" ;
+	</code></pre>
+	<p>
+	A floating point number has two parts. The mantissa and the exponent.
+	This package aims to give the best possible speed.
+	The mantissa part is stored in one 32 bit long word the exponent in another.
+	</p>
+	<p>
+	This software will only work with MAC's that support the fractional multiply.
+	The factional multiply uses 2's compliment numbers. Numbers in the range
+	1 &lt num &lt= -1 can be represented. A binary floating point number only
+	needs a mantissa that has a range. 1 &lt num &lt= .5 for positive numbers;
+	and -1 &lt num &lt= -.5 for negative numbers. If you get the number in
+	this range the top binary bit of the number is a one; traditionally this
+	bit is used as the sign bit and the one assumed. This gives an additional bit
+	of accuracy. The one is there; it would be a waste of cycles trying to get rid
+	of it so we won't.
+	</p>
+	<p>
+	Such a small mantissa range ( 1 &lt n &lt= .5) works because .5 * 2 = 1 and
+	altering the base 2 exp by one effectivly multiplies the mabntissa by 2.
+	</p>
+
+	<p>
+	The values are always stored on the stack ( mantissa exp --)
+	</p>
+	<pre>
+	.5  = 4000,0000  =  nmin  nmax = 7FFF,FFFF
+	-.5 = C000,0000  =  nmin   nmax = 8000,0001
+	</pre>
+	<p>
+	The depressed negative ( the negative number that can't be positive) should never
+	occure. If present it could represent 1 which is is stoed as .5*2 or -1 which is
+	stored as -.5*2. The depressed negative is $8000,0000
+	</p>
+	<p>
+	As we still have the high bit of the fraction; zero is easy; the mantissa = 0.
+	There are no other special cases.
+	</p>
+	<p>
+	No other number in a floating point system is absolute why in the
+	hell should should people consider zero a special case. n/0 is in fact n/error.
+	A very large number is the answer; not infinity; not an exception or anything else.
+	</p>
+	<p>
+	Give infinity exponent a name so it is easy to find where we deal with it.
+	</p>
+	<pre><code>
+	| $7FFFFFFF CONSTANT #infinity
+	</code></pre>
+	<pre>
+	1 = 4000 0000 0000 0001 That is .5*2
+	2 = 4000 0000 0000 0002 That is .5*4
+	3 = 6000 0000 0000 0002 That is .75*4
+	etc.
+	</pre>
+	<a name="D&gt;F"></a>
+	<h5>12.6.1.1130 D&gt;F</h5>
+	<p>
+	d-to-f FLOATING
+	</p>
+	<p>
+	( d -- ) ( F: -- r )
+	or ( d -- r )
+	</p>
+	<p>
+	r is the floating-point equivalent of d. An ambiguous condition exists if
+	d cannot be precisely represented as a floating-point value.
+	</p>
+	<pre><code>
+
+CODE D&gt;F ( low high -- m e )
+	S )+ D1 MOV \ high
+	S )+ D0 MOV \ low
+
+
+	D1 D2 MOV
+	D0 D2 OR EQ IF
+		D0 S -) MOV
+		D0 S -) MOV
+		RTS
+	THEN
+
+	0 # D2 MOV
+
+	D1 TST MI IF
+		D0 NEG
+		D1 NEGX MI IF
+			\ the negative number that can't be positive.
+			\ Poor depressed negative.
+			\ $80000000 00000000 ->
+			$C0000000 # S -) MOV
+			$00000040 # S -) MOV
+			RTS
+		THEN
+		$3F # D3 MOV	\ each shift left decreases this value by 1
+		BEGIN
+			\ double shift left; the coldfire is not strong in this area.
+			1 # D1 ASL
+			1 # D0 ASL
+			D2 D1 ADDX
+			MI IF	\ high bit set
+				\ shift back one
+				\ Remember we only need high word now.
+	        		1 # D1 LSR
+				D1 NEG
+	        		D1 S -) MOV
+	        		D3 S -) MOV
+	        		RTS
+	        	THEN
+	        	1 # D3 SUB
+		BRA
+	ELSE
+		$3F # D3 MOV	\ each shift left decreases this value by 1
+		BEGIN
+			1 # D1 ASL
+			1 # D0 ASL
+			D2 D1 ADDX MI IF	\ high bit set
+	        		1 # D1 LSR
+	        		D1 S -) MOV
+	        		D3 S -) MOV
+	        		RTS
+	        	THEN
+	        	1 # D3 SUB
+		BRA
+	THEN
+NEXT
+
+	</code></pre>
+	<a name="F&gt;D"></a>
+
+	<h5>12.6.1.1460 F>D</h5>
+	<p>
+	f-to-d FLOATING
+	</p>
+	<p>
+	( -- d ) ( F: r -- )
+		or ( r -- d )
+	</p>
+	<p>
+	d is the double-cell signed-integer equivalent of the integer portion of r.
+	The fractional portion of r is discarded. An ambiguous condition exists if
+	the integer portion of r cannot be precisely represented as a double-cell
+	signed integer.
+	</p>
+	<pre><code>
+\ this sub will only work with positive mantissa.
+\ Register useage:
+\ INPUT
+\ D1 mantissa
+\ D2 exponent
+\ OUTOUT
+\ D0 lbits
+\ D1 hhits
+\ USED
+\ D3
+\ D4
+LABEL (f&gt;d)
+	\ we need the carry in the high bit when shifting right.
+	\ D4 contains the number of shifts needed to get bit in right place.
+	$1F # D4 MOV
+	0 # D0 MOV  \ the low bits.
+	\ move magnitude into sign bit; done this way so final operation is a
+	\ rounding shift in all cases.
+	\ this is the killer if high bit still set because of a depressed negative
+	1 # D1 LSL
+	BEGIN
+		$3F # D2 CMP EQ IF
+			\ one more bit to go; if set we add it into the result
+			\ this is called rounding.
+			0 # D3 MOV
+			1 # D0 LSR CS IF
+				1 # D1 LSR
+				D3 D3 ADDX
+				\ shift bit into high possition
+				D4 D3 LSL
+				D3 D0 OR
+				\ shift finished now to add 1 for the carry above
+				0 # D3 MOV
+				1 # D0 ADD
+				D3 D1 ADDX
+ 				RTS
+			ELSE
+				1 # D1 LSR
+				D3 D3 ADDX
+				\ shift bit into high possition
+				D4 D3 LSL
+				D3 D0 OR
+				RTS
+			THEN
+		THEN
+		0 # D3 MOV
+		1 # D0 LSR ( divide by 2)
+		1 # D1 LSR
+		D3 D3 ADDX
+		D4 D3 LSL
+		D3 D0 OR
+		1 # D2 ADD ( adjust exponent)
+	BRA
+NEXT
+
+\ Depressed negatives should not be seen in a normalized float.
+CODE F&gt;D ( m e -- l h)
+	S )+ D2 MOV
+	$3F # D2 CMP GT IF ( to big; remember we are talking a signed quantity here)
+		S ) D0 MOV MI IF
+			$00000000 # S ) MOV
+			$80000000 # S -) MOV ( largest negative)
+			RTS
+		ELSE
+			$FFFFFFFF # S ) MOV
+			$7FFFFFFF # S -) MOV ( largest positive)
+			RTS
+		THEN
+	THEN
+	D2 TST MI IF ( too small)
+		\ zero
+		0 # S ) MOV
+		0 # S -) MOV
+		RTS
+	THEN
+	\ when we finish shifting we need the rounding bit to be in the word still
+	\ we can use the sign bit for this
+	S )+ D1 MOV PL IF
+		(f>d) BSR
+		D0 S -) MOV
+		D1 S -) MOV
+		RTS
+	ELSE ( negative)
+		D1 NEG
+		(f>d) BSR
+		D0 NEG
+		D1 NEGX
+		D0 S -) MOV
+		D1 S -) MOV
+		RTS
+	THEN
+NEXT
+
+	</code></pre>
+	<p>
+	f&gt;q allows us to set the q value. If set to 0 then result is float to integer.
+	</p>
+	<pre><code>
+\ Input D0 = man
+\       D1 = exp
+\       D2 = q
+\ Output
+\       D0 = value
+\       D2 = q    ( needed for vector operation)
+\ Altered
+\       D3
+\ This should not have to deal with a depressed negative.
+LABEL (f&gt;q)
+	$1F # D3 MOV
+	D2 D3 SUB
+	D3 D1 CMP GT IF ( to big; remember we are talking a signed quantity here)
+		D0 TST MI IF
+			$80000000 # D0 MOV ( largest negative)
+			RTS
+		ELSE
+			$7FFFFFFF # D0 MOV ( largest positive)
+			RTS
+		THEN
+	THEN
+	\ too small if more than 31 shifts required
+	D3 D4 MOV
+	D1 D4 SUB EQ IF
+		\ power is what is required
+		RTS
+	THEN
+	$1F # D4 CMP GT IF ( too small)
+		\ zero
+		0 # D0 MOV
+		RTS
+	THEN
+	D0 TST PL IF
+		0 # D1 MOV
+		D4 D0 LSR
+		D1 D0 ADDX
+ 		RTS
+	ELSE
+		D0 NEG
+		0 # D1 MOV
+		D4 D0 LSR
+		D1 D0 ADDX
+		D0 NEG
+	THEN
+NEXT
+</code></pre>
+<a name="f&gt;s"></a>
+<pre><code>
+CODE f&gt;s ( m e -- n)
+	S )+ D1 MOV
+	S )+ D0 MOV
+	\ q value
+	0 # D2 MOV
+	(f>q) BSR
+	D0 S -) MOV
+	RTS
+NEXT
+</code></pre>
+<a name="f&gt;q"></a>
+<pre><code>
+CODE f&gt;q ( m e qbase-- n)
+	S )+ D2 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	(f>q) BSR
+	D0 S -) MOV
+NEXT
+
+
+\ get the fp number so bit 30 set.
+\ D0 = m1
+\ D1 = e1
+\  This has to deal with a depressed negative. The depressed negative arrives
+\ when two mantissas are added in two ways.
+\ 0.5 + 0.5= 1  This generates a V; and the add code adjusts.
+\ -0.5 + -0.5 = -1 This does not generate a V and the add code returns a depressed
+\ negative. After add this function is called this finction detects the problem
+\ because the value is depressed ( can't become positive) and adjusts for the
+\ case not detected by the add code.
+LABEL (fnorm)
+	D0 TST EQ IF
+		\ number is zero or infinity
+		RTS
+	THEN
+	MI IF
+		D0 NEG MI IF
+			\ depressed minus ( it can't be positive)
+			1 # D0 ASR
+			1 # D1 ADD
+			RTS
+		THEN
+		BEGIN
+			1 # D0 LSL MI IF
+				1 # D0 LSR
+				D0 NEG
+				RTS
+			THEN
+			1 # D1 SUB
+		BRA
+	ELSE
+		BEGIN
+			1 # D0 LSL MI IF
+				1 # D0 LSR
+				RTS
+			THEN
+			1 # D1 SUB
+		BRA
+	THEN
+NEXT
+
+\ needed for input conversion.
+CODE fnorm ( m1 e1 --m2 e1)
+	S )+ D1 MOV
+	S )+ D0 MOV
+	(fnorm) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+</code></pre>
+<a name="s&gt;f"></a>
+<pre><code>
+CODE s&gt;f  ( s -- m e)
+	S )+ D0 MOV
+	$1F # D1 MOV
+	(fnorm) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+</code><pre>
+<a name="q&gt;f"></a>
+<pre><code>
+\ q is the shift count 0 = integer
+\ 1 is one bit position below the point etc.
+: q&gt;f ( n q --)
+	SWAP s>f
+	ROT -
+;
+
+	</code></pre>
+	<a name="F*"></a>
+	<h5>12.6.1.1410 F*</h5>
+	<p>f-star FLOATING </p>
+	<p>( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )</p>
+	<p>
+	Multiply r1 by r2 giving r3.
+	</p>
+	<p>
+	The multiply will amaze you; well I think it should.
+	</p>
+	<pre><code>
+\ The mantissa's are fractions between .5 &lt= n &lt 1
+\ 0.5 * 0.5 = 0.25
+\ 1 * 1 = 1 ( slightly less than as the 1's are slightly less than)
+\ The are therfore only two possible power two outomes.
+\ a) Result still in the range 0.5 &lt-= n &lt 1
+\ b) A shift right required to get it there.
+\ A depressed negative is not a possible result.
+\ We shift the result left once if it doesn't generate an overflow we go with
+\ it.
+CODE F* ( m1 e1 m2 e2 --m3 e3)
+	\ get the operands.
+	S )+ D1 MOV
+	S )+ D0 MOV
+	S )+ D3 MOV
+	S )+ D2 MOV
+	\ add the exponents
+	D1 D3 ADD VS IF
+		MI IF
+			\ n/error is a very large positive or negative number
+			D0 D2 EOR MI IF
+				$80000001 # D0 MOV
+			ELSE
+				$7FFFFFFF # D0 MOV
+			THEN
+			D0 S -) MOV
+			#infinity # S -) MOV
+			RTS
+		ELSE
+			\ as small as small; call it zero
+			0 # S -) MOV
+			0 # S -) MOV
+			RTS
+		THEN
+	THEN
+	\ clear the MAC acuumulator
+	0 # ACC MOV
+	\ put the mac in fractional mode
+	$20 # MACSR MOV
+	\ do the fractional mult.
+	D0 D2 MAC
+	ACC D0 MOV
+	\ rescale to between .5 and 1
+	\ On the coldfire ASL sets the V bt to zero.
+	\ It was OK on the 68k
+	D0 D1 MOV
+	1 # D1 LSL
+	D0 D1 EOR
+	PL IF
+		1 # D0 LSL
+		1 # D3 SUB VS IF
+			\ too bloody small call it zero.
+			0 # D0 MOV
+			0 # D3 MOV
+		THEN
+	THEN
+	\ and return the result
+	D0 S -) MOV
+	D3 S -) MOV
+NEXT
+
+	</code></pre>
+	<a name="F/"></a>
+	<h5>12.6.1.1430 F/</h5>
+	<p>f-slash FLOATING</p>
+	<p>( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )</p>
+	<p>
+	Divide r1 by r2, giving the quotient r3. An ambiguous condition exists if
+	r2 is zero, or the quotient lies outside of the range of a floating-point
+	number.
+	</p>
+	<pre><code>
+
+\ Unsigned values only
+\ Inout
+\ D7 top exp
+\ D6 top man
+\ D5 bottom exp
+\ D4 bottom man
+\ Output
+\ D1 man
+\ D7 exp
+\ Used
+\ D2 D3 D4
+\
+\ .25/ &lt 1 = &gt .25
+\ &lt .5/.5 = %lt 1
+\ Rounding can force the result to 1.
+LABEL (float/)
+	\ multiple the top by 2^32; by swapping the word into the high
+	\ 32 bits of the 64 bit top.
+	\ Then divide top by 2 so that it will give result in low 32 bits in all cases.
+	\ Remember both mantissa's are normalised between .5 and 1. If you divide the
+	\ top by two it is normalised between .25 and .5 and will always be smaller than
+	\ the bottom.
+	\ We use unsigned operation so we have full 32 bits for the result.
+	D6 D0 MOV
+	0 # D1 MOV
+	1 # D0 LSR
+	D1 D1 ADDX
+	\ get the shift bit into right position
+	1F # D2 MOV
+	D2 D1 LSL
+
+	D4 D2 MOV
+	\ INPUT d0 top high 32 bits
+ 	\       d1 top low 32 bits
+	\       d2 bottom 32 hits
+	(um/mod) AB JSR
+	\ OUTPUT d0 remainder
+	\        d1 quot.
+	\ fix up the exp
+	D5 D7 SUB VS IF
+		MI IF
+			\ Call it +infinity
+			#infinity # D7 MOV
+			$7FFFFFFF # D1 MOV
+		ELSE
+			\ call it zero
+			0 # D7 MOV
+			0 # D1 MOV
+		THEN
+		RTS
+	THEN
+
+	\ now we should see if the remainder is over half the dividor and if
+	\ so add one to the result. The sign is not an issue as the high
+	\ bit will never be set.
+	0 # D5 MOV
+	1 # D4 ASR
+	D0 D4 SUB
+	D5 D1 ADDX \ we can now have a depressed negative ie 1.
+	           \ but we are dealing in +ve numbers only
+	           \ so a LSR will deal with it.
+
+	\ if sign bit set in result another shift is required.
+	D1 TST MI IF
+		1 # D1 LSR
+		\ and round the result.
+		D5 D1 ADDX
+		\ adjust exp
+		1 # D7 ADD VS IF
+			MI IF
+				\ infinity
+				#infinity # D7 MOV
+				7FFFFFFF # D1 MOV
+			ELSE
+				\ call it zero
+				0 # D7 MOV
+				0 # D1 MOV
+			THEN
+			RTS
+		THEN
+	THEN
+NEXT
+
+
+CODE F/ ( m1 e1 m2 e2 -- m3 e3 )
+	S )+ D5 MOV
+	S )+ D4 MOV MI IF
+		S )+ D7 MOV
+		S )+ D6 MOV MI IF
+			\ - -
+			D4 NEG
+			D6 NEG
+			(float/) BSR
+			D1 S -) MOV
+			D7 S -) MOV
+			RTS
+		ELSE
+			\ - +
+			D4 NEG
+			(float/) BSR
+			D1 NEG
+			D1 S -) MOV
+			D7 S -) MOV
+			RTS
+		THEN
+	ELSE
+		EQ IF
+			S )+ D7 MOV
+			S )+ D6 MOV
+			D4 D6 EOR MI IF
+				$80000001 # S -) MOV
+				#infinity # S -) MOV
+			ELSE
+				$7FFFFFFF # S -) MOV
+				#infinity # S -) MOV
+			THEN
+			RTS
+		THEN
+		S )+ D7 MOV
+		S )+ D6 MOV MI IF
+			\ + -
+			D6 NEG
+			(float/) BSR
+			D1 NEG
+			D1 S -) MOV
+			D7 S -) MOV
+			RTS
+		ELSE
+			\ + +
+			(float/) BSR
+			D1 S -) MOV
+			D7 S -) MOV
+			RTS
+		THEN
+	THEN
+NEXT
+
+
+
+\ couple of handy words.
+\ If your number is that big it overflows you have bigger problems.
+\ Zero is indicated by zero mantissa. We can do what we like with the
+\ exp when a float is zero.
+CODE f2* ( man exp --float*2 )
+        1 # S ) ADD
+NEXT inline
+
+\ we need to check for underflow; real small numbers make sence.
+CODE f2/ ( man exp -- float)
+        S )+ D0 MOV
+        1 # D0 SUB VS IF
+                0 # D0 MOV
+                0 # S ) MOV
+        THEN
+        D0 S -) MOV
+NEXT
+
+	</code></pre>
+	<a name="F+"></a>
+	<h5>12.6.1.1420 F+</h5>
+	<p> f-plus FLOATING</p>
+	<p>( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )</p>
+	<p>
+	Add r1 to r2 giving the sum r3.
+	</p>
+	<pre><code>
+
+\ get the two exponents the same.
+\ INPUT
+\ D0 m1
+\ D1 e1
+\ D2 m2
+\ D3 e2
+\ OUTPUT
+\ same
+\ USED
+\ D4 AND D5
+\ Works with signed mantissas.
+\ round towards nearest.
+
+LABEL (falign)
+	\ If you shift right the exponent goes up.
+	0 # D5 MOV
+	\ you don't want he real value shifted if the other value is
+	\ zero
+	D0 TST EQ IF
+		RTS
+	THEN
+	D2 TST EQ IF
+		RTS
+	THEN
+	D1 D3 CMP GT IF
+		\ D3 is greater have to attack D0 AND D1
+		D3 D4 MOV
+		D1 D4 SUB
+		$1F # D4 CMP GT IF
+			\ After we shift we will have zero
+			0 # D0 MOV
+			RTS
+		THEN
+		D0 TST MI IF
+			D0 NEG
+			D4 D0 ASR
+			D5 D0 ADDX
+			D0 NEG
+			D3 D1 MOV
+			RTS
+		ELSE
+			D4 D0 ASR
+			D5 D0 ADDX
+			D3 D1 MOV
+			RTS
+		THEN
+	ELSE
+		EQ IF
+			RTS
+		THEN
+		D1 D4 MOV
+		D3 D4 SUB
+		$1F # D4 CMP GT IF
+			0 # D2 MOV
+			RTS
+		THEN
+		D2 TST MI IF
+			D2 NEG
+			D4 D2 ASR
+			D5 D2 ADDX
+			D2 NEG
+			D1 D3 MOV
+			RTS
+		ELSE
+			D4 D2 ASR
+			D5 D2 ADDX
+			D1 D3 MOV
+		THEN
+	THEN
+NEXT
+
+CODE falign
+	S )+ D3 MOV
+	S )+ D2 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	(falign) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+	D2 S -) MOV
+	D3 S -) MOV
+NEXT
+
+\ D0 m1
+\ D1 exp1
+\ D2 m2
+\ Should be simple shouldn't it.
+\               -0.5 = C000,0000
+\             + -0.5 = C000,0000
+\                    = 8000,0000 no overflow.
+\
+\                0.5 = 4000,0000
+\                0.5 = 4000,0000
+\                1.0 = 8000,0000 with overflow.
+\ The overflow case is dealt with in this code.
+\ The no overflow case is dealt with in the normalisation code.
+
+LABEL (fadd)
+	\ the problem is when you add you can get overflow.
+	\ If overflow occures you have to.
+	\ Shift right one bit position.
+	\ Look after rounding when the shift occurs.
+	\ Increment the exponent
+	\ D0 man1
+	\ D1 exp
+	\ D2 man2
+	\ return
+	\ D0 D1
+	D0 TST EQ IF
+		D2 D0 MOV
+		D3 D1 MOV
+		RTS
+	THEN
+	D2 TST EQ IF
+		RTS
+	THEN
+
+	D2 D0 ADD VS IF
+		\ have to shift right; if we do that we have to round the
+		\ shift.
+		D0 TST MI IF
+			1 # D0 LSR CS IF
+				1 # D0 ADD
+			THEN
+		ELSE
+			D0 NEG
+			1 # D0 LSR CS IF
+				1 # D0 ADD
+			THEN
+			D0 NEG
+		THEN
+		\ now adjust exponent to allow for shift
+		1 # D1 ADD VS IF
+			\ add is horrable isn't it
+			#infinity # D1 MOV
+			\ with this sort of exp the mantisa is irrelevent.
+			\ Number is just big; but put it in limit.
+			D0 TST MI IF
+				$80000001 # D0 MOV
+			ELSE
+				$7FFFFFFF # D0 MOV
+			THEN
+		THEN
+	THEN
+RTS
+
+| CODE fadd
+	S )+ D3 MOV
+	S )+ D2 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	(fadd) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+
+\ No rounding
+LABEL (falign_floored)
+	\ you don't want he real value shifted if the other value is
+	\ zero
+	D0 TST EQ IF
+		RTS
+	THEN
+	D2 TST EQ IF
+		RTS
+	THEN
+	\ remember top bit of mantissa is set we can only shift right.
+	\ If you shift right the exponent goes up.
+	D1 D3 CMP GT IF
+		\ D3 is greater have to attack D0 AND D1
+		D3 D4 MOV
+		D1 D4 SUB
+		$1F # D4 CMP GT IF
+			0 # D0 MOV
+			RTS
+		THEN
+		D4 D0 ASR
+		D3 D1 MOV
+		RTS
+	ELSE
+		EQ IF
+			RTS
+		THEN
+		D1 D4 MOV
+		D3 D4 SUB
+		$1F # D4 CMP GT IF
+			0 # D2 MOV
+			RTS
+		THEN
+		D4 D2 ASR
+		D1 D3 MOV
+	THEN
+NEXT
+
+CODE falign_floored
+	S )+ D3 MOV
+	S )+ D2 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	(falign_floored) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+	D2 S -) MOV
+	D3 S -) MOV
+	NEXT
+
+CODE F+ ( m e m e -- m e )
+	S )+ D3 MOV
+	S )+ D2 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	( here we have to get exponents the same before add)
+	(falign) BSR
+	(fadd) BSR
+	(fnorm) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+	</code></pre>
+	<a name="FNEGATE"></a>
+	<h5>12.6.1.1567 FNEGATE</h5>
+	<p>f-negate FLOATING</p>
+	<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+	<p>
+	r2 is the negation of r1.
+	</p>
+	<pre><code>
+CODE FNEGATE ( m e -- m e )
+	4 S) D0 MOV
+	D0 NEG
+	D0 4 S) MOV
+NEXT
+	</code></pre>
+	<a name="F-"></a>
+	<h5>12.6.1.1425 F-</h5>
+	<p> f-minus FLOATING</p>
+	<p>( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )</p>
+	<p>
+	Subtract r2 from r1, giving r3.
+	</p>
+	<pre><code>
+: F- ( m2 e2 m1 e1 -- m e )
+	FNEGATE
+	F+
+;
+	</code></pre>
+	<a name="F!"></a>
+	<h5>12.6.1.1400 F!</h5>
+	<p>f-store FLOATING</p>
+	<p> ( f-addr -- ) ( F: r -- ) or ( r f-addr -- )</p>
+	<p>
+	Store r at f-addr.
+	</p>
+	<pre><code>
+: F! ( m e addr--)
+	2!
+;
+	</code></pre>
+	<a name="F0&lt;"></a>
+
+	<h5>12.6.1.1440 F0&lt;</h5>
+	<p>
+	f-zero-less-than FLOATING
+	</p>
+	<p>( -- flag ) ( F: r -- ) or ( r -- flag )</p>
+	<p>flag is true if and only if r is less than zero.</p>
+	<pre><code>
+: F0&lt; ( m e -- flag)
+	DROP 0&lt;
+;
+	</code> </pre>
+	<a name="F0equal"></a>
+
+	<h5>12.6.1.1450 F0=</h5>
+	<p>
+	f-zero-equals FLOATING
+	</p>
+	<p>( -- flag ) ( F: r -- ) or ( r -- flag )</p>
+	<p>
+	flag is true if and only if r is equal to zero.
+	</p>
+	<pre><code>
+: F0= ( e m -- flag )
+	DROP 0=
+;
+	</code></pre>
+	<a name="F&lt;"></a>
+	<h5>12.6.1.1460 F&LT</h5>
+	<p>
+	f-less-than FLOATING
+	</p>
+	<p>( -- flag ) ( F: r1 r2 -- ) or ( r1 r2 -- flag )</p>
+	<p>
+	flag is true if and only if r1 is less than r2
+	</p>
+	<pre><code>
+
+        : F&lt; F- F0&lt; ;
+
+	</code></pre>
+	<a name="F@"></a>
+	<h5>12.6.1.1472 F@</h5>
+	<p>
+	f-fetch FLOATING
+	</p>
+	<p>( f-addr -- ) ( F: -- r )  or  ( f-addr -- r )</p>
+	<p>
+	r is the value stored at f-addr.
+	</p>
+	<pre><code>
+
+: F@ ( addr -- m e )
+	2@
+;
+
+	</code></pre>
+	<a name="FALIGN"></a>
+	<h5>12.6.1.1479 FALIGN</h5>
+	<p>
+	f-align FLOATING
+	</p>
+	<p>( -- )</p>
+	<p>
+	If the data-space pointer is not float aligned, reserve enough data space to make it so.
+	</p>
+	<pre><code>
+
+: FALIGN ( --)
+	ALIGN
+;
+
+	</code></pre>
+	<a name="FALIGNED"></a>
+	<h5>12.6.1.1483 FALIGNED</h5>
+	<p>
+	f-aligned FLOATING
+	</p>
+	<p>( addr -- f-addr )</p>
+	<p>f-addr is the first float-aligned address greater than or equal to addr.</p>
+	<pre><code>
+
+: FALIGNED ( addr1--addr2)
+	ALIGNED
+;
+	</code></pre>
+	<a name="FCONSTANT"></a>
+	<h5>12.6.1.1492 FCONSTANT</h5>
+	<p>
+	f-constant FLOATING
+	</p>
+	<p>( "<spaces>name" -- ) ( F: r -- ) or ( r "<spaces>name" -- )</p>
+	<p>
+	Skip leading space delimiters. Parse name delimited by a space. Create a definition for name
+	with the execution semantics defined below.
+	</p>
+	<p>
+	name is referred to as an f-constant.
+	</p>
+	<p>
+	        name Execution: ( -- ) ( F: -- r )
+				       or ( -- r )
+	</p>
+	<p>
+	Place r on the floating-point stack.
+	</p>
+	<p>
+	In defining custom floating-point data structures, be aware that
+	CREATE doesn't necessarily leave the data space pointer aligned for various
+    floating-point data types.  Programs may comply with the requirement for
+    the various kinds of floating-point alignment by specifying the
+    appropriate alignment both at compile-time and execution time.  For
+    example:
+    </p>
+    <pre>
+	: FCONSTANT ( F:  r -- )
+    	CREATE FALIGN  HERE  1 FLOATS ALLOT  F!
+    	DOES> ( F:  -- r )  FALIGNED F@ ;
+	</pre>
+	<p>
+	COLDFORTH: This is not an issue unless you are trying to write portable programs.
+	CREATE's allignment is ok.
+	</p>
+
+	<pre>
+	Typical use:  r FCONSTANT name
+	</pre>
+
+	<pre><code>
+
+
+: FCONSTANT ( -- value)
+	2CONSTANT
+;
+
+	</code></pre>
+	<a name="FDEPTH"></a>
+	<h5>12.6.1.1497 FDEPTH</h5>
+	<p>
+	f-depth FLOATING
+	</p>
+	<p>
+	( -- +n )
+	</p>
+	<p>
+	+n is the number of values contained on the default separate floating-point stack.
+	If floating-point numbers are kept on the data stack, +n is the current number of
+	possible floating-point values contained on the data stack.
+	</p>
+	<pre><code>
+
+: FDEPTH ( -- n )
+	DEPTH 2/
+;
+
+	</code></pre>
+	<a name="FDROP"></a>
+	<h5>12.6.1.1500 FDROP</h5>
+	<p> f-drop </p>
+	<p>FLOATING</p>
+	<p> ( F: r -- ) or ( r -- ) </p>
+	<p>
+	Remove r from the floating-point stack.
+	</p>
+	<pre><code>
+
+: FDROP ( m e --)
+	2DROP
+; inline
+
+	</code></pre>
+	<a name="FDUP"></a>
+	<h5>12.6.1.1510 FDUP</h5>
+	<p>
+	f-dupe FLOATING
+	</p>
+	<p>( F: r -- r r ) or ( r -- r r )</p>
+	<p>
+	Duplicate r.
+	</p>
+	<pre><code>
+
+: FDUP ( m e -- m e m e)
+	2DUP
+; inline
+	</code></pre>
+	<a name="FLITERAL"></a>
+	<h5>12.6.1.1552 FLITERAL</h5>
+	<p>
+	f-literal FLOATING
+	</p>
+	<p>
+	Interpretation: Interpretation semantics for this word are undefined.
+	</p>
+	<p>
+        Compilation: ( F: r -- ) or ( r -- )
+	</p>
+	<p>
+	Append the run-time semantics given below to the current definition.
+	</p>
+	<p> Run-time: ( F: -- r ) or ( -- r )</p>
+	<p>
+	Place r on the floating-point stack.
+	</p>
+	<pre><code>
+
+: FLITERAL ( m e --)
+	$2D3C W, \ # S -) MOV
+	SWAP ,
+	$2D3C W,
+	,
+; IMMEDIATE
+
+	</code></pre>
+	<a name="FLOATplus"></a>
+	<h5>12.6.1.1555 FLOAT+</h5>
+	<p>
+	FLOAT-plus FLOATING
+	</p>
+	<p>( f-addr1 -- f-addr2 )</p>
+	<p>
+	Add the size in address units of a floating-point number to f-addr1, giving f-addr2.
+	</p>
+	<pre><code>
+
+: FLOAT+ ( addr1 -- addr2)
+	8 +
+;
+	</code></pre>
+	<a name="FLOATS"></a>
+	<h5>12.6.1.1556 FLOATS</h5>
+	<p>
+	FLOATING
+	</p>
+	<p>( n1 -- n2 )</p>
+	<p>
+	n2 is the size in address units of n1 floating-point numbers.
+	</p>
+	<pre><code>
+
+CODE FLOATS ( n1 -- n2)
+	S )+ D0 MOV
+	3 # D0 ASL
+	D0 S -) MOV
+NEXT
+	</code></pre>
+	<a name="FLOOR"></a>
+	<h5>12.6.1.1558 FLOOR</h5>
+	<p>FLOATING</p>
+	<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+	<p>Round r1 to an integral value using the round toward
+	negative infinity rule, giving r2.</p>
+	<p>Round toward negative infinity means round the result
+	of a floating-point operation
+	to the representable value nearest to and no greater than the result.</p>
+	<pre><code>
+
+CODE FLOOR ( m1 e1 -- m2 e2)
+	S )+ D1 MOV $1F # D1 CMP GT IF
+		\ number to large for this to have a meaning
+		D1 S -) MOV
+		RTS
+	THEN
+	D1 TST  LT IF
+		\ number is too small to matter
+		0 # S ) MOV
+		0 # S -) MOV
+		RTS
+	THEN
+	S )+ D0 MOV
+	$40000000 # D2 MOV
+	$0000001F # D3 MOV
+	(falign_floored) BSR
+	(fnorm) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+
+	</code></pre>
+	<a name="FMAX"></a>
+	<h5>12.6.1.1562 FMAX</h5>
+	<p>
+	f-max FLOATING
+	</p>
+	<p>
+		( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )
+	</p>
+	<p>
+	r3 is the greater of r1 and r2.
+	</p>
+	<pre><code>
+
+: FMAX ( m1 e1 m2 e2 -- mw3 e3)
+	4dup F&lt; IF 
+		2SWAP 2DROP
+	ELSE
+		2DROP
+	THEN
+;
+
+	</code></pre>
+	<a name="FMIN"></a>
+	<h5>12.6.1.1565 FMIN</h5>
+	<p>
+	f-min FLOATING
+	</p>
+	<p>( F: r1 r2 -- r3 ) or ( r1 r2 -- r3 )</p>
+	<p>
+	r3 is the lesser of r1 and r2.
+	</p>
+	<pre><code>
+
+: FMIN ( m1 e1 m2 e2 -- mw3 e3)
+	4dup F&lt; IF 
+		2DROP
+	ELSE
+		2SWAP 2DROP
+	THEN
+;
+
+	</code></pre>
+	<a name="FOVER"></a>
+	<h5>12.6.1.1600 FOVER</h5>
+	<p> f-over FLOATING </p>
+	<p>( F: r1 r2 -- r1 r2 r1 ) or ( r1 r2 -- r1 r2 r1 )</p>
+	<p>
+	Place a copy of r1 on top of the floating-point stack.
+	</p>
+	<pre><code>
+
+: FOVER ( m1 e1 m2 e2 -- m1 e1 m2 e2 m1 e1)
+	2OVER
+; inline
+	</code></pre>
+	<a name="FROT"></a>
+	<h5>12.6.1.1610 FROT</h5>
+	<p>f-rote FLOATING</p>
+	<p>( F: r1 r2 r3 -- r2 r3 r1 ) or ( r1 r2 r3 -- r2 r3 r1 )</p>
+	<p>Rotate the top three floating-point stack entries.</p>
+	<pre><code>
+
+: FROT ( m1 e1 m2 e2 m3 e3 -- m2 e2 m3 e3 m1 e1)
+	2ROT
+; inline
+
+	</code></pre>
+	<a name="FROUND"></a>
+	<h5>12.6.1.1612 FROUND</h5>
+	<p>f-round FLOATING</p>
+	<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+	<p>
+	Round r1 to an integral value using the round to nearest rule, giving r2.
+	</p>
+	<p>
+	Round to nearest means round the result of a floating-point operation to the
+	representable value nearest the result. If the two nearest representable
+	values are equally near the result, the one having zero as its least
+        significant bit shall be delivered.
+	</p>
+	<p>
+	COLDFORTH: We do not deliver; if value is
+	equally near we still round up. This is done for speed.
+	<pre><code>
+
+CODE FROUND ( m e -- m e )
+	S )+ D1 MOV $1F # D1 CMP GT IF
+		\ number to large for this to have a meaning
+		D1 S -) MOV
+		RTS
+	THEN
+	D1 TST  LT IF
+		\ number is too small to matter
+		0 # S ) MOV
+		0 # S -) MOV
+		RTS
+	THEN
+	S )+ D0 MOV
+	$40000000 # D2 MOV
+	$0000001F # D3 MOV
+	(falign) BSR
+	(fnorm) BSR
+	D0 S -) MOV
+	D1 S -) MOV
+NEXT
+	</code></pre>
+	<a name="FSWAP"></a>
+	<h5>12.6.1.1620 FSWAP</h5>
+	<p>
+	f-swap FLOATING
+	</p>
+	<p>( F: r1 r2 -- r2 r1 ) or ( r1 r2 -- r2 r1 )</p>
+	<p>Exchange the top two floating-point stack items.</p>
+	<pre><code>
+: FSWAP
+	2SWAP
+; inline
+	</code></pre>
+	<a name="FVARIABLE"></a>
+	<h5>12.6.1.1630 FVARIABLE</h5>
+	<p>f-variable FLOATING</p>
+	<p>( "<spaces>name" -- )</p>
+	<p>
+	Skip leading space delimiters. Parse name delimited by a space. Create a
+	definition for name with the execution semantics defined below.
+	Reserve 1 FLOATS address units of data space at a float-aligned address.
+	</p>
+	<p>
+	name is referred to as an f-variable.
+	</p>
+	<p>
+        name Execution: ( -- f-addr )
+	</p>
+	<p>
+	f-addr is the address of the data space reserved by FVARIABLE when it created name.
+	A program is responsible for initializing the contents of the reserved space.
+	</p>
+	<pre><code>
+
+: FVARIABLE
+	2VARIABLE
+;
+	</code></pre>
+	<a name="&gt;FLOAT"></a>
+	<h5>12.6.1.0558 &gt;FLOAT</h5>
+	<p>to-float FLOATING</p>
+	<p>( c-addr u -- true | false ) ( F: -- r |  ) or ( c-addr u -- r true | false)</p>
+	<p>
+	An attempt is made to convert the string specified by c-addr and u to internal
+	floating-point representation. If the string represents a valid floating-point
+	number in the syntax below, its value r and true are returned. If the string does
+	not represent a valid floating-point number only false is returned.
+	</p>
+	<p>
+	A string of blanks should be treated as a special case representing zero.
+	</p>
+	<pre>
+	The syntax of a convertible string := (significand)[(exponent)]
+
+	(significand) := {[(sign)](digits)[.(digits0)] | .(digits) }
+	(exponent)    := (marker)(digits0)
+	(marker)      := ((e-form) | (sign-form))
+	(e-form)      := (e-char)[(sign-form)]
+	(sign-form)   := { + | - }
+	(e-char)      := { D | d | E | e }
+	</pre>
+	<p>
+	>FLOAT enables programs to read floating-point data in legible ASCII format. It accepts
+	a much broader syntax than does the text interpreter since the latter defines rules for
+	composing source programs whereas >FLOAT defines rules for accepting data. >FLOAT is
+	defined as broadly as is feasible to permit input of data from ANS Forth systems as
+	well as other widely used standard programming environments.
+	</p>
+	<p>
+	This is a synthesis of common FORTRAN practice. Embedded spaces are explicitly forbidden
+	in much scientific usage, as are other field separators such as comma or slash.
+	</p>
+	<p>
+	While >FLOAT is not required to treat a string of blanks as zero, this behavior is
+	strongly encouraged, since a future version of ANS Forth may include such a requirement.
+	</p>
+	<p>
+	<b>COLFORTH</b> Does not treat a string of blanks as zero.
+	</p>
+	<pre><code>
+
+\ we need to know what 1 is to get started.
+\ No need to keep head.
+$40000000 $00000001 2CONSTANT 1E0
+
+| : (&gt;float)  { ( addr count -- m e addr2 num2 true|false)
+	          }{
+				variable _%addr_start
+				variable _%neg_flag
+				variable _%neg_exp_flag
+				\ cross compiler support limited; app use fvariable
+				8 bytes   %base_float
+                                variable  %frac_leading0
+				variable  %decimal_point
+        }
+	FALSE %decimal_point !
+        FALSE _%neg_flag !
+        FALSE _%neg_exp_flag !
+        zero %frac_leading0 !
+
+        BASE @ s>f %base_float F!
+
+        zero zero 2SWAP   \ ud1 addr count(--
+
+        OVER char@ [CHAR] - = DUP _%neg_flag ! IF
+		_+pointer
+	ELSE
+		OVER char@ [CHAR] + = IF
+			_+pointer
+		THEN
+	THEN
+
+	OVER _%addr_start !
+	&gt;NUMBER
+	\ exit if nothing following
+	DUP 0= IF
+		4drop
+		FALSE
+		EXIT
+	THEN
+	\ and exit if there was  not at least one digit in the first
+	\ number
+	OVER _%addr_start @ = IF
+		4drop
+		FALSE
+		EXIT
+	THEN
+
+	OVER char@ [CHAR] . = IF
+		\ take this out if you want standard behavior
+		TRUE %decimal_point !
+
+		_+pointer  \ ud1 addr count(--
+                BEGIN
+                        OVER char@ [CHAR] 0 =
+                WHILE
+                        1 %frac_leading0 +!
+                        _+pointer
+                REPEAT
+		\ fractional part
+		zero zero 2SWAP       \ ud1 ud2 addr count(--
+		>NUMBER
+	ELSE
+		0 0 2SWAP
+	THEN
+	\ rd fd addr count(--
+	\ This is the key, if more it has to be E + or -.
+        DUP IF
+	        OVER char@ [CHAR] E  &lt;&gt; IF
+                        \ not an E
+		        OVER char@ DUP [CHAR] + &lt;&gt;
+		        SWAP [CHAR] - &lt;&gt; AND
+		        IF
+                                \ not E or + or -
+			        2DROP
+			        4drop
+			        FALSE
+			        EXIT
+		        THEN
+                        \ we don't skip the sign as needed later
+	        ELSE
+		        \ skip the E
+		        _+pointer \ ud1 ud2 addr count(--
+	        THEN
+        ELSE
+                \ unless it is a decimal number
+                %decimal_point @ not IF
+                        2DROP
+                        4drop
+                        FALSE
+                        EXIT
+                THEN
+        THEN
+	zero zero 2SWAP
+        \ real_double fractional_double exp_double addr count (--
+        DUP IF
+	        OVER char@ [CHAR] - = DUP _%neg_exp_flag ! IF
+		        _+pointer
+	        ELSE
+		        OVER char@ [CHAR] + = IF
+			        _+pointer
+		        THEN
+	        THEN
+	        &gt;NUMBER
+        THEN
+	\ rd fs expd addr count(--
+	2&gt;R
+	\ now we have to get it all together.
+	\ rd fd e (--
+        D&gt;S
+	&gt;R
+	D&gt;F
+	2SWAP
+	D&gt;F
+	2SWAP
+	\ this is the fractional part.
+	BEGIN
+		FDUP 1E0 F&lt; not
+	WHILE
+		%base_float F@ F/
+	REPEAT
+
+        \ leading zeros reduce the size of the fraction
+        1E0
+        BEGIN
+                %frac_leading0 @
+        WHILE
+                -1 %frac_leading0 +!
+                %base_float F@ F/
+        REPEAT
+        F*
+
+	F+
+	\ exp says multiply/divide the number you have by BASE this number of times
+   	_%neg_exp_flag @ IF
+		R&gt; zero ?DO
+			%base_float F@ F/
+		LOOP
+	ELSE
+		R&gt; zero ?DO
+		\ 10E0
+			%base_float F@ F*
+		LOOP
+	THEN                      \ ud1(--
+	_%neg_flag @ IF
+		FNEGATE
+	THEN
+	2R&gt;
+	TRUE
+;
+
+\ #### may have to change this to allow space after float.
+: &gt;FLOAT ( add n -- m e true | false)
+	(&gt;float) IF
+		0= NIP
+		EXIT
+	THEN
+	FALSE
+;
+	</code></pre>
+        <a name="float_number"><h5>12.3.7 Text interpreter input number conversion</h5></a>
+	<p>
+	If the Floating-Point word set is present in the dictionary and the current base is DECIMAL,
+	the input number-conversion algorithm shall be extended to recognize floating-point numbers
+	in this form:
+	</p>
+	<pre>
+	Convertible string := <significand><exponent>
+
+	(significand) := [(sign)](digits)[.(digits0)]
+	(exponent)    := E[(sign)](digits0)
+	(sign)        := { + | - }
+	(digits)      := (digit)(digits0)
+	(digits0)     := (digit)*
+	(digit)       := { 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
+	</pre>
+	<p>
+	These are examples of valid representations of floating-point
+	numbers in program source: 1E   1.E   1.E0   +1.23E-1   -1.23E+1
+	</p>
+	<h5>A.12.3.7 Text interpreter input number conversion</h5>
+	<p>
+	The Technical Committee has more than once received the suggestion that the text interpreter
+	in Standard Forth systems should treat numbers that have an embedded decimal point, but no
+	exponent, as floating-point numbers rather than double cell numbers. This suggestion, although
+	it has merit, has always been voted down because it would break too much existing code;
+	many existing implementations put the full digit string on the stack as a double number
+	and use other means to inform the application of the location of the decimal point.
+	</p>
+	<p>
+	<b>COLDFORTH</b> has a well defined number conversion interface; all we have to do is add our
+	floating point number converter to the linked list. It uses the >FLOAT BNF: Use of
+	that form allows HEX floating number input in the form: 1E2.1E6+12F. It also reduces
+	the size of the floating point package as two number input routines are not required.
+	</p>
+	<p>
+	A number with a decimal point is consideded a float double number if desired a double can be inputted
+	using the C invention; that is put L after it. I want a simple to use system; that's all.
+	</p>
+	<pre><code>
+
+\ In decimal: 1E 1.E 1.E0 +1.23E-1 -1.23E+1
+\ In hex: 1E.2F+12 or 1E.2F-12
+: float_number  { \ interpret ( addr count -- num true|false)
+	                \ compile   ( addr count -- flag)
+	          }{
+						variable _%addr_start
+						variable _%neg_flag
+						variable _%neg_exp_flag
+						8 bytes %base_float
+	          }
+	(&gt;float) IF
+		_finish_double_cell_conversion
+	ELSE
+		FALSE
+	THEN
+;
+
+	' float_number add_number_conversion
+	</code></pre>
+	<a name="REPRESENT"></a>
+
+	<h5>12.6.1.2143 REPRESENT</h5> 
+	<p>FLOATING</p> 
+	<p>( c-addr u -- n flag1 flag2 )  (F: r -- )  or ( r c-addr u -- n flag1 flag2 )</p>
+	<p>
+	At c-addr, place the character-string external representation of the 
+	significand of the floating-point number r. Return the decimal-base 
+	exponent as n, the sign as flag1 and valid result as flag2. 
+	The character string shall consist of the u most significant digits 
+	of the significand represented as a decimal fraction with the implied decimal
+	point to the left of the first digit, and the first digit zero only if all 
+	digits are zero. The significand is rounded to u digits following the
+	round to nearest rule; n is adjusted, if necessary, to correspond to 
+	the rounded magnitude of the significand. If flag2 is true then r was 
+	in the implementation-defined range of floating-point numbers.
+	If flag1 is true then r is negative. 
+	</p>
+	<p>
+	An ambiguous condition exists if the value of BASE is not decimal ten. 
+	</p>
+	<p>
+	When flag2 is false, n and flag1 are implementation defined, as are 
+	the contents of c-addr. Under these circumstances, the string at 
+	c-addr shall consist of graphic characters. 
+	</p>
+	<p>
+	A.12.6.1.2143 REPRESENT 
+	</p>
+	<p>
+	This word provides a primitive for floating-point display. Some floating-point 
+	formats, including those specified by IEEE-754, allow representations of 
+	numbers outside of an implementation-defined range. These include plus and 
+	minus infinities, denormalized numbers, and others. In these cases we expect 
+	that REPRESENT will usually be implemented to return appropriate character 
+	strings, such as +infinity or nan, possibly truncated. 
+	</p>
+	<p>
+	<b>COLDFORTH</b> Can represent numbers correctly when the base isn't 10.
+	</p>
+	<pre> <code>
+\ | CREATE +infinity ," infinity"
+
+
+: REPRESENT { ( m e )  variable %c-addr variable %u -- ( n sign valid) }{
+	variable %n 
+	variable %sign
+	variable %base_num  
+ 
+	8 bytes %power 
+	8 bytes %power-1
+	8 bytes %base 
+	}
+
+	\ No; we can print it out with constination
+	\ let it be like any other number.
+	\ DUP #infinity = IF
+	\	%c-addr @ %u @ BL FILL
+	\	+infinity COUNT %u @ MIN %c-addr @ SWAP MOVE
+	\	2DROP
+	\	0 0 0
+	\	EXIT
+	\ THEN
+
+	\ limit to a sensible range.
+	\ accuracy is about 8 digits.
+	\ We use a double to hold number after rounding
+	\ so it falls over at about 18 bigits.
+	\ 16 has a nice feel.
+	%u @ 1 MAX $10 MIN %u !
+	0 %n !
+	\ well we can display using the current base; why limit
+	BASE @ s&gt;f %base F!
+	1E0
+	%u @ 1 - 0 ?DO
+		%base F@ F*
+	LOOP
+
+	FDUP %power-1 F!
+
+	%base F@ F*
+	%power F!
+
+	\ get the sign and convert to absolute value
+	FDUP F0&lt; DUP %sign ! IF  
+		FNEGATE
+	THEN
+
+	\ get the number in the range %power &lt n &lt= Power-1
+	BEGIN
+		\ setup for next loop
+		BASE @ s&gt;f %base F!
+		1 %base_num !
+		
+		FDUP %power F@ F&lt; not 
+	WHILE
+		%base F@ F/
+		%base_num @ %n +!
+		\ this keeps doubling the diviser until
+		\ things get too big. The aim is to scale
+		\ very large floats before the end of the universe.
+		BEGIN
+			FDUP %base F@ F/ FDUP %power F@  F&lt; not 
+		WHILE
+			FSWAP FDROP
+			%base_num @ %n +!
+			%base F@ FDUP F* %base F!
+			%base_num @ DUP + %base_num !
+		REPEAT
+		FDROP
+	REPEAT
+	
+	BEGIN   
+		BASE @ s&gt;f %base F!
+		1 %base_num !
+
+		FDUP %power-1 F@ F&lt; 
+	WHILE
+		%base F@ F*
+		-1 %n +!
+		BEGIN
+			FDUP %base F@ F* FDUP %power-1 F@ F&lt;
+		WHILE
+			FSWAP FDROP
+			%base_num @ NEGATE %n +!
+			%base F@ FDUP F* %base F!
+			%base_num @ DUP + %base_num !
+		REPEAT
+		FDROP
+	REPEAT 
+
+	\ e m(--
+	FROUND 
+	\ rounding could mess our carefull ranging.
+	\ eg: 999 -&gt; 1000
+	FDUP %power F@ 
+	F&lt; not IF 
+		%base F@ F/
+		1 %n +!
+	THEN
+
+	F&gt;D
+	\ because of the prescaling the number
+	\ will fill the buffer; no more no less.
+	\ zero is a problem dealt with by presetting
+	\ te buffer to zero
+	%c-addr @ %u @ [CHAR] 0 FILL
+	%c-addr @ %u @ [#
+		#S             \ l h (--
+	#]                   \ addr len (--
+	2DROP
+	%n @ %u @ + %sign @ TRUE
+;
+
+        </code></pre>
+        <a name="PRECISION"></a>
+        <h5>2.6.2.2035 PRECISION</h5>
+        <p> FLOATING EXT</p>
+        <p>( -- u )</p>
+        <p>
+        Return the number of significant digits currently used by F., FE., or FS. as u.
+        </p>
+        <pre><code>
+: PRECISION %fractional_digits @ ;
+        </code></pre>
+        <a name="SET-PRECISION"></a>
+        <h5>12.6.2.2200 SET-PRECISION </h5>
+        <p>FLOATING EXT</p>
+        <p>( u -- )</p>
+        <p>
+        Set the number of significant digits currently used by F., FE., or FS. to u.
+        </p>
+        <pre><code>
+: SET-PRECISION %fractional_digits ! ;
+        </code></pre>
+	<a name="Fdot"></a>
+	<h5>12.6.2.1427 F.</h5>
+	<p>f-dot FLOATING EXT</p>
+	<p>( -- ) ( F: r -- ) or ( r -- )</p>
+	<p>
+	Display, with a trailing space, the top number on the floating-point stack using
+	fixed-point notation: [-] (digits).(digits0)
+	</p>
+	<p>
+	An ambiguous condition exists if the value of BASE is not (decimal) ten or if
+	the character string representation exceeds the size of the pictured numeric
+	output string buffer.
+	</p>
+	<p>
+	For example, 1E3 F. displays 1000. .
+ 	</p>
+	<p>
+	COLDFORTH. Well thats what the standard says. We are going to set a maximum
+	field width of _#digits_max+2, _#digits_max characters a decimal point and a space. If it can fit in
+	that field without going to E nototation we will; if not E is used. In other words
+	no matter what the F number is F. will display it in a sensible manner.
+	</p>
+	<pre><code>
+
+| $8 CONSTANT _#digits_max
+
+	</code></pre>
+	<p>
+	When displaying real numbers this really isn't 100%
+	%fractioanl_digits should be used as the number
+	of significant digits; I don't think it is what is
+	expected when on the left side of the point.
+	</p>
+	<pre><code>
+\ This will only work if power less than _#digits_max; calling codes problem.
+| : _real_display ( buffer power --)
+	2DUP TYPE
+	." ."
+	TUCK + SWAP _#digits_max SWAP - \ available points
+	PRECISION MIN TYPE
+;
+	</code></pre>
+	<p>
+	We take poetic licence with PRECISION
+	we make it the number of significant digits after printing
+	the placement 0's.
+	</p>
+	<pre><code>
+| : _fraction_display ( buffer power --)
+	." 0."
+	NEGATE 0 ?DO
+		." 0"
+	LOOP
+	PRECISION TYPE
+;
+	</code></pre>
+	<p>
+	No stuffing around here; this will display anything. We try for a fixed
+	width so fv. looks nice.
+	</p>
+	<pre><code>
+
+\ whatever width the code below prints
+: _e_width ( --n)
+	\ sn.
+	PRECISION 1 + _#digits_max MIN 2+
+	\ Ennnnn
+	6 +
+;
+
+
+| : _e_display ( buffer power --)
+	OVER 1 TYPE
+	." ."
+	\ remember we only got _#digits_max in the start
+	\ limit things accordingly.
+	SWAP 1+  PRECISION [ _#digits_max 1 - ]T LITERAL MIN TYPE
+	BASE @ $0F &lt; IF
+		." E"
+	ELSE
+		DUP 0&lt; IF
+			." -" NEGATE
+		ELSE
+			." +"
+		THEN
+	THEN
+	\ Allow for the point shift.
+	1 -
+	\ give 2 digit spaces
+	5 .l
+;
+
+: F. ( m e --)
+	\ don't split a buffer use the default string buffer length
+	OVER not IF
+		." 0.0" 2DROP
+		EXIT
+	THEN
+	#$buffer get_buffer
+	buffer _#digits_max REPRESENT not IF
+		\ we don't do it but I suppose you print the string
+		\ and as the string length isn't given you print
+		\ the whole buffer.
+		2DROP
+		buffer _#digits_max TYPE
+	ELSE
+		\ we have _#digits_max characters; a sign flag and a power
+		\ to the current base.
+		IF
+			." -"
+		THEN
+		DUP 0&gt; IF
+			\ dealing with a number that has a real part.
+			DUP _#digits_max &lt; IF
+				\ a real part that can be displayed
+				\ in our allocated field.
+				buffer SWAP _real_display
+			ELSE
+				\ go to E format.
+				buffer SWAP _e_display
+			THEN
+		ELSE
+			\ it is a fraction.
+			\ remember we have to display 0. at start
+			\ the number of place to play with is less
+			DUP ABS PRECISION +
+			_#digits_max 1 - &lt; IF
+				buffer SWAP _fraction_display
+			ELSE
+				buffer SWAP _e_display
+			THEN
+		THEN
+	THEN
+	\ this is what the standard asks for.
+	SPACE
+	kill_buffer
+;
+	</code></pre>
+	<a name="FS."></a>
+	<h5>12.6.2.1613 FS.</h4>
+
+	<p>f-s-dot       FLOATING EXT</p>
+	<p>
+	<pre>( -- ) ( F: r -- ) or ( r -- )</pre>
+	<p>
+	Display, with a trailing space, the top number on the floating-point
+	stack in scientific notation:
+	</p>
+	<pre>
+	&lt;significand&gt;&lt;exponent&gt;
+
+	where:
+
+	&lt;significand>  :=  [-]&lt;digit&gt;.&lt;digits0&gt;
+	&lt;exponent>     :=  E[-]&lt;digits&gt;
+	</pre>
+	<p>
+	An ambiguous condition exists if the value of BASE is not (decimal) ten
+	or if the character string representation exceeds the size of the
+	pictured numeric output string buffer.
+	</p>
+	<p>
+	<b>COLDFORTH</b>If the BASE is not ten things still work. Strange the standard
+	makes no mention of how many significant digits one prints. it's a pretty rough 		definition.
+	</p>
+	<pre><code>
+: FS. ( m e --)
+	\ don't split a buffer use the default string buffer
+	OVER 0= IF
+		." 0.0" _e_width 3 - zero MAX SPACES
+		2DROP
+		EXIT
+	THEN
+	#$buffer get_buffer
+	buffer _#digits_max REPRESENT not IF
+		\ we don't do it but I suppose you print the string
+		\ and as the string length isn't given you print
+		\ the whole buffer.
+		2DROP
+		buffer _#digits_max _e_width MIN TYPE
+		_e_width _#digits_max - zero MAX SPACES
+	ELSE
+		\ we have _#digits_max character and sign flag and a power
+		\ to the current base.
+		IF
+			." -"
+		ELSE
+			SPACE
+		THEN
+		buffer SWAP _e_display
+	THEN
+	kill_buffer
+;
+</code></pre>
+<h3>vector operations</h3>
+<a name="fv*fv"></a>
+<p>
+Multiply two floating vector together. Addr1 is the base address of
+one source; addr2 is the address of the second source.
+addr3 is the destination vector.
+</p>
+<pre><code>
+CODE fv*fv ( add1 addr2 add3 n--)
+	\ have to save as vectors can be used in objects.
+	A2 R -)  MOV
+	\ number of items in vector
+	S )+ D4 MOV
+	S )+ A2 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+
+	\ put the mac in fractional mode
+	$20 # MACSR MOV
+
+	BEGIN
+		\ get the operands
+		\ data is stored in memory exp man
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		A1 )+ D3 MOV
+		A1 )+ D2 MOV
+		\ add the exponents
+		D1 D3 ADD VS IF
+			MI IF
+				D0 D2 EOR MI IF
+					$80000001 # D0 MOV
+				ELSE
+					$7FFFFFFF # D0 MOV
+				THEN
+				#infinity # D3 MOV
+			ELSE
+				\ too small call it zero
+				0 # D3 MOV
+				0 # D0 MOV
+			THEN
+		ELSE
+			\ clear the MAC acuumulator
+			0 # ACC MOV
+			\ do the fractional mult.
+			D0 D2 MAC
+			ACC D0 MOV
+			\ rescale to between .5 and 1
+			\ 01 and 10 don't shift. Unfortunatly
+			\ the overflow bit doesn't get set on
+			\ a shift so we have to test.
+			D0 D1 MOV
+			1 # D1 LSL
+			D0 D1 EOR
+			PL IF
+				\ This is effectivly floored rounding
+				\ the bit is lost so that is it.
+				1 # D0 LSL
+				1 # D3 SUB VS IF
+					\ for overflow to occure on a sub of one
+					\ it must have been bloody small
+					0 # D3 MOV
+					0 # D0 MOV
+				THEN
+			THEN
+		THEN
+		\ and return the result
+		D3 A2 )+ MOV
+	    D0 A2 )+ MOV
+		1 # D4 SUB
+	LE UNTIL
+	R )+ A2 MOV
+NEXT
+</code></pre>
+<a name="fv*f"></a>
+<p>
+Multiply a vector by a constant
+</p>
+<pre><code>
+CODE fv*f ( add1 m e add3 n--)
+	\ number of items in vector
+	S )+ D4 MOV
+	S )+ A1 MOV
+	S )+ D1 MOV
+	S )+ D0 MOV
+	S )+ A0 MOV
+
+	\ put the mac in fractional mode
+	$20 # MACSR MOV
+
+	BEGIN
+		\ get the operands
+		\ data is stored in memory exp man
+		A0 )+ D3 MOV
+		A0 )+ D2 MOV
+		\ add the exponents
+		D1 D3 ADD VS IF
+			MI IF
+				D0 D2 EOR MI IF
+					$80000001 # D2 MOV
+				ELSE
+					$7FFFFFFF # D2 MOV
+				THEN
+				#infinity # D3 MOV
+			ELSE
+				\ BLOODY SMALL
+				0 # D3 MOV
+				0 # D2 MOV
+			THEN
+		ELSE
+			\ clear the MAC acuumulator
+			0 # ACC MOV
+			\ do the fractional mult.
+			D0 D2 MAC
+			ACC D5 MOV
+			\ rescale to between .5 and 1
+			\ 01 and 10 don't shift.
+			\ Nnfortunatly
+			\ the overflow bit doesn't get set on
+			\ a shift so we have to test.
+			D5 D2 MOV
+			1 # D5 LSL
+			D2 D5 EOR
+			PL IF
+				1 # D2 LSL
+				1 # D3 SUB VS IF
+					0 # D3 MOV
+					0 # D2 MOV
+				THEN
+			THEN
+		THEN
+		\ and return the result
+		D3 A1 )+ MOV
+	    D2 A1 )+ MOV
+		1 # D4 SUB
+	LE UNTIL
+NEXT
+</code></pre>
+<a name="fv+fv"></a>
+<p>
+Add and two vectors
+</p>
+<pre><code>
+CODE fv+fv ( addr1 addr2 addr3 n --)
+	A2 R -) MOV
+	S )+ D6 MOV
+	S )+ A2 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		A1 )+ D3 MOV
+		A1 )+ D2 MOV
+		( here we have to get exponents the same before add)
+		(falign) BSR
+		(fadd)   BSR
+		(fnorm)  BSR
+		D1 A2 )+ MOV
+		D0 A2 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+	R )+ A2 MOV
+NEXT
+</code></pre>
+<a name="fv-fv"></a>
+<p>
+Subtract two vectors
+</p>
+<pre><code>
+
+CODE fv-fv ( addr1 addr2 addr3 n --)
+	A2 R -) MOV
+	S )+ D6 MOV
+	S )+ A2 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		A1 )+ D3 MOV
+		A1 )+ D2 MOV
+		( here we have to get exponents the same before add)
+		(falign) BSR
+		D2 NEG
+		(fadd) BSR
+		(fnorm) BSR
+		D1 A2 )+ MOV
+		D0 A2 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+	R )+ A2 MOV
+NEXT
+</code></pre>
+<a name="fv+f"></a>
+<p>
+add a constant to a vector.
+</p>
+<pre><code>
+
+CODE fv+f ( addr1 m e addr2 n )
+	A2 R -) MOV
+	S )+ D6 MOV
+	S )+ A2 MOV
+	S )+ A1 MOV \ exp
+	S )+ D7 MOV \ man
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		A1 D3 MOV \ exp
+		D7 D2 MOV \ man
+		( here we have to get exponents the same before add)
+		(falign) BSR
+		(fadd) BSR
+		(fnorm) BSR
+		D1 A2 )+ MOV
+		D0 A2 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+	R )+ A2 MOV
+NEXT
+</code></pre>
+<a name="fvsum"></a>
+<p>
+Sum a vector
+</p>
+<pre><code>
+CODE fvsum ( addr n -- value)
+	S )+ D6 MOV
+	S )+ A0 MOV
+	0 # D2 MOV
+	0 # D3 MOV
+	BEGIN
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		(falign) BSR
+		(fadd) BSR
+		(fnorm) BSR
+		D1 D3 MOV
+		D0 D2 MOV
+		1 # D6 SUB
+	LE UNTIL
+	D2 S -) MOV
+	D3 S -) MOV
+NEXT
+</code></pre>
+<a name="sv&gt;fv"></a>
+<p>
+Convert s signed integer vector to a float vector
+</p>
+<pre><code>
+
+CODE sv&gt;fv ( addr1 addr2 n --)
+	S )+ D6 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D0 MOV
+		$1F # D1 MOV
+		(fnorm) BSR
+		D1 A1 )+ MOV
+		D0 A1 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+NEXT
+
+
+</code></pre>
+<a name="qv&gt;fv"></a>
+<p>
+Convert a q vector to a floating vector. n gives the number; q the base.
+</p>
+<pre><code>
+CODE qv&gt;fv ( addr1 addr2 n q --)
+	S ) D7 MOV
+	S )+ D6 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D0 MOV
+		$1F # D1 MOV
+		D7 D1 SUB
+		(fnorm) BSR
+		D1 A1 )+ MOV
+		D0 A1 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+NEXT
+
+</code></pre>
+<a name="fv&gt;qv"></a>
+<p>
+Convert a floating vector to a q number vector. n gives the number; q the base.
+</p>
+<pre><code>
+
+CODE fv&gt;qv ( addr1 addr2 n q --)
+	S )+ D2 MOV
+	S )+ D6 MOV
+	S )+ A1 MOV
+	S )+ A0 MOV
+	BEGIN
+		A0 )+ D1 MOV
+		A0 )+ D0 MOV
+		(f&gt;q) BSR
+		D0 A1 )+ MOV
+	1 # D6 SUB
+	LE UNTIL
+NEXT
+
+</code></pre>
+<a name="fv."></a>
+<p>
+print a vector.
+</p>
+<pre><code>
+
+: fv. ( addr n --)
+	zero ?DO
+		DUP I FLOATS + F@ FS.
+	LOOP
+	DROP
+;
+</code></pre>
+<a name="fm."></a>
+<h3>Matrix words</h3>
+<p>
+Matrix's are stored as appropiate for equation manipulations. That is the values for
+a row are stored one after enother; this allows the use of vector functions on the
+rows.
+</p>
+<pre><code>
+: fm. { ( addr rows columns -- ) }{
+	variable %row_offset }
+	DUP FLOATS %row_offset !
+	SWAP
+	 zero ?DO
+		\ addr columns(--
+		CR
+		2DUP fv. send
+		SWAP %row_offset @ + SWAP
+	LOOP
+	2DROP
+;
+</code></pre>
+<a name="fm&gt;fv"></a>
+<p>
+fm>fv takes a colume out of a matrix and places it in a vector.
+</p>
+<pre><code>
+CODE fm&gt;fv ( addr_matrix rows columns addr_vector selected_column --)
+	S )+ D0 MOV
+	3 # D0 ASL \ cell offset
+	S )+ A1 MOV
+	S )+ D1 MOV
+	3 # D1 ASL \ row offset
+	S )+ D2 MOV \ count
+	S )+ A0 MOV
+	D0 A0 ADD
+	BEGIN
+		A0 ) A1 )+ MOV
+		4 0) A1 )+ MOV
+		D1 A0 ADD
+		1 # D2 SUB
+	LE UNTIL
+NEXT
+</code></pre>
+<a name="FABS"></a>
+<h5>12.6.2.1474 FABS</h5>
+<p>f-abs FLOATING EXT</p>
+<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+<p>r2 is the absolute value of r1.</p>
+<pre><code>
+: FABS ( float -- float)
+        FDUP F0&lt; IF
+                FNEGATE
+        THEN
+;
+
+
+</code></pre>
+<h5>timeing tests</h5>
+<pre><code>
+	\ BVP555(5407) 500 msec
+	\ : testf* xclock+ @ 1000000 0 DO 10E0 10E0 F* 2DROP LOOP xclock+ @ SWAP - . ;
+	\ After allowing for loop about 4 million ops a sec
+	\ BVP555(5407) 2770 sec
+	\ : testf/ xclock+ @ 1000000 0 DO 10E0 10E0 F/ 2DROP LOOP xclock+ @ SWAP - . ;
+	\ after allowig for loop about 0.4 million ops a sec.
+	\ BVP555(5407) 220 msec
+	\ : testloop xclock+ @ 1000000 0 DO 10E0 10E0 4drop LOOP xclock+ @ SWAP - . ;
+</code></pre>
+</body>
+</html>

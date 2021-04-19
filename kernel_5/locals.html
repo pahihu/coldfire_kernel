@@ -1,0 +1,500 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth FORTH locals coldfire COLDFIRE { }{ } --"> 
+<META NAME="description" CONTENT=" Paper on forth local variables">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+
+<h2>Temporary dictionaries, local data and magic numbers</h2> 
+
+<a HREF="#local_variables">Abstract</a>
+<h3>Introduction</h3>
+
+
+<p>
+What does:
+</p>
+<pre> <samp>
+	@ 8 + @ 4+ !
+</samp> </pre>
+<p>
+do?
+</p>
+<p>
+Not many hints are there? Magic numbers don't tell you much. 
+This could be a lot clearer by first describing the structure.
+</p>
+<pre> <samp>
+zero	
+	DUP CONSTANT #task_xt         CELL+
+	DUP CONSTANT #task_time       CELL+
+	DUP CONSTANT #task_head>      CELL+
+	DROP
+
+zero
+	DUP CONSTANT #head_link	      CELL+
+	DUP CONSTANT #head_name>      CELL+
+	DUP CONSTANT #head_count      CELL+
+	DROP
+
+</samp> </pre>
+<p>
+And then using the description  to write the code.
+</p>
+<pre> <samp>
+	@ #task_head> + @ #head_name> + !
+</samp> </pre>
+<p>
+Now the code has some meaning, further if the structure of 
+the data changes, the code will reflect the changes. 
+But there is a cost. A lot of constants are added to the dictionary. 
+With memory costing less than $10 a megabyte, this probably means nothing, 
+but in embedded applications memory use can still matter.
+</p>
+<p>
+One solution to the problem is <b>temporary dictionaries</b>.
+</p>
+
+<p>
+COLDFORTH offers a reasonable rich syntax  for local variable 
+description ( the <a HREF="http://braid.rad.jhu.edu/til/AboutBNF.html">BNF</a> characters 
+are bold, a space in terminals represents white space or a new line, 
+all terminals are enclosed in quotes):
+</p>
+<dl>
+<dt>Forth_word <b>::=</b></dt>
+<dl>	<b>"</b>: <b>"</b> <b><</b>name<b>></b> <b><</b>local_data_descriptor<b>></b> <b><</b>compiled_forth_code<b>></b> <b>"</b>; <b>"</b></dl>
+<br>
+<dt>local_data_descriptor <b>::=</b></dt>
+<dl><b>"</b>{ <b>"</b>  <b>{</b> <b><</b>interpreted_forth_code<b>></b> <b>|</b> <b><</b>type<b>></b> <b><</b>name<b>></b> <b>}</b> <b>[</b> 
+<b>"</b>-- <b>"</b> <b>{</b> <b><</b>interpreted_forth_code<b>></b> <b>|</b> <b><</b>type<b>></b> <b><</b>name<b>></b><b>}</b>  <b>]</b> 
+	<b>[</b>  <b>"</b>}{ <b>"</b> <b>{</b> <b><</b>interpreted_forth_code<b>></b> <b>|</b> <b><</b>type<b>></b> <b><</b>name<b>></b> <b>}</b> <b>]</b>
+<b>"</b>} <b>"</b></dl>
+<br>
+<dt>type <b>::=</b></dt>
+<dl><b>"</b>variable <b>"</b> <b>|</b> <b>"</b>value <b>"</b> <b>|</b> <b>"</b>2variable <b>"</b>
+<b>|</b> <b><</b>number<b>></b> <b>"</b>bytes <b>"</b> <b>|</b> <b><</b>structure_name<b>></b> <b>"</b>structure <b>"</b></dl>
+</dl>
+<p>
+This syntax allows us to describe inputs that will be transferred to 
+the local data area ( types between <i>{</i> and <i>--</i>), 
+outputs that will be transferred from the local data area ( types between <i>--</i> and <i>}{</i>), 
+and local data areas that will be used by the word ( types between <i>}{</i> and <i>}</i>).
+The order the input and output stack is described follows the FORTH conventions, 
+unlike the method suggested in the ANS standard. 
+</p>
+<h4>An Example</h4>
+<pre> <samp>
+: foo  { value %input1@ value %input2@ -- variable %output1  variable %output2 }{
+	variable                 _%temp1
+	my_struct structure      _%my_struct
+	value                    _%temp2@
+
+	10 CONSTANT #my_type
+
+	}
+	
+	%input1@  %output1 !
+	#my_type  %output% !
+;
+</samp> </pre>
+<p>
+This is implemented using temporary dictionaries.  This paper aims to show how 
+powerful the <b><</b>local_data_descriptor<b>></b> is, and how simple it is to implement. 
+Temporary dictionaries can also be used to store constants with file scope 
+( temporary dictionary is destroyed when the file is closed), and  
+constants with application scope ( temporary dictionary is destroyed just 
+before the prompt is printed). We will deal with the <b><</b>local_data_descriptor<b>></b>
+because that is an interesting temporary dictionary application.
+</p>
+
+
+<h3>The temporary dictionary</h3>
+<p>
+The discussion will focus on COLDFORTH. COLDFORTH is a subroutine threaded forth, 
+with a reasonable conventional structure. When creating a temporary dictionary, 
+COLDFORTH has to deal with the following.
+<p>
+<ul>
+<li>The wordlist has to be temporary as the words linked in will die. 
+When a temporary dictionary is created a wordlist is created in the temporary dictionary. 
+<li>If wordlists are linked into a common list ( as they are in COLDFORTH) 
+the link is best implemented as a double link list so the temporary wordlist 
+can be removed with ease when the temporary dictionary is destroyed. 
+<li>The standard words compile to a code area ( the next address is
+ unnamed in the ANS standard, but lets call it <i>CHERE</i>) and a data area, 
+ the next address is given by <i>HERE</i>. If using temporary dictionaries both 
+ these words have to have one more degree of indirection.  
+ In a conventional system <i>HERE</i> might be defined:	
+<pre><samp>
+: HERE 'h @ ;
+</samp></pre> 
+In a system using temporary dictionaries HERE could be defined:
+<pre> <samp>
+: HERE 'h> @ @ ;
+</samp> </pre> 
+<i>CHERE</i> would have to be defined  in a similar way. When compiling to the temporary 
+dictionary both <i>CHERE</i> and <i>HERE</i> would return the same 
+address as the first indirection 
+would point to the same cell. 
+Quite neat really. You can have a separate data and code space when compiling to 
+the permanent dictionary, and common code and data space when compiling to the 
+temporary dictionary.
+<li>If you do a top of  dictionary test, the limit has to  be altered to reflect the end of the temporary area.
+<li>  <b>last</b>; the last problem is specific to <b><</b>local_data_descriptor<b>></b>
+and shall be dealt with under its own heading.
+</ul>
+<p>
+Where do you get your temporary dictionary memory? <i>ALLOCATE</i> would be a good place to start.
+</p>
+<p>
+So there it is; one more level of indirection for <i>HERE</i> and if you have it <i>CHERE</i>,
+wordlists that can be created and destroyed, and a top of dictionary value that is a 
+pointer. Not much really.
+</p>
+<h3>last</h3>
+<p>
+Like probable every fig FORTH derivative COLDFORTH has a <i>last</i> value. 
+Ours points to the thread that was last used ( probable like all fig FORTH derivatives that 
+use a threaded dictionary structure). This value is needed by <i>;</i> and other words to 
+manipulate the last created head. As <b><</b>local_data_descriptor<b>></b>
+adds words to the local dictionary, one of the actions of  <i>{</i> has to 
+be the saving of <i>last</i>, one of the actions of <i>}</i> has to 
+be <i>last</i>'s restoration.
+</p>
+
+<h3>The local data area</h3>
+<p>
+Local data areas are best pointed to. The ANS standard doesn't allow you to 
+use >R and R> within words using locals, however it does require the implementers 
+to make locals available within a DO loop. 
+If you use the return stack for loop parameters, you basically have to use a 
+local data area pointer to meet the DO loop requirement. 
+If you have a pointer there is no need for the >R and R> restriction 
+(but I am sure others have reflected on the wisdom of the ANS local implementation).  
+It doesn't matter if you implement the pointer as a register, 
+a user variable or a cell ( assuming a single thread).
+</p>
+<p> 
+The data areas can be built on the return stack ( the fastest option for 
+the 68K and coldfire family), on the heap ( if ALLOCATE and FREE are fast enough)
+or in a memory data area. The important concept is, <b>a data frame is created 
+on word entry and destroyed on word exit</b>.
+</p>
+<p>
+If you use a local pointer ( LP ) you have to save the old LP value when you 
+create the new local data area.  If you CATCH, the LP value has to be part of the 
+frame to be restored. If you task switch at the FORTH level the LP value 
+becomes part of the issue.
+</p>
+<p>
+Correct handling of the LP is probably the biggest issue in systems that 
+aren't handling a local data area frame. 
+</p>
+<p>
+COLDFORTH has LP in a register and it creates the data areas 
+on the return stack.
+</p>
+<p>
+Having a LP removes the restrictions on return stack usage added by local variables, 
+this alone makes its implementation worth while.
+</p>
+
+<h3>Transferring data to and from the "local data frame"</h3>
+<table>
+<tr>
+<td>
+<p>
+This is  processor dependent. The 68K and coldfire family have a LINK instruction, 
+this instruction only gives you one option. 
+After the LINK instruction LP points to the top of the local data frame ( high address) 
+and the  return stack pointer points to the bottom ( low address).  
+On word entry, if you save data into the bottom of the local data frame then you 
+can use the return stack and parameter stack as your start address and do 
+an ascending memory copy.  On exit if you use the top of the data frame for 
+output then the LP and return stack registers can be used as a base and a 
+descending copy will transfer the data. This only leaves one place 
+for the local data area proper, the middle of the frame.
+</p>
+</td>
+<td>
+<img src=local_data.png>
+</td>
+</tr>
+</table>
+
+<h3>So what does { do?</h3>
+
+<ul>
+<li>Creates a local dictionary. 
+<li>Saves last.
+<li>Sets the user variables, _%local_input_bytes, _%local_output_bytes and 
+_%local_data_bytes to zero. 
+<li>Sets %local_use to true.
+<li>Moves the system into interpret state, 
+<li>Adds the local_input vocabulary to the search order.
+<li>And sets CURRENT to the wordlist contained in the temporary dictionary. 
+</ul>
+<p>
+The local_input vocabulary has the allowed "type" words. These versions of
+"type" update <i>_%local_input_bytes</i>, create local dictionary entries that 
+create children that know what value <i>_%local_input_bytes</i> had. 
+The child words lay down code that reference the input area of the local data frame. 
+</p>
+<pre> <code>
+	: {  ( --)
+		\ preserve system state that needs preserving
+		STATE @ _%local_entry_state !
+		last @  _%local_entry_last !
+		\ this uvariable lets  EXIT and ; know that the 
+		\ local data area has been used.
+		TRUE _%local_use !
+		zero _%local_input_bytes !
+		zero _%local_output_bytes !
+		zero _%local_data_bytes !
+		\ Set interpreting
+		[COMPILE] [
+		\ create a temporary dictionary
+		_local_dictionary
+		\ add new words to the temporary dicationary.
+		ALSO &local
+		DEFINITIONS
+		\ note that &local isn't in the search order at this stage
+		\ Add the wordlist contain acceptable types for this stage 
+		\ to the search order
+		&local_input
+	; IMMEDIATE
+</code> </pre>
+<p>
+Example of a word that is found in the local_input vocabulary. This is taken from COLDFORTH, 
+as COLDFORTH is subroutine threaded, the code compiled to set up the local data area is 
+also valid in a code word. We take advantage of this by having local data words 
+return an offset when in interpret state. As is usual the COLDFORTH assembler works 
+in interpret state
+</p>
+	<pre> <code>
+	: variable   \ parent ( --) 
+				\ child STATE=0 ( -- offset)
+				\ child STATE=1 ( -- address)
+		CREATE	\ header in local dictionary
+		IMMEDIATE \ mark new word as immediate
+		\ As we are building structure down in memory we align after allocation.
+		\ Particularly relevent for structures.
+		_%local_input_bytes @ CELL+ 4aligned _%local_input_bytes !
+		_%local_input_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ \ value stored in pfa
+			_%local_output_bytes @ +
+			_%local_local_bytes @ + NEGATE
+			STATE @ IF \ compile
+				41ED W,    \ ##code nnn LP) A0 LEA
+				     W,
+				2D08 W,    \ ##code A0 S -) MOV
+			THEN
+	;
+	</code> </pre>
+
+<ul>Note that the data arrangement in the "local data frame" gives: 
+<li>Data copies that are simple to implement on processors with auto increment and
+decrement addressing modes. 
+<li>Simple LP offset calculations, as demonstrated in the above code.
+</ul>
+
+<h3>So what does -- do?</h3>
+<p>
+Not much; replaces the local_input vocabulary with the local_output vocabulary. 
+The local_output vocabulary has "type" words that update %local_output_bytes
+and that create children that know what the current value of  _%local_output_bytes was. 
+The children lay down code that reference the output data area within the local data frame.
+</p>
+
+<pre> <code>
+	\ switch from input to output
+	: -- 
+		&local_output
+	;
+</code> </pre>
+
+<h3>What does }{ do?</h3>
+
+<p>
+Change the first searched wordlist from local_input or local_output to local_data. These words update 
+_%local_data_bytes and create children that know what was the current value of 
+_%local_data_bytes was. The child lay down code that reference the local data area.
+By convention, <i>constant</i>s with word scope are created between <i>}{</i> and <i>}</i>. 
+</p>
+<pre> <code>
+	\ switch from output, or input to data
+	: }{
+		&local_data
+	;
+</code> </pre>
+<h3>What does } do?</h3>
+<ul>
+<li>Restore previous <i>STATE</i>
+<li>Restore <i>last</i>
+<li>Restores the dictionary pointers so they point to the permanent dictionary, restore current.
+<li>Lays down the code to set up the required stack frame ( total size: 
+<i>_%local_input_bytes @  _%local_output_bytes @ + _%local_data_bytes @ +</i>).
+<li>Lays down the code to transfer the input parameter stack data into the stack frame.
+<li>Add the temporary dictionary wordlist to the search order.
+</ul>
+<p> 
+The last action is not done in a ANS standard way ( the whole concept fails that test),
+the ANS standard requires the local variables to be searched first and the search order 
+to be independent of the SEARCH order word set. We saw no way of doing this 
+without adding additional code to find. Our code simple makes &local, 
+the first searched vocabulary.
+</p>
+<pre> <code>
+	: }
+		\ set entry state, for : words it will be compiling
+		\ for code words it will be interpreting.
+		_%local_entry_state @ STATE !
+		\ last should point to the main word
+		_%local_entry_last @ last !
+
+		\ back to the normal dictionary
+		_exit_local_dictionary
+
+		\ add  entry code
+		_%local_use @ IF
+			_%local_input_bytes @
+			_%local_output_bytes @ +
+			_%local_local_bytes @ +  NEGATE
+			4E55	W,		\ ##code lp nnn # LINK
+					W,
+			_%local_input_bytes @ IF
+				_%local_input_bytes @ 4 /  
+				7000 OR W,   \ ##code inputs # D0 MOV
+				204F W,      \ ##code R A0 MOV
+				             \ ##code BEGIN
+				20DE W,      \ ##code     S )+ A0 )+ MOV
+				5380 W,      \ ##code     1 # D0 SUB
+				66FA W,      \ ##code EQ UNTIL
+			THEN
+		THEN
+
+
+		\ WE add &local to the search order.
+		\ This has to be allowed for on exit
+		\ If _%local_use is set the system will assume &local 
+		\ has been added to search order and must be removed.
+
+		&local
+	;
+</code> </pre>
+
+<h3>How are constants dealt with?</h3>
+<p>
+In COLDFORTH constants lay down code, they are not directly referenced if included 
+in a : definition. So a constant can be created in a temporary dictionary, 
+used and discarded. In all FORTHs this is not the case, if a system normally references 
+constants code directly the local_input, local_output and local_data wordlists 
+must contain a version of CONSTANT that doesn't have to live at runtime.
+</p>
+
+<h3>What about exit?</h3>
+<p>
+Even if you limit your implementation to the ANS standard, you have to put 
+data somewhere on word entry, and effectively remove it on word exit. 
+Things are just a little more complex now.  
+</p>
+If  _%locals_use @ is true ( it is set by <i>{</i> ).
+<ul>
+<li>Lay down code to transfer the output data from the local data area 
+to the parameter stack ( _%local_output_bytes gives the count)
+<li>Lay down code to remove the local data area frame.
+</ul>
+<p>
+As the exit return address can by retrieved using the LP on the 68k/coldfire 
+implementation, the use of <i>{ }</i> has one side effect; you don't have to tidy 
+up the return stack on exit. The following code becomes valid:
+</p>	
+	<pre> <samp>
+	: fred { ( n --n) }
+		10 0 DO
+			EXIT
+		LOOP
+	;
+	</samp> </pre>
+<p>
+But not recommended, as the trick would not work on systems that didn't create their local
+data areas on the return stack.
+</p>
+
+<h3>What does ; do?</h3>
+<ul>
+<li>Same as  EXIT, 
+<li>Remove temporary wordlist from search order.
+<li>Destroy local dictionary. 
+</ul>
+
+<h3>Usage experiance</h3>
+<p>
+The scheme under discussion offers input naming, local data areas, 
+local constants, and output naming. What gets used? 
+</p>
+<p>
+Programmers tend to use <i>value</i> for input if the input value is not to change, 
+and <i>variable</i> if the data item is to be altered. 
+But in general the input items are not often named. Output items 
+are seldom named. The most common use is for the description of a local data area
+used within the word. As in the example below. 
+</p>
+<pre> <samp>
+: fred
+	{ ( x1 x1 -- x3 ) }{
+	HEX
+	10 CONSTANT _#temp_buffer_size
+	variable _%something
+	_#temp_buffer_size bytes _%temp_buffer
+	}
+	some_code
+;
+</samp> </pre>
+<p>
+As this is not an option offered by the
+ANS standard this is a disappointing result.
+</p>
+<h3>Conclusion</h3>
+<p>
+Temporary dictionaries can be used to create a system that describes a local data 
+area well, and  remove magic numbers from a program. 
+The implementation is not very difficult.
+</p>
+<h3>References</h3>
+
+<a HREF="http://www.forth.org/dpans/dpansa13.htm">ANS standard local variables</a> <br>
+<a HREF="http://www.jwdt.com/~paysan/html/gforth_30.html#SEC35">GFORTH locals</a> <br>
+
+Looking for an on line reference to the "John Hopkins" scheme. <br>
+
+<h3>Abstract</h3>
+<a name="local_variables"><b>Temporary dictionaries, local data and magic numbers</b><br>
+Charles Esson<br>
+<br>
+A data area local to a FORTH word could be used to reference input data stack items by name,
+to provide data areas local to the word, and to describe output data items by name. 
+Further for flexibility you should be able to reference the data item by address or by value. 
+The ANS standard offers a small subset of these options. 
+An implementation that offers all these options is described. 
+The system uses temporary dictionaries, is easy to follow and is easy to implement. 
+As a bonus the system provides <I>constant</I>s with word scope.<br>
+<br>
+<br>
+</body>
+</html>
+
+
+
+
+
+
+
+

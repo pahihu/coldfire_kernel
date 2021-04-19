@@ -1,0 +1,634 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>the I/O classes for UDP</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0768.html">RFC768 UDP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0791.html">RFC791 IP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 Host requirments</a><br>
+
+<p>
+A user opens a <i>udp_client</i> or <i>udp_server</i> to use the udp protocol.
+</p>
+<p>
+Ininitially we tried to write this so the application program only sees the udp data; but
+it got too massy and the rules of use too compliced. So we have gone for a pep address with
+support routines.
+</p>
+<p>
+The result is resonable need, the file ip_setup.html contains the raw ip setup words. These
+are used by the udp methods tp produce udp datagrams.
+</p>
+<p>
+You can use :read and :read_line to extract data from the udp. The open has the form
+<i>driver/destination_machine/destination_port</i>
+</p>
+<pre> <samp> 
+	: shout
+		S" udp_client/123:444:123:555/07" zero Sopen
+		\ object(--
+		S" A string to echo" jump :write
+		\ send_udp
+		DUP :flush_file
+		\ 
+		$buffer
+			buffer OVER :read TYPE
+		kill_buffer
+		close
+	;
+</samp> </pre>
+<pre> <code>
+
+	: Sresolve_address ( addr count -- ip)
+		Snumber 
+	;
+
+	: $resolve_address ( $ --ip)
+		COUNT Sresolve_address 
+	;
+
+
+io_protocol_common class	
+
+		cell% instance_variable %%remote_port
+		cell% instance_variable %%local_port
+		cell% instance_variable %%demux_structure
+				
+		\ errors/stats
+		cell% instance_variable %%bad_udp_datagram
+		cell% instance_variable %%read_errors
+		cell% instance_variable %%option_error
+
+		m: ( parent--)
+			this [parent] :construct
+			zero %%bad_udp_datagram !
+			zero %%read_errors !
+			zero %%option_error !
+			zero %%remote_port !
+			zero %%local_port !
+			zero %%demux_structure !
+		; overrides :construct
+
+		m: ( --)
+			\ Remove ourselves from the udp_demux table.
+			zero %%demux_structure @ _#demux_bucket_object + ! 
+			%%demux_structure @
+			BEGIN 
+				_lock_word 
+				DUP _#demux_bucket_users + @ 1 <>
+			WHILE
+				_unlock_word
+				xpause
+			REPEAT 
+			\ this will unlock
+			DUP unlink_double
+			kill_free_buffer			
+			this [parent] :destruct
+		; overrides :destruct
+
+		m:  ( machine port addr num mode -- instance )
+			%%mode !
+			2DROP
+			%%remote_port !
+			%%remote_machine !
+			\ ask the os for a demux entry, this also provides a local port
+			\ as soon as we do this we can start receiving 
+			\ datagrams destined to the allocated port.
+			\ As no one knows about us it is not likely, but it
+			\ is possible.
+			\ This adds to the udp demux table.
+			\ We are a client, we care about detination machine and port
+			this 
+			%%remote_machine @ -1 
+			%%remote_port @ -1
+			_udp_port %%demux_structure !
+			%%demux_structure @ _#demux_local_port + @ %%local_port !
+			this
+		; overrides :file_open
+
+		: setup_udp { ( source_port destination_port) variable %pep -- }
+
+			_%udp_object @ 	%pep @ ep_proto_obj + !
+			
+			\ points to data portion of udp datgrame, and gives the data count.
+			%pep @ ep_ipdata + @ udp_data + %pep @ ep_protodata + !
+			zero %pep @ ep_protocount + !
+
+			IPT_UDP  
+			%pep @ [ ep_data ip_proto + ]T LITERAL + B!
+		
+			%pep @ ep_ipdata + @ udp_data ERASE
+
+			%pep @ ep_ipdata + @ udp_dst + W!
+			%pep @ ep_ipdata + @ udp_src + W!
+
+			udp_data %pep @ ep_ipdata + @ udp_len + W!
+	        \ add udp header to datgram length. 
+			udp_data %pep @ add_to_ip
+		;
+
+		m: { variable %pep -- }
+			%%local_machine @
+			%%remote_machine @ 
+			zero %pep @ setup_ip
+			\ priority can be set as a object variable
+			%%priority @  5 RSHIFT 
+			%pep @ [ ep_data ip_tos + ]T LITERAL + B! 
+			\ ------------------------------------------
+			\ this word sets up a header with no options
+			\ if you want options do it yourself.
+			\ ------------------------------------------
+			\ setup the udp header
+			%%local_port @
+			%%remote_port @
+			%pep @
+			setup_udp
+
+		; overrides :setup_protocol
+
+
+		: add_to_udp ( n pep)
+			2DUP ep_protocount + +!
+			2DUP add_to_ip
+			ep_ipdata + @ udp_len + DUP W@
+			ROT + SWAP W!
+		;
+
+	</code> </pre>
+<p>
+An application should call <i>:setup_protocol</i> or <i>:setup_protocol_from_pep</p> to
+initialise the pep header. It should then alter header if desired.
+Application should than call :write_protocol
+</p>
+<p>
+Note this word will abort if the options contained in %pep_in are rubbish.
+</p>
+	<pre> <code>
+		m: { variable %pep_in variable %pep_out --  }{
+			variable %ipdata_in }
+	
+			%pep_in @ ep_ipdata + @ %ipdata_in !
+
+			%pep_in @ %pep_out @ setup_pep_from_pep
+			\ destination of incoming is source of outgoing
+			%ipdata_in @ udp_dst + W@
+			%ipdata_in @ udp_src + W@
+			%pep_out @
+			setup_udp
+		; overrides :setup_protocol_from_pep 
+
+
+
+		CREATE $udp_struct_bad ," udp packet structure bad"
+		: _pep>udp_data ( pep -- pep addr n 0 | $)
+			DUP ep_ipdata + @
+			\ pep addr(--
+			DUP udp_len + W@ 
+			\ pep addr len(--
+			jump ep_ipcount + @ OVER < IF
+				\ pep addr len(--
+				\ udp count too large
+				ROT kill_free_buffer
+				2DROP
+				\ (--
+				$udp_struct_bad
+				EXIT
+			THEN
+			udp_data - 
+			SWAP 
+			udp_data + 
+			SWAP
+			zero
+		;
+
+		\ The big qestion; should We close on an abort or leave it
+		\ to the user. The rule is if you take one of these words you can 
+		\ convert it into a ior type result with a simple catch. That means
+		\ you don't close
+		m:  { ( --pep addr n ) }
+				%%pep_queue %%timeout @ xawait_timed IF
+					\ timout
+					0 0 0
+					EXIT
+				THEN
+				%%pep_queue dequeue
+				\ pep(--
+				DUP ep_error + @ not IF
+					_pep>udp_data ?DUP IF
+						1 %%bad_udp_datagram +!
+						$ABORT
+					THEN
+					\ pep addr n(--
+					EXIT
+				THEN
+				1 %%read_errors +!
+				DUP ep_error + @
+				SWAP kill_free_buffer
+				$ABORT
+		; overrides :read_protocol
+
+		\ the read operation treats each datagram
+		\ as a record.
+		m:  ( addr len -- len)
+			%%active_pep @ not IF
+				this :read_protocol
+				%%active_count !
+				%%active_pointer !
+				%%active_pep !
+			THEN
+			\ addr len(--
+			_read_from_active_pep
+			\ len(--
+		; overrides :read
+
+		\ write the data pointed to by addr and n to the pep and queue
+		m: { ( addr n) variable %pep ( --) }
+			DUP IF 
+				TUCK
+				\ n addr n (--
+				%pep @ ep_ipdata + @ udp_data + SWAP MOVE
+				\ n(--
+				%pep @ add_to_udp
+			ELSE
+				\ empty datagram head is ok as is
+				2DROP
+			THEN 
+			\ wait for room on the queue.
+			%pep @ queue_ip_wait
+		; overrides :write_protocol
+
+		\ returns true if data
+		m: ( --flag)
+			%%active_pep  @ 0= 
+			%%pep_queue queue_empty? AND not
+		; overrides :key?
+
+
+		m: ( indent --)
+			CR DUP SPACES ." udp_client | " ." Object: " this .h 
+			CR DUP SPACES ." remote machine: " %%remote_machine @ .h 
+			              ." remote port: " %%remote_port @ .h
+			CR DUP SPACES ." source machine     : " %%local_machine @ .h
+			              ." local port     : " %%local_port @ .h
+			CR DUP SPACES ." priority           : " %%priority @ .h
+			              ." input_pep_queue : " %%pep_queue .h
+			CR DUP SPACES ." datagram receives  : " %%datagrams_received @ .h
+			              ." discards        : " %%datagram_discards @ .h
+			\ indent(--
+			CR DUP SPACES ." type buffer        : " %%type_buffer> @ .h
+			              ." type count      : " %%type_buffer_count @ .h
+			DROP
+			send
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+end_class (udp_client)
+
+target_previous_definitions
+target_previous
+
+
+\ only overrides :file_open
+(udp_client) class
+
+
+		\ string can be /destination_machine/destination_port
+		\               //destination_port
+		\               or nothing
+		m: { ( addr n mode -- instance ) }{
+			variable %mode
+			variable %remote_port
+			variable %remote_machine
+			}
+			%mode !
+			\ /machine/port
+			[CHAR] / remove_leading
+			[CHAR] / left_split
+			\ addr_machine count_machine addr_port count_port(--
+			2SWAP DUP IF \ machine specified
+				Sresolve_address %remote_machine !
+			ELSE
+				2DROP  zero %remote_machine !
+			THEN
+			\ addr_port count_port(--
+			[CHAR] / remove_leading
+			DUP IF \ port speced
+				Snumber %remote_port !
+			ELSE
+				2DROP zero %remote_port !
+			THEN
+			%remote_machine @ %remote_port @ zero zero %mode @ this [parent] :file_open
+		; overrides :file_open
+
+		m: ( indent --)
+			CR DUP SPACES ." udp_client | " ." Object: " this .h
+			DROP send
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+end_class udp_client
+
+target_previous_definitions
+target_previous
+
+
+(udp_client) class
+
+
+		m: ( parent--)
+			this [parent] :construct
+		; overrides :construct
+
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+		\ client first, string should be zero
+		\ mode is stored
+		\ :file_open
+		\ string has to be /source_port
+		m: ( local_port addr num mode -- instance )
+			%%mode !
+			2DROP
+			%%local_port !
+			this %%local_port @ 0 0 0 0 _udp_add $ABORT
+			%%demux_structure !
+			this
+		; overrides :file_open
+
+
+
+		\ The big qestion; should We close on an abort or leave it
+		\ to the user. The rule is if you take one of these words you can
+		\ convert it into a ior type result with a simple catch. That means
+		\ you don't close
+		m:  { ( --pep addr n ) }
+			BEGIN
+				%%pep_queue xawait
+				%%pep_queue dequeue
+				\ pep(--
+				DUP ep_error + @ not IF
+					_pep>udp_data not IF
+						\ pep addr n(--
+						EXIT
+					THEN
+					1 %%bad_udp_datagram +!
+				ELSE
+					1 %%read_errors +!
+					kill_free_buffer
+				THEN
+			AGAIN
+		; overrides :read_protocol
+
+		m: ( indent --)
+			CR DUP SPACES ." udp_server | " ." Object: " this .h
+			CR DUP SPACES ." source machine     : " %%local_machine @ .h
+			              ." source port     : " %%local_port @ .h
+			CR DUP SPACES ." priority           : " %%priority @ .h
+			              ." input_pep_queue : " %%pep_queue .h
+			CR DUP SPACES ." datagram receives  : " %%datagrams_received @ .h
+			              ." discards        : " %%datagram_discards @ .h
+			\ indent(--
+			CR DUP SPACES ." type buffer        : " %%type_buffer> @ .h
+			              ." type count      : " %%type_buffer_count @ .h
+			CR DUP SPACES ." read errors        : " %%read_errors @ .h
+			DROP
+			send
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+end_class (udp_server)
+.S .( after udp_server)
+target_previous_definitions
+target_previous
+
+
+(udp_server) class
+
+		\ client first, string should be zero
+		\ mode is stored
+		\ :file_open
+		\ string has to be /source_port
+		m: { ( addr n mode -- instance ) }{
+			variable %mode
+			variable %local_port
+			}
+			%mode !
+			\ /machine/port
+			[CHAR] / remove_leading
+			[CHAR] / left_split
+			\ addr_machine count_machine addr_port count_port(--
+			2SWAP DUP not ABORT" Local port not specified"
+
+			Snumber %local_port !
+			2DROP
+			%local_port @ zero zero %mode @ this [parent] :file_open
+		; overrides :file_open
+
+		m: ( indent --)
+			CR DUP SPACES ." udp_server | " ." Object: " this .h  
+			DROP send
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+end_class udp_server
+
+target_previous_definitions
+target_previous
+.S .( after udp_server)
+
+	</code> </pre> 
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc862.html">RFC862</a><br>
+	<pre> <code>
+	: _udp_echo_server { -- }{
+		variable %handle 
+		variable %pep }
+		S" udp_server/07" zero Sopen %handle !
+		\ (--
+		BEGIN
+			%handle @ :read_protocol 
+			\ pep addr n(--
+			ROT %pep !
+			\ addr n (--
+			\ The options length will be the same or shorter 
+			\ than the incoming options.
+			%pep @  DUP %handle @ :setup_protocol_from_pep 
+			\ addr n (--
+			%pep @ 
+			\ addr n pep(--
+			%handle @ :write_protocol 
+		AGAIN
+	;
+
+	</code> </pre>
+	<pre> <code>
+#BVP6552 #BVP6551 + [IF]
+
+	: _receive_ping { ( object --) }{
+				variable %buffer }
+		%buffer 4 ROT :read
+		\ count(--
+		IF
+			%buffer @ xclock+ @ _#slt0_value *
+                        _lreg_SCNT0 @ _#slt0_value - + +
+			\ delay(--
+			\ rescale to msec
+			#10 _#slt0_value */
+			\ delay(--
+			5 .R ."  ms" send
+		THEN
+	;
+
+
+	\ flag is true if message received
+	: _ping_message { ( object -- flag ) }{
+			variable %buffer }
+		\ object(--
+		\ we are going for a simple ping. Send a message wait for responce, print
+		\ time. 1/10th msec
+		xclock- @ 1+ \ add the full 10 msec
+		_#slt0_value *
+		_lreg_SCNT0 @ _#slt0_value - -  \ subtract actual value
+		%buffer !
+		%buffer 4 jump :write
+		DUP :flush_file
+		xclock+ @ #1sec + >R
+		BEGIN
+			xpause
+			\ object(--
+			^C
+			DUP :key?
+			IF
+				r>drop
+				\ object(--
+				_receive_ping
+				\ (--
+				TRUE
+				EXIT
+			THEN
+			R@ xclock- @ + 
+			0> not
+		UNTIL 
+		r>drop
+		DROP
+		FALSE
+	;
+
+[ELSE]
+
+	: _receive_ping { ( object --) }{
+				variable %buffer }
+		%buffer 4 ROT :read
+		\ count(--
+		IF
+			%buffer @ xclock+ @ _#trr1_value * _wreg_TCN1 W@ + +
+			\ delay(--
+			\ rescale to msec
+			#10 _#trr1_value */
+			\ delay(--
+			5 .R ."  ms" send
+		THEN
+	;
+
+
+	\ flag is true if message received
+	: _ping_message { ( object -- flag ) }{
+			variable %buffer }
+		\ object(--
+		\ we are going for a simple ping. Send a message wait for responce, print
+		\ time. 1/10th msec
+		xclock- @ 1+ \ add the full 10 msec
+		_#trr1_value *
+		_wreg_TCN1 W@ -  \ subtract actual value
+		%buffer !
+		%buffer 4 jump :write
+		DUP :flush_file
+		xclock+ @ #1sec + >R
+		BEGIN
+			xpause
+			\ object(--
+			^C
+			DUP :key?
+			IF
+				r>drop
+				\ object(--
+				_receive_ping
+				\ (--
+				TRUE
+				EXIT
+			THEN
+			R@ xclock- @ +
+			0> not
+		UNTIL
+		r>drop
+		DROP
+		FALSE
+	;
+
+[THEN]
+
+	: udp_ping { ( --) }{
+		variable %sent_messages
+		variable %received_messages 
+		#8 CONSTANT #colume_size
+		}
+		0 %sent_messages !
+		0 %received_messages !
+		$" udp_client/" BL WORD #$buffer get_buffer buffer #$buffer $+
+		buffer $" /#07" buffer #$buffer $+  
+		buffer zero $open kill_buffer
+
+		CR
+		BEGIN
+			\ object(--
+			DUP :key? IF
+				CR
+				\ object(--
+				DUP ['] _receive_ping CATCH ?DUP IF
+					CR 
+					." sent messages: " %sent_messages @ .
+					." recieved messages: " %received_messages @ . 
+					NIP SWAP close
+					$ABORT
+				THEN
+				1 %received_messages +!
+			ELSE
+				1 %sent_messages +!
+				\ object(--
+				DUP ['] _ping_message CATCH ?DUP IF
+					CR 
+					." sent messages: " %sent_messages @ .
+					." recieved messages: " %received_messages @ . 
+					NIP SWAP close
+					$ABORT
+				THEN
+				IF 
+					1 %received_messages +!
+				THEN
+			THEN
+			character# #colume_size + character_max @ < not IF CR THEN 
+			\ don't want internet to get upset with ping rate.
+			#1sec xtest xwait
+		AGAIN
+	;
+
+	</code> </pre>
+</body>
+</html>

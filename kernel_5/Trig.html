@@ -1,0 +1,240 @@
+<html>
+<head>
+<title>Trig Functions</title>
+<META NAME="Author" CONTENT="Peter Ogilvy">
+<META NAME="keywords" CONTENT="FSIN FCOS">
+<META NAME="description" CONTENT="Contains implimentations of FSIN and FCOS using Taylor's Series">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<h3>FSIN & FCOS</h3>
+<p>
+Written by Peter Ogilvy, modified for cross compiling by C.Esson
+</p>
+<p>
+We use Taylor's Expansion To Calculate sin(x);
+</p>
+
+<ul><pre>
+
+sin(x) = x - x<sup>3</sup>/3! + x<sup>5</sup>/5! - x<sup>7</sup>/7! + x<sup>9</sup>/9! + ...
+
+<pre></ul>
+<p>
+Any term may be expressed in terms of its predecessor as below;
+</p>
+<ul><pre>
+
+term<sub>n+1</sub> = - x<sup>2</sup> term<sub>n</sub> / (n+1)(n+2)
+
+<pre></ul>
+<p>
+Since the divisors are the same for any angle, we may precalculate them and store
+them in a table. We can also avoid the particularly CPU intensive divide by this
+method. We also precalculate the sign of the term.
+</p>
+<p>
+This is the purpose of the sine_divisors_table and the CALC_SINE_DIVISORS word.
+</p>
+
+<pre><code>
+DECIMAL
+3.1415926535897932384 2CONSTANT #pi
+HEX
+
+| 8 CONSTANT #sine_max_terms
+
+forth : SINE_DIVISORS ( -- )
+        HOST CREATE
+        forth
+	#sine_max_terms 1 + 1 DO
+  	        1.0 I 2 * DUP 1 + * s>f F/                   \ 1 / (n+1) * (n+2)
+  	        FNEGATE                                      \ changes the sign of each term
+                HOST
+  	        t,        \ store it
+                t,
+                forth
+	LOOP
+;
+
+HOST
+SINE_DIVISORS sine_divisors_table
+
+</code></pre>
+
+<p>
+The term calculation is thus reduced to two multiplications
+</p>
+<ul><pre>
+
+term<sub>n+1</sub> = x<sup>2</sup> term<sub>n</sub> divisor<sub>n+1</sub>
+
+<pre></ul>
+<p>
+The _sine word adds sucessive terms, checking after each that the last term
+still had an effect on the value of the sum, if not all further terms are
+insignificant and may be ignored. The maximum number of iterations may be set
+via the #sine_max_terms constant to limit the accuracy.
+</p>
+<p>Note: this method is correct for small x hence sine is most accurate in the
+range -pi/2 to +pi/2. We use trig relations in FSIN and FCOS to move to the correct range.
+</p>
+<pre><code>
+: _sine { ( float1 -- float) }{
+        \ local variable support in cross compiler is limited
+	8 bytes %sine_sum
+	8 bytes %sine_term
+	}
+
+	FDUP %sine_sum F!                                   \ first term is x
+	FDUP %sine_term F!
+
+	FDUP F*                                             \ compute square
+        \ ### start from zero
+	#sine_max_terms  zero DO                               \ calculate up to max terms of Taylor's expansion
+
+  		FDUP %sine_term F@ F*                        \ calculate next power x^2 * x^n
+
+  		sine_divisors_table I FLOATS + F@ F*         \ 1 / (n+1) * (n+2)
+
+  		%sine_term F!                                \ save it as the current term
+
+  		%sine_sum F@                                 \ get old sum
+  		FDUP %sine_term F@ F+                        \ calc new sum
+  		FDUP %sine_sum F!                            \ store new
+
+  		F- F0= IF                                    \ test if current term is significant
+    			LEAVE                                \ stop looping as we are finished
+  		THEN
+	LOOP
+
+	FDROP                                            \ drop square
+
+	%sine_sum F@                                     \ get result
+;
+</code></pre>
+<p>Note: this method is based on an assumption of small x hence sine is most accurate
+in the range -pi/2 to +pi/2. We use trig relations in FSIN and FCOS to move to the
+correct range.
+</p>
+<h5>12.6.2.1614 FSIN</h5>
+<p>f-sine FLOATING EXT<p>
+<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+<p>
+r2 is the sine of the radian angle r1.
+</p>
+<p>
+As written will only work if floating format of host is the same.
+written so normal path is fastest. Code can recurse up to three times
+</p>
+<pre><code>
+: FSIN ( r1 -- r2 )
+
+        \ If in range pi/2 -pi/2 find answer and exit
+        [ #pi 2.0 F/ ]T FLITERAL FOVER FABS F&lt; not IF
+                _sine
+                EXIT
+        THEN
+
+        FDUP FABS
+        \ IF less than pi then use sin ( x ) = sin ( pi - x)
+        [ #pi ]T FLITERAL FOVER F&lt; not IF
+                #pi FSWAP F-
+                FSWAP F0&LT; IF
+                        FNEGATE
+                THEN
+                \ this will see the less than pi/2 above code executed
+                RECURSE
+                EXIT
+        THEN
+
+        \ now for range -2pi to +2pi
+        \ If greater than pi subtract from 2pi and change sign
+        \ Only an equivilant coordinate change.
+        [ #pi 2.0 F* ]T FLITERAL FOVER F&lt; not IF
+                [ #pi 2.0 F* NEGATE ]T FLITERAL FOVER F&gt; not IF
+                        FDUP F0&lt; IF
+                                [ #pi 2.0 F* ]T FLITERAL
+                        ELSE
+                                [ #pi 2.0 F* FNEGATE ]T FLITERAL
+                        THEN
+                        F+
+                        RECURSE
+                        EXIT
+                THEN
+        THEN
+
+        \ we can remove multiples of 2 pi
+        \ remember we are dealing with floating point. The more bits
+        \ that get used to represent multiples of pi, the less left to
+        \ represention fractions of pi. It is the fractions of pi that
+        \ generate meaningfull results.
+        FDUP FDUP [ #pi 2.0 F* ]T FLITERAL F/
+        FLOOR
+        [ #pi 2.0 F* ]T FLITERAL F* F-
+        [ #pi 2.0 F* ]T FLITERAL FOVER
+        \ because the error may be able to give a negative result
+        FABS F&lt; IF
+                \ if you end up in here the number is just too
+                \ big for any meaningfull result
+                \ We are just dealing with the floating point error.
+                \ and when it comes to errors any error
+                \ is as good as another.
+                FDROP
+                FDROP
+                [ 0.0 ]T FLITERAL
+                EXIT
+        THEN
+        FSWAP F0&LT; IF
+                FNEGATE
+        THEN
+        RECURSE
+;
+</code></pre>
+<h5>12.6.2.1493 FCOS</h5>
+<p>f-cos FLOATING EXT</p>
+<p>( F: r1 -- r2 ) or ( r1 -- r2 )</p>
+<p>
+r2 is the cosine of the radian angle r1.
+</p>
+<pre><code>
+: FCOS ( r1 -- r2 )
+	[ #pi 2.0 F/  ]T FLITERAL       \ cos(x) = sin(x+(pi/2))
+	F+ FSIN
+;
+</code></pre>
+
+<p>
+The following sample code can be used to test the above functions
+</p>
+<pre>
+: testFSIN ( -- ) \ prints a table of sin(x)
+
+CR CR
+
+361 -360 DO
+
+	I DUP . 2 * s>f #pi F* 360.0 F/   \ convert degrees to radians
+	FSIN F.                           \ print sine
+	CR
+
+5 +LOOP
+;
+
+: testFCOS ( -- ) \ prints a table of cos(x)
+
+CR CR
+
+361 -360 DO
+
+	I DUP . 2 * s>f #pi F* 360.0 F/   \ convert degrees to radians
+	FCOS F.                           \ print cosine
+	CR
+
+5 +LOOP
+;
+</pre>
+</body>
+</html>

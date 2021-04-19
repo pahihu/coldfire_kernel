@@ -1,0 +1,124 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h4>Internet Control Message Protocol Constants and Packet Format</h4>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0792.html">RFC792</a> Original<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122</a> Updated<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0896.html">RFC896</a> ICMP source quench<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1016</a> More recent source quench<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0950.html">RFC950</a> Subnet mask<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0956.html">RFC956</a> Clock<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0957.html">RFC957</a> Clock<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1305.html">RFC1305</a> Clock<br>
+
+
+<h4>ic_type field</h4>
+<pre> <code>
+	0   CONSTANT ICT_ECHORP	  \ Echo reply
+	3   CONSTANT ICT_DESTUR	  \ Destination unreachable
+	4   CONSTANT ICT_SRCQ	  \ Source quench
+	5   CONSTANT ICT_REDIRECT \ Redirect message type
+	8   CONSTANT ICT_ECHORQ	  \ Echo request
+	#11 CONSTANT ICT_TIMEX	  \ Time exceeded
+	#12 CONSTANT ICT_PARAMP   \ Parameter Problem
+	#13 CONSTANT ICT_TIMERQ	  \ Timestamp request
+	#14 CONSTANT ICT_TIMERP	  \ Timestamp reply
+	#15 CONSTANT ICT_INFORQ   \ Information request
+	#16 CONSTANT ICT_INFORP	  \ Information reply
+	#17 CONSTANT ICT_MASKRQ   \ Mask request
+	#18 CONSTANT ICT_MASKRP   \ Mask reply
+	#19 CONSTANT ICT_MAX_TYPE \ Error
+	</code> </pre> 
+<h4>ic_code field</h4>
+	<pre> <code>
+	0   CONSTANT _#icc_net_unreached    \ dest unreachable, net unreachable
+	1   CONSTANT _#icc_dest_unreached	\ dest unreachable, host unreachable
+	2   CONSTANT _#icc_proto_unreached  \ dest unreachable, proto unreachable
+	3   CONSTANT _#icc_port_unreached   \ dest unreachable, port unreachable
+	4   CONSTANT _#icc_frag_needed      \ dest unr, frag needed & don't frag
+	5   CONSTANT _#icc_src_route_fail   \ dest unreachable, src route failed
+	6   CONSTANT _#icc_net_unknown 
+	7   CONSTANT _#icc_host_unknown
+	8   CONSTANT _#icc_scr_host_isolated
+	9   CONSTANT _#icc_net_prohibited
+	$0A CONSTANT _#icc_host_prohibited
+	$0B CONSTANT _#icc_net_tos_prob
+	$0C CONSTANT _#icc_host_tos_prob
+
+
+ 	0   CONSTANT ICC_NETRD    \ redirect: net
+	1   CONSTANT ICC_HOSTRD	  \ redirect: host
+	2   CONSTANT ICC_TOSNRD    \ redirect: type of service, net
+	3   CONSTANT ICC_TOSHRD    \ redirect: type of service, host
+	3   CONSTANT ICC_LAST_DEFINED
+
+	0   CONSTANT ICC_TIMEX	  \ time exceeded, ttl
+	1   CONSTANT ICC_FTIMEX	  \ time exceeded, frag
+
+	8   CONSTANT IC_HLEN      \ octets
+	3   CONSTANT IC_PADLEN    \ pad length (octets)	
+
+	#1sec #300 * CONSTANT IC_RDTTL	  \  ttl for redirect routes
+	</code> </pre>
+<h4>ICMP packet format (following the IP header)</h4>
+	<pre> <code>
+	\ header	
+	zero
+	DUP CONSTANT ic_type  1+    \ type of message (ICT_* above)
+	DUP CONSTANT ic_code  1+    \ code (ICC_* above)
+	DUP CONSTANT ic_cksum 2+    \ checksum of ICMP header+data
+		CONSTANT ic_length 
+
+	\ for echo and timestamp
+	ic_length
+	DUP CONSTANT ic_id   2+    \ for echo type, a message id
+	DUP CONSTANT ic_seq  2+    \ for echo type, a seq. number
+		CONSTANT ic1_length
+
+	ic_length
+	DUP CONSTANT ic_gw  IP_ALEN +	\ for redirect, gateway	
+		CONSTANT ic2_length
+
+	ic_length
+	DUP CONSTANT ic_ptr 1+          \ pointer, for ICT_PARAMP
+	DUP CONSTANT ic_pad IC_PADLEN + \
+		CONSTANT ic3_length
+
+	\ destination unreachable
+	ic_length
+	DUP CONSTANT ic_mbz CELL+    \  must be zero         
+	DUP CONSTANT ic4_length
+	    CONSTANT ic_data          \ data area of ICMP message
+	</code> </pre>
+	<p>
+	As a header can be $3C bytes long $40 bytes of original datgrame was never enough, see
+	<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0792.html">RFC792 page 5</a>
+	</p>
+	<p>
+	<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 Section 3.2.2</a> 
+	updates the requirement with. "Every ICMP error message includes the Internet 
+	header and at least the first 8 data octets of the datagram that triggered
+    the error; more than 8 octets MAY be sent; this header and data MUST be 
+	unchanged from the received datagram".
+	</p>
+	<pre> <code>
+	$80 CONSTANT  _#error_header_return_length
+
+	ic1_length ic2_length ??= 
+	ic1_length ic3_length ??=
+	ic1_length ic4_length ??=
+
+
+	ram_variable _%icmp_object
+
+</code> </pre>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+
+	\ assembler will now add to target
+	assembler>target
+
+	HOST 
+	DEFINITIONS
+
+	</code> </pre>
+<p>
+This has to be first. On a Coldfire restart execution starts at 0.
+The startup routine is position independent code that tests the
+DRAM, and then copies the kernal from the prom to the DRAM. This
+file sets the constants that need to be set to start the xcompile.
+</p>
+	<pre> <code>
+ 	\ set up the xcompiler to compile into the boot prom
+	_prom_kernel_start WINDOW
+
+        setup_dictionary
+
+        _prom_kernel_start _vector_gap + org ( Room for interrupt vectors)
+	</code> </pre>
+</body>
+</html>

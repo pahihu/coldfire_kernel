@@ -1,0 +1,100 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+    <pre> <code>
+
+	\ The BCM550 has a restart bit in FPGA
+	#BCM550h #BCM550j +  [IF]
+		: restart ( --)
+			_#SS0_self_reset _breg_SS0 C!
+		;
+	[ELSE]
+		CODE restart  ( --)
+			5 # TRAP 
+		NEXT
+	[THEN]
+
+   
+	: ?operator
+		[ _(ubase) ]T LITERAL @ user_base = 
+	;
+    
+     ram_variable %int_enable
+
+	: bye ( --)
+		zero SET-ORDER 
+		ALSO &COMMANDS 
+		DECIMAL
+		TRUE seal W!
+		\ send the termination code
+		'output_file @ :bye
+		.S
+		ABORT 
+	;
+
+	</code> </pre>
+	<p>
+	In the init routine <i>port_tube/$1F</i> is opened by the operator
+	routine and the address of the object stored in %operator_tube.
+	</p>
+	<pre> <code>
+	
+	
+	ram_variable %operator_tube
+
+
+	: op ( --) 
+		%operator_tube @ logon 
+	;    
+
+	target_also
+	&COMMANDS 
+	target_definitions
+
+	: bye bye ;
+
+	: op op ;
+
+    : hi ( --)
+		echo_off 
+		."  PASSWORD : " send
+		#$buffer get_buffer
+			buffer #$maximum_data ACCEPT  \ num
+			echo_on
+			buffer SWAP $password COUNT COMPARE
+		kill_buffer
+		_#same <> ABORT" Try again"
+		FALSE seal W!
+		CR
+		\ (klabels) @ LABELS
+		ONLY FORTH
+		DEFINITIONS
+	;
+
+    : .note ( --)
+     ." Words that can by interpreted in COMMAND> mode."  ;
+
+	target_previous_definitions
+
+    
+    
+	\ add following words to FORTH
+
+    : hi hi ;
+
+	target_previous
+    
+
+    </code> </pre>
+
+
+</body>
+</html>

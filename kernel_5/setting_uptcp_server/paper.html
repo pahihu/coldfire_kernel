@@ -1,0 +1,105 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>INTRODUCTION</h3>
+<p>
+COLDFORTH allows a program to start a new tast at runtime. COLDFORTH allows a
+task to destroy inself. It is simple to write a COLDFORTH server that listens to a port and when a remote machine calls, creates a handle to look after the connection and creates a task to deal with the work. 
+</p>
+<p>
+You can get a general overview of the serving task by looking at the
+<a HREF="../tcp/telnet_server.html">telnet_server</a>
+</p>
+<p>
+The follwoing code creates the server task. Not very long, is it. 
+</p> 
+<pre> <samp>
+#clock_low task: telnet_server
+             $" tcp_server/#23" 0 $open
+             \ change the generated client to a telnet client 
+             [ tcp_telnet ]T LITERAL OVER :client! 
+             %tcp_telnet_server !
+             BEGIN
+                     %tcp_telnet_server @ :listen
+                     start_task
+             AGAIN
+             ;task
+</samp> </pre>
+<p>
+We will now go through it line by lines. <samp>$" tcp_server/#23" 0 $open</samp>
+returns a handle to object that can handle all tcp datagrams received on port 23. The method listen deal with the initl opening seqence from a remote machine and creates another object that deals with tcp datagrams for 23 from a particular machine and port on that machine. The type of object created is refered to as the child. 
+</p>
+After the server creates the child it takes no further interest in the connection. It is yours to do with what you like. The demux come will sent packets that belong to the connection to the child and will do so until the handle is closed.
+<p>
+<p>
+For the handle to be usefull you have to read or write data to the new handle. You can have the current thread do that, but if it is it can't be listening for additional requests for service on the original handle. Tyhe solution is to create a new task and give it the handle.
+</p>
+<p>
+The next line  <samp>[ tcp_telnet ]T LITERAL OVER :client!</samp>  in the above code changes the type of client produced. The standard tcp_server will create s client that will receive and send data and that is it. A  telnet client has to deal with "WILL", "WON'", "DO" and "DON't". We could have created client as bad as the windows NT client, but we didn't telnet is supported well enough to allow remote line editing. For most application the default client gives the desired result. You can write your own client but it does require a greater knowedge of the system. This line is usually not needed.
+</p>
+<p>
+The next line <samp>%tcp_telnet_server !</samp> stores the address of the server handle in a globel variable, this is only done for debug perposes, you can leave the handle on the stack if desired, %tcp_telnet_server !
+</p>
+<p>
+The next few lines perform the server function. The :listen method of the server is called, it returns with the handle of a :cild object only when a remote machine makes a conection. The code then calls <samp>start_task</samp> to create a child task to look after the new handle.
+</p>
+<p>
+The COLDFORTH telnet server handles multiple connections.
+</p>
+<h5>Starting the child task</h5>
+<p>
+The following is the code used to create the child task.
+</p>
+<pre> <samp>
+: start_task  ( client --) 
+	one ['] telnet_action #clock_low $telnet_child child_task
+;
+</samp> </pre>
+<p>
+The code only deals with setting up the stack for the word <samp>child_task</samp>. COLDFORTH has a neat way of dealing with a new tasks. FORTH exposes the stack, <samp>child_task</samp> allows you to set the new tasks initial stack. How the the new task uses the initial stack data depends on the new tasks code.
+</p>
+<p>
+The stack description for child_task is:
+</p>
+<samp>
+( ?? number task_word priority description_string --)
+</samp>
+<p>
+Where:<br>
+<table>
+<tr><td>number</td><td>Number of stack items to be transfered to the child.</td></tr>
+<tr><td>task_word</td><td>The execution token of the word to be executed by the new task.</td></tr>
+<tr><td>priority</td><td>The priority level the new task is to be placed on.</td></tr>
+<tr><td>description_string</td><td>The name the task is going to be called.</td></tr>
+</table>
+</p>
+<p>
+So the code above supplied the new task word with one stack item, in this case the handle returned by the servers :listen method.
+</p>
+<h5>The child task</h5>
+<p>
+From the description above and the code it is obvious that the word executed by the child task is called <samp>telnet_action</samp>, the code for that word is.
+</p>
+<samp> <pre>
+: telnet_action  ( handle -- )
+	DUP 'output_file !
+	DUP 'input_file !
+	'abort_file !
+	prompt
+;
+</pre></samp>
+<p>
+All this word does is install the supplied handle as the default input, output and error path, and execute the word <samp>prompt</samp>. There is nothing special about the word <samp>prompt</samp> used by the telnet chid, it is the used by all tasks the supply forth interpretation. If however you dig into the :child code you will find that a loss of connection will result in the deth of the child task.
+</p>
+
+
+
+</body>
+</html>

@@ -1,0 +1,97 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Pre dates tcp/ip. Could be used to talk to tasks through dual port memeory.
+</p>
+<pre> <samp>
+S" port_tube/$1F" R/W OPEN-FILE $ABORT
+</samp> </pre>
+<pre> 
+<code>   
+	tube class
+		m: ( --)
+			\ does the unlinking
+			this [parent] :destruct
+		; overrides :destruct
+
+		\ This will set up up as a normal tube, it is Sopen that converts us to
+		\ port_tube
+		m: ( number parent--)
+			this [parent] :construct
+		; overrides :construct
+</code></pre>
+<p>
+You can open the device and particular port with the code
+port_tube/nn this code should receive the string nn. port_tube is the name of the driver.
+As the open operation creates the dual port memory area
+the device must be opened and closed from a task that has duel
+port memory to allocate ( all owned by operator in the begining).
+</p>
+<pre><code>
+		m: ( addr num mode-- handle )
+			this :!mode
+			\ because thats what out I/O standard expect us to do.
+			[CHAR] / remove_leading
+			2DUP this :!name
+			\ because this is what we want
+			Snumber \ number<--
+			DUP #port_tube_max < not ABORT" Port number out of range"
+			\ Now this may seem strange but we have to take care.
+			\ Multiple tasks can open the same port.
+			DUP CELLS %port_tube_control> +
+			_lock_word
+			@ not IF
+				port_here \ num base(--
+				\ this could be nasty an ABORT with interrupts disabled
+				\ so make sure you catch it.
+				_#control_block_size ['] port_allot CATCH ?DUP IF
+					_unlock_word $ABORT
+				THEN
+				\ num base(--
+				DUP _#control_block_size ERASE
+
+				port_here 
+
+				OVER #p_tpoint + !
+
+				_#write_buffer_length
+				['] port_allot CATCH ?DUP IF
+					_unlock_word $ABORT
+				THEN
+				OVER \ num base num<--
+				CELLS %port_tube_control> + !
+			THEN
+			_unlock_word
+			\ num<--
+			CELLS %port_tube_control> + @ this :!control_block
+			this
+		; overrides :file_open
+
+		m: ( indent --)
+			CR DUP SPACES ." port_tube | " ." Object: " this .h
+			DROP send
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+	end_class port_tube
+
+target_previous_definitions
+target_previous
+
+
+</code> 
+</pre>
+</body>
+</html>

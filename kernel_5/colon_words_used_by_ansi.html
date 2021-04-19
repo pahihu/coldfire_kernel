@@ -1,0 +1,162 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name="zero"></a>
+<h5>zero ( --0)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	0 CONSTANT zero
+ 	</code> </pre>
+
+<a name="one"></a>
+<h5>one ( --1)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	1 CONSTANT one
+	</code> </pre>
+
+<a name="two"></a>
+<h5>two ( --2)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	2 CONSTANT two
+	</code> </pre>
+
+
+<a name="three"></a>
+<h5>three ( --3)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	3 CONSTANT three
+	</code> </pre>
+
+
+<a name="four"></a>
+<h5>four ( --4)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	4 CONSTANT four  
+	</code> </pre>
+
+<a name="eight"></a>
+<h5>eight ( --8)</h5>
+<p>
+Traditionally forths have redefined common used numbers as words, this system
+provides the words
+</p>
+  
+	<pre> <code>  
+	8 CONSTANT eight  
+	</code> </pre>
+<a name="4dup"></a>
+<h5>4dup</h5>
+<p>
+	Duplicate the top four stack items.
+</p>
+  
+	<pre> <code>
+	: 4dup  ( a b c d -- a b c d )
+		2OVER 2OVER 
+	;
+	</code> </pre>
+
+<a name="jump"></a>
+<h5>jump</h5>
+<p>
+	Third stack item copied to the top.
+</p>
+  
+	<pre> <code>
+	.S .( jump)
+	: jump ( a b c -- a b c a )  
+		two PICK 
+	;
+	</code> </pre>
+<a name="char!"></a>
+<h5>char!</h5>
+<p>
+Same as C! available because C! is often used for byte operations.
+</p>
+
+	<pre> <code>
+	: char! ( character addr -- )
+		C!
+	;  inline \ renamed zero over head
+	</code> </pre>
+
+<a name="char@"></a>
+<h5>char@</h5>
+<p>
+Same as C@ available because C@ is often used for byte operations.
+</p>
+
+	<pre> <code>
+	: char@ ( addr -- character )
+		C@
+	; inline
+        </code></pre>
+        <a name="byte!"></a>
+<h5>byte!</h5>
+<p>
+ANSI forth has no byte words.
+</p>
+
+	<pre> <code>
+	: byte! ( byte addr -- )
+		C!
+	;  inline \ renamed zero over head
+	</code> </pre>
+
+<a name="byte@"></a>
+<h5>byte@</h5>
+<p>
+ANSI forth has no byte words.
+</p>
+
+	<pre> <code>
+	: byte@ ( addr -- byte )
+		C@
+	; inline
+	</code> </pre>
+<p>
+	</code> </pre>
+<p>
+You use CHAR to get from characters to bytes, you use byte&gt;char
+get from bytes to char
+</p>
+	<pre> <code>
+	: bytes>chars ( n -- n2)
+	; inline
+	</code> </pre>
+
+</body>
+</html>
+

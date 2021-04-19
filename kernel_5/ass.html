@@ -1,0 +1,4896 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<h5>Bugs to be fixed</h5>
+<h5>bugs fixed</h5>
+<pre>
+version 2.5
+	5474 support added, FPU added.
+version 2.4
+        Added instruction pointers, used to detect JSR/RTS can be extened to optimise
+Version 2.3
+	5407 support added; the 68k instructions are ruturning.
+Version 2.2
+	32 bit branch BRA, coldfire doesn't support
+	long word immediate value MUL
+Verion 2.1
+	Recoded in forth.
+Version 2.0
+	Instruction support limited to coldfire, the 68k has gone.
+</pre>
+
+<p>
+##### A forward reference, not too sure if still needed
+</p>
+<pre> <code>
+| CREATE 'init_assembler 0 t,
+
+| : init_assembler ( --)
+    'init_assembler @execute
+;
+</code></pre>
+<pre><code>
+\ we allow for a couple of reclaims
+4 CONSTANT _#instruction_point_count
+
+ram_create %instruction_pointers _#instruction_point_count CELLS ram_allot
+
+: move_instruction_pointers ( --)
+        %instruction_pointers [ %instruction_pointers cell + ]T LITERAL [ _#instruction_point_count 1 - CELLS ]T LITERAL MOVE
+;
+: reclaim_instruction ( --)
+ [ %instruction_pointers cell + ]T LITERAL %instruction_pointers [ _#instruction_point_count 1 - CELLS ]T LITERAL MOVE
+ zero [ %instruction_pointers _#instruction_point_count 1 - CELLS + ]T LITERAL !
+;
+
+</code> </pre>
+<p>
+When in assembler you lose access to the forth OR and AND, these two words are
+there to give them back to you.
+</p>
+<pre> <code>
+
+| : forth_or OR ;
+| : forth_and AND ;
+
+HOST
+</code> </pre>
+<p>
+Used to install a exception in the interrupt tables. To create an 
+exception word use <a HREF="./interrupt_colon.html#interrupt:">interrupt:</a>
+
+</p>
+	<pre> <code>
+	: EXCEPTION ( a n) 4 *  _interrupt_vectors  + ! ;
+	</code> </pre>
+<p>
+add <i>assembler</i> to the target : search order, all : words
+are now added to the target <i>assembler</i> vocabulary.
+</p>
+	<pre> <code>
+	target_also
+	ASSEMBLER
+	target_definitions
+	</code> </pre>
+<p>
+add <i>assembler</i> to the host : search order, all host : words
+are now added to the host <i>assembler</i> vocabulary.
+</p>
+	<pre> <code>
+	assembler DEFINITIONS
+	</code> </pre>
+	<h5>Assemble version stuff</h5>
+	<pre> <code>
+	: .history ( --)
+		CR
+		." Assembler history" CR
+		."    2.0 COLDFIRE version" CR
+		."    2.1 All assembler removed ready for port to GFORTH" CR 
+		."    2.2 Some bug fixes" CR 
+		."    2.3 5407 instructions added" CR
+  		."    2.4 Added JSR/RTS instruction pointers" CR
+                ."    2.5 5474 support added" CR
+	;
+
+	CREATE $ASSEMBLER_VERSION ( --)	
+		," 2.5"
+
+	#250 CONSTANT ASSEMBLER_VERSION
+
+	: .version $ASSEMBLER_VERSION $type ;
+	</code> </pre>
+<p>
+Vectored for cross compile. When the system want to cross compile
+the assembler has to store the results in the target dictionary.
+Instead of reloading the assembler these vectored words are altered.
+</p>
+	<pre> <code>
+	| : ahere 'ahere @execute ;
+	| : aw!   ( 16b addr --) 'aw!   @execute ;
+	| : aw@   ( addr -- 16b) 'aw@   @execute ;
+	| : agap  ( n --)        'agap  @execute ;
+	</code> </pre>
+<p>
+Following are defined from vectored words.
+</p>
+	<pre> <code>
+	| : a!    ( 32b addr--)  >R  DUP >w< I aw!  R> 2+ aw! ;
+
+	| : a@    ( addr -- 32b) DUP aw@ 10000 * SWAP 2+ aw@ + ;
+
+	| : AMOVE ( s d n --)
+		OVER + SWAP ?DO 
+			DUP W@  I  aw!  2+ 2 
+		+LOOP 
+		DROP 
+	;
+
+        </code></pre>
+
+<p>
+The assembler makes heavy use of vector tables. These words supply
+support for the building of these tables. Used at xcompile time and lost.
+</p>
+	<pre> <code>
+	forth  : init_vectors ( word number --)
+	  	forth  DUP HOST tw,
+	  	forth  zero DO 
+	  		DUP HOST t, forth 
+	  	LOOP 
+	  	DROP 
+	;
+
+	forth  : add_vector ( addr num table --)
+	  	forth DUP HOST TW@ forth jump > not
+	  	ABORT" Vector number out of range"
+	  	SWAP 4* + 2+ HOST t! 
+	;
+
+	\ move back to assembler ( in host) after the above forth's.
+	assembler
+	</code> </pre>
+<p>
+Hard to credit it but for the 68040 the value of this was 22. The coldfire
+instruction set is such that it is now 6.
+</p>
+##### change to 6
+	<pre> <code>
+	| 22 CONSTANT #max_instruction
+
+
+( Sytem errors)
+( None of these should be seen)
+( 01  test_vectors.  Unused table entry called )
+(     [ test_set test_entry ] )
+( 02  Effective address compile was called with )
+(     wrong ef code in #_code . )
+( 03  Data size code supplied by relative words wrong, )
+(     this one you should never get, a trivial test. )
+( 04  The compile code vector failed. )
+( 05  #vectors. Non entry called. )
+( 06  effective address sets, no entry. )
+( 07  The code supplied to makebitfield was wrong.)
+( 08  #_displacment was non zero)
+( 09  #_scale was non zero )
+( 0A  mode>regoffset entry not set)
+
+
+( test_error)
+( n is the number of stack its to print)
+
+| : (system_error) ( ? n error_code --)
+	SWAP zero ?DO 
+		.h
+	LOOP
+	.h  TRUE
+	ABORT" ASSEMBLER SYSTEM_ERROR PLEASE RECORD NUMBERS" 
+;
+
+( %cpu Assembler )  
+HEX
+0F  EQU #all_68000
+F0  EQU #all_coldfire
+
+1   CONSTANT #68000
+2   CONSTANT #68040
+4   CONSTANT #CPU32
+10  CONSTANT #5300
+20  CONSTANT #5400
+40  CONSTANT #5474
+
+: !CPU  ( n --) %cpu ! ;
+
+( special register codes)  
+HEX
+
+1 EQU #PC
+2 EQU #SR
+3 EQU #CCR
+4 EQU #ACC
+5 EQU #MASK
+6 EQU #MACSR
+( USP is encoded as a control reg, but encoded An USP MOV)
+| 800 EQU #USP
+( CPUs that support long branches)
+| #CPU32 #68040 + #5400 + #5474 + CONSTANT #long_branch
+
+( CPUs that support long PC rel)
+( e.g. [ n32 PC ]              )
+| #CPU32 #68040 + CONSTANT #long_PC
+
+(  %ef_table contains the effective address data)
+| 0   	DUP  CONSTANT #_displacement      4 + ( The constant)
+	DUP  CONSTANT #_scale             4 + ( ind scale factor)
+( the reg code has to be 16 bits for MOVC)
+	DUP CONSTANT #_reg               	2 + ( First reg)
+	DUP CONSTANT #_index             	2 + ( Second reg)
+	DUP CONSTANT #_size              	1 + ( ind size)
+|	DUP CONSTANT #_mode              	1 + ( ] ]+ -] # \\)
+    	DUP CONSTANT #_address_data
+|   	DUP CONSTANT #_code          	    1 + ( ef_code)
+|   	DUP CONSTANT #_flags				1 +
+		CONSTANT    #ef_entry_length
+| 04    CONSTANT    #ef_entryASL
+
+
+( The ef_code is determined when the mnemonic is compiled)
+(  %ef_table contains the effective address data)  HEX
+( We need three sets of entries per field, we make it four)
+( so ASL can be used.)
+
+| 06 CONSTANT     #ef_fieldASL
+| 40 CONSTANT     #ef_field_length
+| 05 CONSTANT     #num_fields  	( source and destination)
+				( can be source, dest, bit_field_spec)
+
+3 CONSTANT #indirection ( maximum level of indirection)
+
+
+\ We define the data area using a ubuffer so multiple tasks can use the assembler
+
+\ determine the data area offsets
+zero 
+DUP CONSTANT _#ind_stack  #indirection 4* +
+DUP CONSTANT _#indirection CELL+
+DUP CONSTANT _#field       CELL+
+DUP CONSTANT _#ef_table   #ef_field_length
+				#num_fields  *  +
+DUP CONSTANT _#ximage     #max_instruction +
+DUP CONSTANT _#xh         CELL+
+    CONSTANT _#assembler_data_size
+
+_#assembler_data_size ubuffer _assembler_data_area
+( data area for indirection) 
+DECIMAL
+\ when you entry a [ ] pair the address of the data stack
+\ is saved, this is used to determine how many values
+\ have been pushed on the stack.
+: %ind_stack    _assembler_data_area _#ind_stack + ;
+\ number of [] pairs found, coldfire is limited to one,
+\ this assembler once supported the 68040 which requireds two
+: %indirection  _assembler_data_area _#indirection + ;
+\ Number of fields found the MAC increases the possible number
+\ 4
+: %field        _assembler_data_area _#field + ;
+: %ef_table     _assembler_data_area _#ef_table + ;
+\ we build the code here and then copy to dictionary
+: %ximage       _assembler_data_area _#ximage + ;
+\ points to location within %ximage
+: %xh           _assembler_data_area _#xh + ;
+
+
+( image area support) 
+HEX
+
+
+	: XHERE 
+		%xh @
+	;
+
+
+
+	: XW,  ( 16b --) 
+		%xh @ W!
+		2 %xh +!
+	;
+
+
+	: X, ( 32b --)
+		%xh @ !
+		4 %xh +!
+	;
+
+
+	: @opcode ( --16b)
+		%ximage W@
+	;
+
+
+	: !opcode ( 16b--)
+		%ximage W!
+	;
+
+
+
+
+
+| 0 CONSTANT #source
+| 1 CONSTANT #dest
+| 2 CONSTANT #Freg
+| 3 CONSTANT #Wreg
+
+
+( #_reg and #_index description Assembler ) 
+( Only #_reg should see the fancy modes)
+binary
+| 1000000000000000    CONSTANT    #control_reg  ( reg num 12 bits)
+| 0100000000000000    CONSTANT    #cpu_reg      ( reg num 4 bits)
+| 0010000000000000    CONSTANT    #special_reg
+| 0001000000000000    CONSTANT    #flag         ( cond 4 bits)
+| 0000100000000000    CONSTANT    #cache        ( 2 bits)
+| 1111100000000000    CONSTANT    #cache_test
+( #reg useage)
+| 0000000000000111    CONSTANT    #reg_number
+| 0000000000001000    CONSTANT    #reg_set      ( 0 = data 1 = add)
+| 0000000000001000    CONSTANT    #addr
+| 0000000000000000    CONSTANT    #data
+| 0000000000001111    CONSTANT   #set&reg
+#cpu_reg              CONSTANT    #data_reg
+#cpu_reg #reg_set +   CONSTANT    #addr_reg
+
+DECIMAL
+
+( size codes used in assembler)
+| 1 CONSTANT #byte
+| 2 CONSTANT #word
+| 3 CONSTANT #long
+( #mode description)
+
+\ no shift is default
+01 CONSTANT #flags<<
+03 CONSTANT #flags>>
+\ no mask is default
+04 CONSTANT #flags&
+\ lower is default
+08 CONSTANT #flagsU.
+
+binary
+
+| 00000001 CONSTANT #_]+
+| 00000010 CONSTANT #_-]
+| 00000100 CONSTANT #_#
+| 00001000 CONSTANT #_]
+| 00010000 CONSTANT #_}
+| 00100000 CONSTANT #_\\
+
+HEX
+( The test routines need to know the ef_table offsets)
+( The order of entries determines order of test.)
+( We test in quickest order )
+CREATE ef_offsets
+	0      tw,                                   zero
+	#_mode          tw,                          1+
+	#_reg           tw,                          1+
+	#ef_entry_length   #_mode        + tw,       1+
+	#ef_entry_length   #_reg         + tw,       1+
+	#ef_entry_length  2*  #_mode        + tw,    1+
+	#ef_entry_length  2*  #_reg         + tw,    1+
+	#_displacement   tw,                         1+
+	#_index         tw,                          1+
+	#_size          tw,                          1+
+	#_scale         tw,                          1+
+	#ef_entry_length   #_displacement + tw,      1+
+	#ef_entry_length   #_index       + tw,       1+
+	#ef_entry_length   #_size        + tw,       1+
+	#ef_entry_length   #_scale       + tw,       1+
+	#ef_entry_length  2*  #_displacement + tw,   1+
+	#ef_entry_length  2*  #_index       + tw,    1+
+	#ef_entry_length  2*  #_size        + tw,    1+
+	#ef_entry_length  2*  #_scale       + tw,    1+
+	0 tw,                                        1+   \ cpu type
+\ count of entries
+ef_offsets TW!
+
+
+HEX
+( This table contains a byte for each entry in the %ef_table)
+( The byte indicates the test to be done on the entry)
+( the value is a test vector number by 4.)
+( Note that the data arrangment make it a simple matter to )
+( vector to the test routine.)
+
+040 EQU #max_test_codes
+
+( The #vectors are used in the INSTRUCTION tables)
+( They are used to limit the range of immediate values)
+
+010 EQU #max_#vectors
+
+( The ef_test_table starts with an entry count and then )
+( has entries arranged)
+14  CONSTANT    #tests  ( Number of tests to be performed)
+
+
+0   DUP EQU    #ef_test_tests  #tests +
+	DUP CONSTANT    #ef_test_cpu    1+  ( cpus that support)
+
+		CONSTANT    #ef_test_entry_length
+
+
+	: notest ( tested_entry --flag)
+		DROP TRUE
+	;
+
+	: 1zero (  tested_entry -- flag)
+		C@ 0= 
+	;
+
+
+	: 2zero (  tested_entry -- flag)
+		W@ 0= 
+	;
+
+
+	: 4zero (  tested_entry -- flag)
+		@ 0= 
+	;
+ 
+
+	: data_reg ( tested_entry --flag)
+		W@
+		[ #reg_number -1 XOR ]T LITERAL AND	#data_reg =
+	;
+
+
+	: addr_reg ( tested_entry --flag)
+		W@ 
+		[ #reg_number -1 XOR ]T LITERAL AND	#addr_reg =		 
+	;
+
+	: ccr ( tested_entry --flag)
+		W@ 
+		[ #special_reg #CCR + ]T LITERAL =		 
+	;
+
+	: acc ( tested_entry --flag)
+		W@ 
+		[ #special_reg #ACC + ]T LITERAL =		 
+	;
+
+	: mask ( tested_entry --flag)
+		W@ 
+		[ #special_reg #MASK + ]T LITERAL =		 
+	;
+
+	: macsr ( tested_entry --flag)
+		W@ 
+		[ #special_reg #MACSR + ]T LITERAL =		 
+	;
+
+	: pc_reg ( tested_entry --flag)
+		W@ 
+		[ #special_reg #PC + ]T LITERAL =		 
+	;
+
+
+	: sr ( tested_entry --flag)
+		W@ 
+		[ #special_reg #SR + ]T LITERAL =		 
+	;
+
+
+	\ #### not needed
+	: usp ( tested_entry --flag)
+		W@ 
+		[ #special_reg #USP + ]T LITERAL =		 
+	;
+
+
+	: caches ( tested_entry --flag)
+		W@
+		#cache_test AND 
+		[ #cache ]T LITERAL =		 
+	;
+
+
+	: cond ( tested_entry --flag)
+		W@ #flag AND 0<>		 
+	;
+ 
+
+	: rc ( tested_entry --flag)
+		W@ #control_reg AND 0<>		 
+	;
+
+
+
+	: n16 ( tested_entry --flag)
+		@ -8000 8000 WITHIN
+	;
+
+
+	: n8 ( tested_entry --flag)
+		@ -80 80 WITHIN
+	;
+
+
+	: 0>31 ( tested_entry --flag)
+		@ [ 1F -1 XOR ]T LITERAL AND 0=
+	;
+
+
+	: mode\\ ( tested_entry --flag)
+		C@ #_\\  =
+	;
+
+
+	: mode} ( tested_entry --flag)
+		C@ #_} =
+	;
+
+	: mode] ( tested_entry --flag)
+		C@ #_] =
+	;
+
+
+	: mode]+ ( tested_entry --flag)
+		C@ #_]+ =
+	;
+
+
+	: mode-] ( tested_entry --flag)
+		C@ #_-] =
+	;
+
+
+	: mode# ( tested_entry --flag)
+		C@ #_# =
+	;
+ 
+ 
+\	: W.L. ( tested_entry --flag)
+\		C@
+\		DUP #long = 
+\		OVER #word = OR
+\		\ nothing is the same as long
+\		SWAP 0= OR
+\	;
+
+	: .long ( tested_entry --flag)
+		C@
+		DUP #long = 
+		\ nothing is the same as long
+		SWAP 0= OR
+	;
+
+	: 1scale ( tested_entry --flag)
+		@
+		DUP 0= 
+		SWAP 1 = OR
+	;
+
+	: allscale ( tested_entry --flag)
+		@
+		DUP 0= 
+		OVER 1 = OR
+		OVER 2 = OR
+		OVER 4 = OR
+		SWAP 8 = OR
+	;
+
+
+
+	: reg  ( tested_entry --flag)
+		W@
+		[ #reg_number -1 XOR ]T LITERAL AND
+		[ #reg_number -1 XOR ]T LITERAL AND
+		#cpu_reg =
+	;
+
+
+	: test_cpu ( test_entry tested_entry -- test_entry flag)
+		DROP DUP #ef_test_cpu + C@
+		%cpu @ AND 0= ABORT" Addressing mode not supported by selected CPU"
+		TRUE 
+	;
+
+
+
+	: test_error ( test_table_entry tested_entry --)
+		ABORT" System error test vector missing
+	;
+
+
+( sort names for the test table)
+zero
+DUP  EQU =notest          4+
+DUP  EQU =1zero           4+
+DUP  EQU =2zero           4+
+DUP  EQU =4zero           4+
+DUP  EQU =data_reg        4+
+DUP  EQU =addr_reg        4+
+DUP  EQU =pc_reg          4+
+\ DUP  EQU =z+pc_reg        4+
+DUP  EQU =reg             4+
+\ DUP  EQU =W.L.            4+
+DUP  EQU =.long           4+
+DUP  EQU =allscale        4+
+DUP  EQU =1scale          4+
+DUP  EQU =]               4+
+DUP  EQU =]+              4+
+DUP  EQU =-]              4+
+DUP  EQU =#               4+
+DUP  EQU =cpu             4+
+DUP  EQU =CCR             4+
+DUP  EQU =ACC             4+
+DUP  EQU =MASK            4+
+DUP  EQU =MACSR           4+
+DUP  EQU =SR              4+
+DUP  EQU =USP             4+
+DUP  EQU =Rc              4+
+DUP  EQU =\\              4+
+DUP  EQU =caches          4+
+DUP  EQU =cond            4+
+DUP  EQU =}               4+
+DUP  EQU =n16             4+
+DUP  EQU =n8              4+
+DUP  EQU =0>31            4+
+
+#max_test_codes 4* ??< 
+
+
+\ xt table
+| CREATE test_vectors
+	\ code word
+	' test_error  #max_test_codes init_vectors
+
+' notest           =notest    	4/ test_vectors add_vector
+' 1zero     		=1zero     	4/ test_vectors add_vector
+' data_reg  		=data_reg  	4/ test_vectors add_vector
+' addr_reg  		=addr_reg  	4/ test_vectors add_vector
+' pc_reg    		=pc_reg    	4/ test_vectors add_vector
+\ ' z+pc_reg  		=z+pc_reg  	4/ test_vectors add_vector
+' reg       		=reg       	4/ test_vectors add_vector
+' 2zero     		=2zero     	4/ test_vectors add_vector
+' mode]     		=]         	4/ test_vectors add_vector
+' mode]+    		=]+       	4/ test_vectors add_vector
+' mode-]    		=-]       	4/ test_vectors add_vector
+' mode#     		=#        	4/ test_vectors add_vector
+\ ' W.L.             	=W.L.     	4/ test_vectors add_vector
+' .long             =.long      4/ test_vectors add_vector
+' allscale         	=allscale 	4/ test_vectors add_vector
+' 1scale           	=1scale   	4/ test_vectors add_vector
+' 4zero            	=4zero    	4/ test_vectors add_vector
+' test_cpu         	=cpu      	4/ test_vectors add_vector
+' ccr              	=CCR      	4/ test_vectors add_vector
+' acc              	=ACC      	4/ test_vectors add_vector
+' mask              =MASK      	4/ test_vectors add_vector
+' macsr             =MACSR      4/ test_vectors add_vector
+' sr               	=SR       	4/ test_vectors add_vector
+' usp              	=USP      	4/ test_vectors add_vector
+' rc               	=Rc       	4/ test_vectors add_vector
+' mode\\           	=\\       	4/ test_vectors add_vector
+' caches           	=caches   	4/ test_vectors add_vector
+' cond             	=cond     	4/ test_vectors add_vector
+' mode}            	=}        	4/ test_vectors add_vector
+' n16              	=n16      	4/ test_vectors add_vector
+' n8               	=n8      	4/ test_vectors add_vector
+' 0>31             	=0>31     	4/ test_vectors add_vector
+
+( address codes)
+
+zero
+| 	DUP CONSTANT #.null               1+
+	DUP EQU #.Dn                       1+
+	DUP EQU #.An                       1+
+	DUP EQU #.[An]                     1+
+	DUP EQU #.[An]+                    1+
+	DUP EQU #.[An-]                    1+
+	DUP EQU #.[n16.An]                 1+
+	DUP EQU #.[n16]                    1+
+|	DUP CONSTANT #.[n32]               1+
+| 	DUP CONSTANT #.#                   1+
+	DUP EQU #.[n8.An.In.1]             1+
+	DUP EQU #.[n8.An.In.sc]            1+
+	DUP EQU #.[n.PC]                   1+
+	DUP EQU #.[n.PC.In.1]              1+
+	DUP EQU #.[n.PC.In.sc]             1+
+	DUP EQU #.CCR                      1+
+	DUP EQU #.ACC                      1+
+	DUP EQU #.MASK                     1+
+	DUP EQU #.MACSR                    1+
+	DUP EQU #.SR                       1+
+	DUP EQU #.USP                      1+
+	DUP EQU #.Rc                       1+
+	DUP EQU #.Rlist                    1+
+	DUP EQU #.caches                   1+
+	DUP EQU #.cond 1+
+		EQU #.num_test_sets
+
+
+
+\ test entry order
+\
+\   mode                        reg
+\   [mode                       [reg
+\   [[mode                      [[reg
+\   displacement                index
+\   size                        scale
+\   [displacement               [index
+\   [size                       [scale
+\   [[displacement              [[index
+\   [[size                      [[scale
+\   general                     cpu
+
+\  See ef_offsets
+CREATE ef_test_table
+#.num_test_sets tw,          zero
+	( Null)
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=notest     tc,  =4zero      tc, ( we allow size code)
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+	#all_68000 #all_coldfire +        tc,
+DUP #.null ??=
+
+
+( ef_test_table)  1+
+	( Dn)
+	=1zero      tc,  =data_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.Dn ??=
+
+
+( ef_test_table)  1+
+	( An)
+	=1zero      tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.An ??=
+
+
+( ef_test_table) 1+
+	( [ An ]  accept [ An W. ] has no meaning )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=.long      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[An] ??=
+
+
+( ef_test_table) 1+
+	( [ An ]+ )
+	=1zero      tc,  =2zero      tc,
+	=]+         tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[An]+ ??=
+
+
+( ef_test_table) 1+
+	( [ An -] )
+	=1zero      tc,  =2zero      tc,
+	=-]         tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[An-] ??=
+
+
+( ef_test_table) 1+
+	( [ n16 An ] )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=n16        tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n16.An] ??=
+
+
+( ef_test_table) 1+
+	( [ n16 ]  note [ ] <=> [ 0 ]  )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=n16        tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n16] ??=
+
+
+( ef_test_table) 1+
+	( [ 32b ]  )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n32] ??=
+
+
+( ef_test_table) 1+
+	(  #  )
+	=#          tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=notest     tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.# ??=
+
+
+( ef_test_table) 1+
+	(  [ n8 An In 1 ]  will accept [ An In ]  )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=n8         tc,  =reg        tc,
+	=.long      tc,  =1scale     tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n8.An.In.1] ??=
+
+
+( ef_test_table) 1+
+	(  [ n8 An In scale ]  will accept [ An In scale ]  )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =addr_reg   tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=n8         tc,  =reg        tc,
+	=.long       tc,  =allscale   tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =cpu        tc,
+
+	#CPU32 #5300 + #5400 + #68040 + tc,
+DUP #.[n8.An.In.sc] ??=
+
+
+( ef_test_table) 1+
+	(  [ n PC ]  at this stage n is unknown as extension )
+	(  address not known.)
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =pc_reg     tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n.PC] ??=
+
+
+( ef_test_table) 1+
+	(  [ n PC In 1 ]  will accept [ PC In ]  )
+ ( at this state n is unknown as extension address unknown)
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =pc_reg     tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =reg        tc,
+	=.long      tc,  =1scale     tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.[n.PC.In.1] ??=
+
+
+( ef_test_table) 1+
+	(  [ n PC In scale ]  will accept [ PC In scale ]  )
+	=1zero      tc,  =2zero      tc,
+	=]          tc,  =pc_reg     tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =reg        tc,
+	=.long      tc,  =allscale   tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =cpu        tc,
+
+	#CPU32 #5300 + #5400 + #68040 + tc,
+DUP #.[n.PC.In.sc] ??=
+
+
+( ef_test_table)  1+
+	( CCR)
+	=1zero      tc,  =CCR   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+	DUP #.CCR ??=
+
+( ef_test_table)  1+
+	( ACC)
+	=1zero      tc,  =ACC   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+	DUP #.ACC ??=
+
+( ef_test_table)  1+
+	( MASK)
+	=1zero      tc,  =MASK   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+	DUP #.MASK ??=
+
+( ef_test_table)  1+
+	( MACSR)
+	=1zero      tc,  =MACSR   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+	DUP #.MACSR ??=
+
+
+( ef_test_table)  1+
+	( SR)
+	=1zero      tc,  =SR   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.SR ??=
+
+
+( ef_test_table)  1+
+	( USP)
+	=1zero      tc,  =USP   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.USP ??=
+
+
+( ef_test_table)  1+
+	( Rc)
+	=1zero      tc,  =Rc   tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#68040 #CPU32 + #5300 + #5400 +     tc,
+DUP #.Rc ??=
+
+
+( ef_test_table)  1+
+	(  Rlist )
+	=\\         tc,  =notest     tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=notest     tc,  =notest     tc,
+	=notest     tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +        tc,
+DUP #.Rlist ??=
+
+( ef_test_table)  1+
+	( caches )
+	=1zero      tc,  =caches     tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =cpu        tc,
+
+	#all_coldfire     tc,
+
+	DUP #.caches ??=
+
+( ef_test_table)  1+
+	( cond )
+	=1zero      tc,  =cond       tc,
+	=1zero      tc,  =2zero      tc,
+	=1zero      tc,  =2zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=notest     tc,  =4zero      tc,
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc, 
+	=4zero      tc,  =2zero      tc,
+	=1zero      tc,  =4zero      tc,
+	=notest     tc,  =notest     tc,
+
+	#all_68000 #all_coldfire +                        tc,
+DUP #.cond  ??=
+
+1+ #.num_test_sets ??=
+
+
+	: entry_test ( ef_test_table entry -- ef_test_table entry flag )
+		#tests zero DO
+			\ ef_test_table  entry
+			2DUP  \ test_table entry test_table entry(-- 
+			I 2*  [ ef_offsets 2+ ]T LITERAL + W@ + \ test_table entry test_table table_entry (--
+			\ The vector table is long enough to support all possible codes.
+			\ The unused codes will generate errors.
+			OVER I + C@ [ test_vectors 2+ ]T LITERAL + 
+			\ .S ." test_entry entry test_table vector(--"
+			@execute \ test_table entry test_table flag(--
+			NIP                   \ test_table entry flag(--
+			0= IF   \ this entry failed
+				FALSE
+				2r>drop
+				EXIT
+			THEN
+		LOOP
+		TRUE
+	;
+	\ get here and all is ok
+
+
+	| : can't_do ( --)
+		TRUE ABORT" Instruction modifiers wrong."  ;
+
+	: field_address ( n --address)
+		#ef_fieldASL LSHIFT
+		%ef_table + 
+	;
+	
+
+	: ef_code ( entry --)
+		ef_test_table 2+   \ entry test_table
+		SWAP               \ test_table entry (--
+		ef_test_table W@ zero DO
+			\ test_table entry(--
+			entry_test IF ( this is it)
+				I SWAP #_code + C! 
+				DROP
+				2r>drop
+				EXIT
+			THEN
+			SWAP
+			#ef_test_entry_length +
+			SWAP 
+		LOOP
+\		$100 DUMP
+		TRUE ABORT" Instruction modifiers wrong."  
+	;
+
+ 
+| CREATE code>regoffset
+#.num_test_sets ALLOT
+0                    #.Rc       code>regoffset + TC!
+0                    #.Dn       code>regoffset + TC!
+0                    #.An       code>regoffset + TC!
+0                    #.caches   code>regoffset + TC!
+0                    #.cond     code>regoffset + TC!
+#ef_entry_length     #.[An-]    code>regoffset + TC!
+#ef_entry_length     #.[An]+    code>regoffset + TC!
+#ef_entry_length     #.[An]     code>regoffset + TC!
+#ef_entry_length     #.[n16.An] code>regoffset + TC!
+
+
+( register use words)
+\ The order things are encounted has to be retained.
+\ n r has to be stored     displacment reg
+\ r n has to be stored     scale       reg
+\ n   has to be stored     displacment
+
+\ The rules are, r stores into displacement
+\                ] stores into scale if reg found.
+
+| : wrong_cpu ( --) TRUE ABORT" Register not supported by selected CPU." ;
+| : to_many]    	TRUE ABORT" Too many closing brackets." ;
+| : stack_under 	TRUE ABORT" Stack underflow." ;
+| : stack_over  	TRUE ABORT" To many stack items." ;
+| : mode_used   	TRUE ABORT" Mixed addressing modes." ;
+| : incorrect   	TRUE ABORT" Numbers and registers mixed up." ;
+| : to_many_fields	TRUE ABORT" To many fields." ;
+| : reg_list_error	TRUE ABORT" Register list structure error." ;
+| : to_many{ 		TRUE ABORT" To many opening brackets." ;
+| : to_many[ 		TRUE ABORT" To many opening brackets." ;
+
+zero 
+DUP CONSTANT _#register_code 2+
+DUP CONSTANT _#register_cpu  2+
+DROP
+
+forth : REGISTER  
+	HOST (CREATE) tw, tw, 
+	DOES>  ( ?? pfa --)
+		DUP _#register_cpu + W@ %cpu @ AND not ABORT" Wrong cpu" \ ?? pfa(--
+		%indirection @ #ef_entryASL LSHIFT   \ ?? pfa indirection (--
+		%field @ #num_fields < not ABORT" To many fields"  \ ?? pfa indirections(--
+		%field @ #ef_fieldASL LSHIFT   \ ?? pfa indirection field (--
+		+ %ef_table + \ pfa addr(--
+		( If register is part of a list treat differently)
+		( This deals with MMOV )
+		DUP #_mode + C@ #_\\ = IF  \ pfa addr(--
+			DUP #_reg + W@ not IF  \ pfa addr(--( first of pair)
+				SWAP _#register_code + W@ SWAP #_reg + W!
+				EXIT
+			THEN
+			DUP #_index + W@ not IF
+				SWAP _#register_code + W@ SWAP #_index + W!
+				EXIT
+			THEN
+			TRUE ABORT" Register list structure wrong"
+		THEN
+		\ ?? pfa addr(--
+		\ If we have [ ] we can keep track of stack items as [ stores the stack pointer.
+		\ If a value is put on a the stack before the register it is an offset
+		\ If put on the stack after the register it is a scale.
+		%indirection @ IF
+			%indirection @ 4* 
+			%ind_stack + @
+			\ horrible code assumes a descending stack
+			@s 3 CELLS +    \ allow for the stack values that are above ??
+			-               \ ?? pfa addr items*cells(--
+			DUP 0< ABORT" STACK underflow"
+			DUP cell >  ABORT" STACK overflow"
+			\ if the utems*cells = 4 then ?? becomes value
+			cell = IF \ value pfa addr(--
+				\ If number before register a displacment
+				\ if after the register a scale
+				DUP #_reg + W@ not IF ( a displacment)
+					\ value pfa addr(--
+					DUP #_displacement + @ ABORT" System displacment error"
+					ROT OVER #_displacement + !
+					\ pfa addr(--
+				ELSE
+					DUP #_scale + @ ABORT" System scale error"
+					ROT OVER #_scale + !
+					\ pfa addr(--
+				THEN
+			THEN
+		THEN
+		\ pfa addr(--
+		#_reg OVER + W@ not IF
+			SWAP _#register_code + W@ SWAP #_reg + W! \ (--
+			\ This is saying that if there is no [ then a register child
+			\ increments field. If there is a [ then things get more complex.
+			\ If fact it is the ] that increments the field
+			%indirection @ not IF
+				1 %field +!
+			THEN
+			EXIT
+		THEN
+		\ pfa addr(--
+		#_index OVER + W@ not IF
+			SWAP _#register_code + W@ SWAP #_index + W! \ (--
+			EXIT
+		THEN
+		TRUE ABORT" Can't use register"
+	;
+
+			
+( ] )
+forth : TERMINATOR
+	HOST
+	(CREATE) tw, ( mode) 
+	DOES> \ ?? pfa
+		%indirection @ not ABORT" Too many ]"
+		%indirection @ #ef_entryASL LSHIFT   \ ?? pfa indirection (--
+		%field @ #num_fields < not ABORT" To many fields"  \ ?? pfa indirections(--
+		%field @ #ef_fieldASL LSHIFT   \ ?? pfa indirection field (--
+		+ %ef_table + \ ?? pfa addr(--
+
+		%indirection @ 4* 
+		%ind_stack + @
+		\ horrible code assumes a descending stack
+		@s 3 CELLS +    \ allow for the stack values that are above ??
+		-               \ ?? pfa addr items*cells(--
+		DUP 0< ABORT" STACK underflow"
+		\ this version if you don't allow the option "reg offset scale"
+		DUP 1 CELLS >  ABORT" STACK overflow"
+
+		\ ?? pfa addr items*cells(--
+		OVER #_mode + C@ ABORT" Mode used"
+		ROT W@ jump #_mode + C!
+		\ ?? addr items*cells(--
+		\ #### I do not like this rule, it is better to have one rule
+		\ offset before register scale after.
+		4 = IF
+			DUP #_reg + @ IF
+				#_scale + !
+			ELSE
+				#_displacement + !
+			THEN
+		ELSE
+			DROP
+		THEN
+		-1 %indirection +! 
+		%indirection @ not IF
+			1 %field +!
+		THEN
+	;
+
+( The #_flag encoding is 01 << 02 >> 04 & )
+: _!flags ( code --)
+	%indirection @ #ef_entryASL LSHIFT   \ code indirection (--
+	%field @ #num_fields < not ABORT" To many fields"  \ code indirections(--
+	%field @ 
+	#ef_fieldASL LSHIFT   \ code indirection field (--
+	+ %ef_table + #_flags + \ code addr(--
+	DUP C@ \ code addr old(--
+	ROT OR SWAP
+	C!
+;
+
+
+forth : _flags 
+	assembler
+	(CREATE) tw, DOES> 
+		W@ _!flags
+;
+
+( defining word for W. L. B. )
+( The #_size encoding is 0 = not set 1 = B. 2 = W. 3 = L.)
+: !size ( code --)
+	%indirection @ #ef_entryASL LSHIFT   \ code indirection (--
+	%field @ #num_fields < not ABORT" To many fields"  \ code indirections(--
+	%field @ #ef_fieldASL LSHIFT   \ code indirection field (--
+	+ %ef_table + #_size + \ code addr(--
+	C!
+;
+
+
+forth : SIZE 
+	assembler
+	(CREATE) tw, DOES> 
+		W@ !size 
+;
+
+( size codes) 
+binary
+						   0001 EQU ___L
+0010 EQU __W_              0011 EQU __WL
+0100 EQU _B__              0101 EQU _B_L
+0110 EQU _BW_              0111 EQU _BWL
+1000 EQU N___              1001 EQU N__L
+1010 EQU N_W_              1011 EQU N_WL
+1100 EQU NB__              1101 EQU NB_L
+1110 EQU NBW_              1111 EQU NBWL
+
+( assembler table offsets)
+| zero    DUP CONSTANT   #at_ef0    1+
+|         DUP CONSTANT   #at_ef1    1+
+|         DUP CONSTANT   #at_ef2    1+
+|         DUP CONSTANT   #at_ef3    1+
+|         DUP CONSTANT   #at_spare  1+
+|         DUP CONSTANT   #at_flags  1+  ( contains # code also)
+|         DUP CONSTANT   #at_cpu    1+
+|         DUP CONSTANT   #at_group  1+
+|         DUP CONSTANT   #at_opcode 2+
+|         DUP CONSTANT   #at_ext    2+
+|             CONSTANT   #at_entry_length
+
+	( address sets) 
+	HEX
+	| CREATE |<ea00>|
+	 #.Dn                tc,   
+	 #.An                tc,
+	 #.[An]              tc,   
+	 #.[An]+             tc,
+	 #.[An-]             tc,   
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,   
+	 #.[n32]             tc,
+	 #.#                 tc,   
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,   
+	 #.[n.PC]            tc,   
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,   
+	-1 tc,
+
+	| CREATE |<ea01>|
+	 #.Dn                tc,   
+	 #.An                tc,
+	 #.[An]              tc,   
+	 #.[An]+             tc,
+	 #.[An-]             tc,   
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,   
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,   
+	-1 tc,
+
+	| CREATE |<ea02>|
+	 #.[An]              tc,   
+	 #.[An]+             tc,
+	 #.[An-]             tc,   
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,   
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,   
+	-1 tc,
+
+	| CREATE |<ea03>|
+	 #.Dn               tc,
+	 #.[An]             tc,   
+	 #.[An]+            tc,
+	 #.[An-]            tc,   
+	 #.[n16.An]         tc,
+	 #.[n16]            tc,   
+	 #.[n32]            tc,
+	 #.[n8.An.In.1]     tc,
+	 #.[n8.An.In.sc]    tc,   
+	-1 tc,
+
+	| CREATE |<ea04>|
+	 #.[An]              tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	-1 tc,
+
+	| CREATE |<ea05>|
+	 #.[An]              tc,  
+	 #.[An]+             tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea06>|
+	 #.Dn                tc,
+	 #.[An]              tc,  
+	 #.[An]+             tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.#                 tc,  
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea07>|
+	 #.[An]              tc,
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea08>|
+	 #.[An]              tc,  
+	 #.[An]+             tc,
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea09>|
+	 #.Dn                tc,
+	 #.[An]              tc,
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	-1 tc,
+
+	| CREATE |<ea10>|
+	 #.Dn                tc,
+	 #.[An]              tc,
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.#                 tc,  
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea11>|
+	 #.[An]              tc,
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	-1 tc,
+
+	| CREATE |<ea12>|
+	 #.[An]              tc,  
+	 #.[An]+             tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.#                 tc,  
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea13>|
+	 #.[An]              tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |<ea14>|
+	 #.Dn                tc,
+	 #.[An]              tc,  
+	 #.[An]+             tc,
+	 #.[An-]             tc,  
+	 #.[n16.An]          tc,
+	 #.[n16]             tc,  
+	 #.[n32]             tc,
+							  
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,  
+	 #.[n.PC]            tc,  
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,  
+	-1 tc,
+
+	| CREATE |Dn|
+	#.Dn tc,
+	-1 tc,
+
+	| CREATE |[An-]|
+	#.[An-] tc,
+	-1 tc,
+
+	| CREATE |<#>|
+	#.# tc,
+	-1 tc,
+
+	| CREATE |<CCR>|
+	#.CCR tc,
+	-1 tc,
+
+	| CREATE |<ACC>|
+	#.ACC tc,
+	-1 tc,
+
+	| CREATE |<MASK>|
+	#.MASK tc,
+	-1 tc,
+
+
+	| CREATE |<MACSR>|
+	#.MACSR tc,
+	-1 tc,
+
+	| CREATE |Rn|
+	#.Dn    tc,
+	#.An    tc,
+	-1 tc,
+
+	| CREATE |<caches>|  
+	#.caches tc,  
+	-1 tc,
+
+	| CREATE |[An]|      
+	#.[An]   tc,  
+	-1 tc,
+
+	| CREATE |An|        
+	#.An     tc,  
+	-1 tc,
+
+	| CREATE |<SR>|      
+	#.SR     tc,  
+	-1 tc,
+
+	| CREATE |<cond>|    
+	#.cond   tc,  
+	-1 tc,
+
+	| CREATE |[An]+|
+	#.[An]+ tc,
+	-1 tc,
+
+	| CREATE |<USP>|
+	#.USP tc,
+	-1 tc,
+
+	| CREATE |<AB>|
+	#.[n16] tc,
+	#.[n32] tc,
+	-1 tc,
+
+	| CREATE |<PC>|
+	#.[n.PC] tc,
+	-1 tc,
+
+	| CREATE |Rc|
+	#.USP tc,
+	#.Rc tc,
+	-1   tc,
+
+	| CREATE |Rlist|
+	#.Rlist tc,
+	-1 tc,
+
+	| CREATE |[n16An]|
+	#.[n16.An]  tc,
+	-1 tc,
+
+	| CREATE |null|
+	#.null tc,
+	-1 tc,
+
+
+	\ additional coldfire mode
+	\ MMOV register-to-memory
+	\ MMOV memory-to-register
+	| CREATE |<ea15>|
+	 #.[An]              tc,
+	 #.[n16.An]          tc,
+	-1 tc,
+
+	\ additional coldfire mode BCLR BSET eC, bit number is immediate
+	\ effective address is destination
+	| CREATE |<ea16>|
+	 #.[An]              tc,   #.[An]+             tc,
+	 #.[An-]             tc,   #.[n16.An]          tc,
+	-1 tc,
+
+	\ additional coldfire mode BCLR BSET etc. bi number in data register
+	| CREATE |<ea17>|
+	 #.[An]              tc,   #.[An]+             tc,
+	 #.[An-]             tc,   #.[n16.An]          tc,
+	 #.[n16]             tc,   #.[n32]             tc,
+	-1 tc,
+
+	| CREATE |<ea18>|
+	 #.Dn                tc,   
+	 #.[An]              tc,   #.[An]+             tc,
+	 #.[An-]             tc,  
+	-1 tc,
+
+	| CREATE |<ea19>|
+	 #.[n16.An]          tc,
+	 #.[n.PC]            tc,   
+	-1 tc,
+
+	| CREATE |<ea20>|
+	 #.Dn                tc,   
+	 #.[An]              tc,   #.[An]+             tc,
+	 #.[An-]             tc,   #.[n16.An]          tc,
+	-1 tc,
+
+	| CREATE |<ea21>|
+ 
+	 #.[n16]             tc,   
+	 #.[n32]             tc,
+	 #.#                 tc,
+	 #.[n8.An.In.1]      tc,
+	 #.[n8.An.In.sc]     tc,   
+	 #.[n.PC.In.1]       tc,
+	 #.[n.PC.In.sc]      tc,   
+	-1 tc,
+
+	| CREATE |<ea22>|
+	 #.Dn                tc,   
+	 #.#                 tc,   
+	-1 tc,
+
+	\ used when creating forth. The address has to be 32 bits so it can be
+	\ altered by DOES> and ;code as required. While 16 bit and 32 bit AB 
+	\ accepted, the instruction compiling word forces things to long.
+	\ See INSTRUCTION JSR
+	| CREATE |<ea23>|
+	#.[n16]              tc,    #.[n32]           tc,
+	-1 tc,
+
+	| CREATE |<ea24>|
+	 #.Dn                tc,  
+	 #.An                tc, 
+	 #.#                 tc,   
+	-1 tc,
+
+
+	\ has to end on word boundry
+	0 ALLOT
+
+	.S .( ef_error)
+	( ef_error)
+
+	| : ef_error ( --)
+	  00 06 (system_error) ;
+
+	( address set codes)
+	zero
+	DUP EQU <ea00>  		4+
+	DUP EQU <ea01>  		4+
+	DUP EQU <ea02>  		4+
+	DUP EQU <ea03>  		4+
+	DUP EQU <ea04>  		4+
+	DUP EQU <ea05>  		4+
+	DUP EQU <ea06>  		4+
+	DUP EQU <ea07>  		4+
+	DUP EQU <ea08>  		4+
+	DUP EQU <ea09>  		4+
+	DUP EQU <ea10>  		4+
+	DUP EQU <ea11>  		4+
+	DUP EQU <ea12>  		4+
+	DUP EQU <ea13>      	4+
+	DUP EQU <ea14>         	4+
+	DUP EQU Dn             	4+
+	DUP EQU [An-]          	4+
+	DUP EQU <#>            	4+
+	DUP EQU <CCR>          	4+
+	DUP EQU <ACC>           4+
+	DUP EQU <MASK>          4+
+	DUP EQU <MACSR>         4+
+	DUP EQU <SR>           	4+
+	DUP EQU <cond>         	4+
+	DUP EQU Rn             	4+
+	DUP EQU <caches>       	4+
+	DUP EQU null           	4+
+	DUP EQU [An]   			4+
+	DUP EQU An     			4+
+	DUP EQU [An]+  			4+
+	DUP EQU <USP>  			4+
+	DUP EQU <AB>   			4+
+	DUP EQU <PC>   			4+
+	DUP EQU Rc     			4+
+	DUP EQU Rlist  			4+
+	DUP EQU [n16An] 		4+
+	DUP EQU <ea15>          4+
+	DUP EQU <ea16>          4+
+	DUP EQU <ea17>          4+
+	DUP EQU <ea18>          4+
+	DUP EQU <ea19>          4+
+	DUP EQU <ea20>          4+
+	DUP EQU <ea21>          4+
+	DUP EQU <ea22>          4+
+	DUP EQU <ea23>          4+
+	DUP EQU <ea24>          4+
+	4/  EQU #num_ef_sets
+
+	.S .( <e_sets>)
+	( address set vector table)
+	| CREATE no_set
+	-1  tc,
+
+	| CREATE <ea_sets>
+	no_set #num_ef_sets init_vectors
+ 
+	|<ea00>|     		<ea00>  		4/ <ea_sets> add_vector
+	|<ea01>|     		<ea01>  		4/ <ea_sets> add_vector
+	|<ea02>|     		<ea02>  		4/ <ea_sets> add_vector
+	|<ea03>|     		<ea03>  		4/ <ea_sets> add_vector
+	|<ea04>|     		<ea04>  		4/ <ea_sets> add_vector
+	|<ea05>|     		<ea05>  		4/ <ea_sets> add_vector
+	|<ea06>|     		<ea06>  		4/ <ea_sets> add_vector
+	|<ea07>|     		<ea07>  		4/ <ea_sets> add_vector
+	|<ea08>|     		<ea08>  		4/ <ea_sets> add_vector
+	|<ea09>|     		<ea09>  		4/ <ea_sets> add_vector
+	|<ea10>|     		<ea10>  		4/ <ea_sets> add_vector
+	|<ea11>|     		<ea11>  		4/ <ea_sets> add_vector
+	|<ea12>|     		<ea12>  		4/ <ea_sets> add_vector
+	|<ea13>|          	<ea13>         	4/ <ea_sets> add_vector
+	|<ea14>|          	<ea14>         	4/ <ea_sets> add_vector
+	|Dn|              	Dn             	4/ <ea_sets> add_vector
+	|[An-]|           	[An-]          	4/ <ea_sets> add_vector
+	|<#>|             	<#>            	4/ <ea_sets> add_vector
+	|<CCR>|           	<CCR>          	4/ <ea_sets> add_vector
+	|<ACC>|           	<ACC>          	4/ <ea_sets> add_vector
+	|<MASK>|           	<MASK>          4/ <ea_sets> add_vector
+	|<MACSR>|           <MACSR>         4/ <ea_sets> add_vector
+	|<SR>|            	<SR>           	4/ <ea_sets> add_vector
+	|<cond>|          	<cond>         	4/ <ea_sets> add_vector
+	\ |{offset.width}|  	{offset.width} 	4/ <ea_sets> add_vector
+	|Rn|              	Rn             	4/ <ea_sets> add_vector
+	|<caches>|        	<caches>       	4/ <ea_sets> add_vector
+	|[An]|           	[An]           	4/ <ea_sets> add_vector
+	|null|            	null           	4/ <ea_sets> add_vector
+	|An|               	An          	4/ <ea_sets> add_vector
+	|[An]+|            	[An]+       	4/ <ea_sets> add_vector
+	|<USP>|            	<USP>       	4/ <ea_sets> add_vector
+	|<AB>|             	<AB>        	4/ <ea_sets> add_vector
+	|<PC>|             	<PC>        	4/ <ea_sets> add_vector
+	|Rc|               	Rc          	4/ <ea_sets> add_vector
+	|Rlist|            	Rlist       	4/ <ea_sets> add_vector
+	|[n16An]|          	[n16An]     	4/ <ea_sets> add_vector
+	( reduced modes added for coldfire)
+	|<ea15>|            <ea15>          4/ <ea_sets> add_vector
+	|<ea16>|            <ea16>          4/ <ea_sets> add_vector
+	|<ea17>|            <ea17>          4/ <ea_sets> add_vector
+	|<ea18>|            <ea18>          4/ <ea_sets> add_vector
+	|<ea19>|            <ea19>          4/ <ea_sets> add_vector
+	|<ea20>|            <ea20>          4/ <ea_sets> add_vector
+	|<ea21>|            <ea21>          4/ <ea_sets> add_vector
+	|<ea22>|            <ea22>          4/ <ea_sets> add_vector
+	\ <ea07> without #.[n16] used for L. JSR 
+	|<ea23>|     		<ea23>  		4/ <ea_sets> add_vector
+	|<ea24>|            <ea24>          4/ <ea_sets> add_vector
+
+
+	: get_size ( --code)
+		%field @ #num_fields < not ABORT" To many fields"  \ code indirections(--
+		%field @ #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_size +
+		C@ ?DUP IF
+			EXIT
+		THEN
+		%field @  1 - zero MAX #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_size +
+		C@ 			
+	;
+
+
+	\ shift factor is placed after destination
+	\ and is contained in low two bits of flags
+	: get_sf ( --code)
+		#Freg #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_flags +
+		C@ 
+		03 AND
+	;
+
+	\ code is 0 or 1
+	\ the & is placed after the F reg
+	: get&  ( --code)
+		#Wreg #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_flags + C@ 04 AND 2 RSHIFT
+	;
+	
+	: get_ul_source ( --code)
+		#dest #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_flags + C@ 08 AND 3 RSHIFT
+	;
+
+	: get_ul_dest ( --code)
+		#Freg #ef_fieldASL LSHIFT   \ code indirection field (--
+		%ef_table + \ code addr(--
+		#_flags + C@ 08 AND 3 RSHIFT
+	;
+
+
+	: reg>BA9876543210 ( opcode data -- 16b)
+		0FFF AND
+		OR
+	;
+
+
+	: reg>76  ( opcode data -- 16b)
+		03 AND
+		6 LSHIFT
+		OR
+	;
+
+	: get_opcode ( table --16b)
+		#at_opcode + W@
+	;
+
+	: get_ext ( table --16b)
+		#at_ext + W@ 
+	;
+
+
+
+	| : #>BA9 ( opcode data -- opcode)
+		07 AND
+		9 LSHIFT
+		OR
+	;
+
+	| : #>BA9n2 ( opcode data -- opcode)
+		DUP 0> IF
+			07 AND
+			9 LSHIFT
+		 	OR
+		ELSE
+			\ If -1 leave as zero
+			DROP
+		THEN
+	;
+
+	| : #>76543210 ( opcode data --opcode)
+		0FF AND
+		OR
+	;
+
+
+	| : #>3210 ( opcode data --opcode)
+		0F AND
+		OR
+	;
+
+
+	| : #>210 ( opcode data --opcode)
+		07 AND
+		OR
+	;
+
+
+	| :  cond>BA98  ( opcode cond --opcode)
+		0F AND
+		8 LSHIFT
+		OR
+	;
+
+
+	| : reg>210 ( opcode reg -- opcode)
+		#reg_number AND
+		OR
+	;
+
+
+	| : reg>876 ( opcode reg -- opcode)
+		#reg_number AND
+		6 LSHIFT
+		OR
+	;
+
+
+	| : reg>BA9 ( opcode reg -- opcode)
+		#reg_number AND
+		9 LSHIFT
+		OR
+	;
+
+	: reg>EDC ( opcode reg -- opcode)
+		#reg_number AND
+		0C LSHIFT
+		OR
+	;
+
+	: reg>FEDC ( opcode reg -- opcode)
+		#set&reg AND
+		0C LSHIFT
+		OR
+	;
+
+	: reg>3210 ( opcode reg -- opcode)
+		#set&reg AND
+		OR
+	;
+
+	: reg>6BA9 ( opcode reg -- opcode)
+		#set&reg AND
+		DUP #reg_number AND
+		9 LSHIFT
+		SWAP 
+		#reg_set AND
+		3 LSHIFT
+		OR
+		OR
+	;
+	 
+	: reg>FEDC ( opcode reg -- opcode)
+		#set&reg AND
+		0C LSHIFT
+		OR
+	;
+	
+
+
+	: get_reg_source ( --16b)
+		#source #ef_fieldASL LSHIFT   \ indirection field (--
+		%ef_table  + \ addr(--
+		DUP #_code +
+		C@
+		\ addr code(--
+		code>regoffset + C@ DUP 0FF = ABORT" System error, get_index_register"
+		\ addr offset(--
+		+ #_reg +
+		W@
+	; 
+
+
+	: get_reg_dest ( --16b)
+		#dest #ef_fieldASL LSHIFT   \ indirection field (--
+		%ef_table + \ addr(--
+		DUP #_code +
+		C@
+		\ addr code(--
+		code>regoffset + C@ DUP 0FF = ABORT" System error, get_index_register"
+		\ addr offset(--
+		+ #_reg +
+		W@
+	; 
+
+
+	: get_reg_F ( --16b)
+		#Freg #ef_fieldASL LSHIFT   \ indirection field (--
+		%ef_table + \ addr(--
+		DUP #_code +
+		C@
+		\ addr code(--
+		code>regoffset + C@ DUP 0FF = ABORT" System error, get_index_register"
+		\ addr offset(--
+		+ #_reg +
+		W@
+	; 
+
+	: get_reg_W ( --16b)
+		#Wreg #ef_fieldASL LSHIFT   \ indirection field (--
+		%ef_table + \ addr(--
+		DUP #_code +
+		C@
+		\ addr code(--
+		code>regoffset + C@ DUP 0FF = ABORT" System error, get_index_register"
+		\ addr offset(--
+		+ #_reg +
+		W@
+	; 
+
+
+
+	: get_AB_source ( --32b)
+		 %ef_table  [ #ef_entry_length #_displacement + ]T LITERAL +  @ 
+	;
+
+
+
+	: get_AB_dest ( --32b)
+		 %ef_table  [ #ef_entry_length #ef_field_length + #_displacement + ]T LITERAL + @ 
+	;
+
+
+	: get_AB_F ( --32b)
+		%ef_table  [ #ef_entry_length  #_displacement + #ef_field_length 2* + ]T LITERAL @ 
+	;
+
+
+	: get_#_source ( --32b)
+		 %ef_table [ #_displacement ]T LITERAL + @ 
+	;
+
+
+	: get_#_dest ( --32b)
+		 %ef_table  [ #ef_field_length #_displacement + ]T LITERAL + @ 
+	;
+
+
+	: get_#_F ( --32b)
+		 %ef_table  [ #ef_field_length 2*  #_displacement + ]T LITERAL + @ 
+	;
+
+
+
+	\ used as @EXECUTE table, table contains xt values
+	| CREATE ,table
+		 ' X, t,    ' XW, t,    ' XW, t,  ' X, t,
+
+	| : ,immediate ( value size --)
+	  4* ,table + @execute ;
+
+	(  All the size> words expect:           )
+	(  0 = no spec 1 = byte 2 = word 3 = long)
+
+	| CREATE 76encode  80 tc, 00 tc, 40 tc, 80 tc,
+
+	| : size>76 ( opword size -- opword)
+		76encode + C@ OR
+	;
+
+	| CREATE 8encode 100 tw, 000 tw, 000 tw, 100 tw,
+
+	| : size>8 ( opword size -- opword
+		2* 8encode + W@ OR
+	;
+
+	| CREATE DCencode  2000 tw, 1000 tw, 3000 tw, 2000 tw,
+
+	| : size>DC ( opword size --opword)
+		2* DCencode + W@ OR
+	;
+
+	| CREATE 6encode 40 tc, 00 tc, 00 tc, 40 tc,
+
+	| : size>6 ( opword size --opword)
+		6encode + C@ OR
+	;
+
+
+
+	| CREATE a6encode 00 tc, 00 tc, 40 tc, 00 tc,
+
+	| : asize>6 ( opword size --opword)
+		a6encode + C@ OR
+	;
+
+	| CREATE a9encode 0600 tw, 0200 tw, 0400 tw, 0600 tw,
+
+	| : size>a9 ( opword size --opword)
+		2* a9encode + W@ OR
+	;
+
+	| CREATE A9encode 0400 tw, 0000 tw, 0200 tw, 0400 tw,
+
+
+	| : size>A9 ( opword size --opword)
+		2* A9encode + W@ OR
+	;
+
+	
+	| CREATE Bencode 0800 tw, 0000 tw, 0000 tw, 0800 tw,
+	| : size>B ( opword size --opword)
+		2* Bencode + W@ OR
+	;
+
+
+
+	( calculate relative)  HEX
+	: (branch_rel)  ( value ahere size --)
+		%xh @ %ximage -   \ number of bytes in ximage
+		\ value ahere size image_size(--
+		ROT +
+		\ value size pc_address(--
+		SWAP -rot -  \ size offset(--
+		DUP -8000 < IF
+			NIP #long EXIT
+		THEN
+		DUP 7FFF > IF
+			NIP #long EXIT
+		THEN
+		DUP -1 = IF ( long code)
+			NIP #long EXIT
+		THEN
+		\ forced long
+		OVER #long = IF
+			SWAP EXIT
+		THEN
+		DUP -80 < IF
+			NIP #word EXIT
+		THEN
+		DUP 7F > IF
+			NIP #word EXIT
+		THEN
+		\ word code
+		DUP 0= IF
+			NIP #word EXIT
+		THEN
+		OVER #word = IF
+			SWAP EXIT
+		THEN
+		NIP #byte
+	;
+
+	| : branch_rel ( value -- rel code)
+	  ahere get_size (branch_rel) DUP #long = IF
+		 %cpu @ #long_branch AND not
+		 ABORT" Long branch not supported by CPU."
+	  THEN ;
+
+	: (PC_rel)  ( value ahere -- rel code)
+		%xh @ %ximage - + \ value PC
+		-                 \ offset
+		DUP -8000 < IF
+			#long EXIT
+		THEN
+		DUP 7FFF > IF
+			#long EXIT
+		THEN
+		DUP -80 < IF
+			#word EXIT
+		THEN
+		DUP 7F > IF
+			#word EXIT
+		THEN
+		DUP 00 = IF
+			#word EXIT
+		THEN
+		#byte 
+	;
+
+
+	| : PC_rel ( value --rel code)
+	  ahere (PC_rel) DUP #long = IF
+		%cpu @ #long_PC AND not
+		ABORT" Long PC rel not supported by CPU."
+	  THEN ;
+
+	( effective address extension constants) HEX
+	0100 EQU #full_extension
+	0080 EQU #no_base
+	0040 EQU #no_index
+	0010 EQU #null_disp
+	0020 EQU #word_disp
+	0030 EQU #long_disp
+	0004 EQU #post_index
+	0000 EQU #pre_index
+	0001 EQU #null_outer
+	0002 EQU #word_outer
+	0003 EQU #long_outer
+
+	( effective address constants ) binary
+	001000  CONSTANT An_mode
+	010000  CONSTANT [An]_mode
+	011000  CONSTANT [An]+_mode
+	100000  CONSTANT [An-]_mode
+	101000  CONSTANT [n16An]_mode
+	110000  CONSTANT [nAnInsc]_mode
+	111000  CONSTANT [n16]_mode
+	111001  CONSTANT [n32]_mode
+	111010  CONSTANT [n16PC]_mode
+	111011  CONSTANT [nPCInsc]_mode
+	111100  CONSTANT [#]_mode
+
+	HEX
+
+
+	: !Dn ( addr --)
+		#_reg + W@
+		#reg_number AND
+		%ximage W@ OR
+		%ximage W!
+	;
+
+
+	: !An ( addr --)
+		#_reg + W@
+		#reg_number AND
+		An_mode OR
+		%ximage W@ OR
+		%ximage W!
+	;
+
+
+	: ![An] ( addr --)
+		#_reg #ef_entry_length + + W@
+		#reg_number AND
+		[An]_mode OR
+		%ximage W@ OR
+		%ximage W!
+	;
+
+
+	: ![An]+ ( addr --)
+		#_reg #ef_entry_length + + W@
+		#reg_number AND
+		[An]+_mode OR
+		%ximage W@ OR
+		%ximage W!
+	;
+
+
+	: ![An-] ( addr --)
+		#_reg #ef_entry_length + + W@
+		#reg_number AND
+		[An-]_mode OR
+		%ximage W@ OR
+		%ximage W!
+	;
+
+
+	: ![n16An] ( addr --)
+		DUP [ #_reg #ef_entry_length + ]T LITERAL + W@
+		#reg_number AND
+		[n16An]_mode OR
+		%ximage W@ OR
+		%ximage W!
+
+		#_displacement #ef_entry_length + + @
+		%xh @ W!
+		2 %xh +!
+
+	;
+
+
+	: ![n16] ( addr --)
+		[n16]_mode 
+		%ximage W@ OR
+		%ximage W!
+
+		[ #_displacement #ef_entry_length + ]T LITERAL + @
+		%xh @ W!
+		2 %xh +!
+
+	;
+
+	: ![n32] ( addr --)
+		[n32]_mode 
+		%ximage W@ OR
+		%ximage W!
+
+		[ #_displacement #ef_entry_length + ]T LITERAL + @
+		%xh @ !
+		4 %xh +!
+
+	;
+
+	| CREATE size_table
+	0800 tw, ( 0 = N, the default is long)
+	0000 tw, ( 1 = B should not be)
+	0000 tw, ( 2 = W )
+	0800 tw, ( 3 = L )
+
+
+	| CREATE scale_table
+	0000 tw, ( 0) 0000 tw, ( 1) 0200 tw, ( 2) 0200 tw, ( 3)
+	0400 tw, ( 4) 0400 tw, ( 5) 0400 tw, ( 6) 0400 tw, ( 7)
+	0600 tw, ( 8)
+
+	( Only 01,2,4  should occure)
+	: ![n8AnInsc] ( addr --)
+		[ #_reg #ef_entry_length + ]T LITERAL OVER + W@
+		#reg_number AND
+		[nAnInsc]_mode OR
+		%ximage W@
+		OR
+		%ximage W!
+
+		\ addr(--
+		[ #_index #ef_entry_length + ]T LITERAL OVER + W@
+		#set&reg AND
+		0C LSHIFT
+
+		\ addr 16b(--
+		[ #_scale #ef_entry_length + ]T LITERAL jump + @ 2*
+		scale_table + W@ OR
+
+		\ addr 16b1(--
+		[ #_size #ef_entry_length + ]T LITERAL jump + C@ 2*
+		size_table + W@ OR
+
+		\ addr 16b2(--
+		[ #_displacement #ef_entry_length + ]T LITERAL jump + @
+		0FF AND
+		OR
+
+		\ addr 16b3(--
+		%xh @ W!
+		2 %xh +!
+		
+		DROP
+	;
+
+
+
+	: (![#]) ( addr size --)
+		%ximage W@ 
+		[#]_mode OR
+		%ximage W!
+		OVER #_displacement + @
+		\ addr size value(--
+		OVER #byte = IF
+			DUP FF > IF
+				ABORT" Immediate out of range byte expected"
+			THEN
+			DUP -80 < IF
+				ABORT" Immediate out of range byte expected"
+			THEN
+			%xh @
+			W!
+			2 %xh +!
+			2DROP
+			EXIT
+		THEN
+		OVER #word = IF
+			DUP FFFF > IF
+				ABORT" Immediate out of range word expected"
+			THEN
+			DUP -8000 < IF
+				ABORT" Immediate out of range word expected"
+			THEN
+			%xh @
+			W!
+			2 %xh +!
+			2DROP
+			EXIT
+		THEN
+		%xh @ 
+		!
+		4 %xh +!
+		2DROP
+		EXIT
+	;
+
+
+	| : ![#] ( addr --)
+		get_size (![#]) ;
+
+
+	: {![n16PC]} ( addr offset --)
+		%ximage W@
+		[n16PC]_mode OR
+		%ximage W!
+		%xh @ W!
+		2 %xh +!
+	;
+
+	: {![n8PCInsc]} ( addr offset --)
+		SWAP
+		%ximage W@ 
+		[nPCInsc]_mode OR
+		%ximage W!
+
+		\ offset addr(--
+		[ #_index #ef_entry_length + ]T LITERAL OVER + W@
+		#set&reg AND
+		12 LSHIFT
+
+		\ offset addr 16b(--
+		[ #_scale #ef_entry_length + ]T LITERAL jump + @ 2*
+		scale_table + W@ OR
+
+		\ offset addr 16b
+		[ #_size #ef_entry_length + ]T LITERAL jump + C@ 2*
+		size_table + W@ OR
+
+		\ offset addr 16b(--
+		ROT 0FF AND OR
+		\ addr 16b(--
+		%xh @ W!
+		2 %xh +!
+
+		DROP
+	;
+
+
+	| : ![nPC] ( table --)
+		DUP [ #_displacement #ef_entry_length +  ]T LITERAL +
+		@ PC_rel ( addr offset code--)
+		#long = ABORT" PC offset to large"
+		{![n16PC]} 
+	;
+
+	| : ![nPCInsc] ( table --)
+		DUP [ #_displacement #ef_entry_length + ]T LITERAL +
+		@ PC_rel ( addr offset code--)
+		#byte <> ABORT" PC relative index mode, offset error."
+		{![n8PCInsc]} 
+	;
+
+
+	( wrong_code)
+	| : wrong_code ( --)
+		ABORT" System error, effective address code wrong"
+	;
+
+	\ used as a vector table, contains xt values
+	( effective address vectors)
+	| CREATE !ef_vectors
+
+	' wrong_code #.num_test_sets init_vectors
+
+	' !Dn             #.Dn            !ef_vectors add_vector
+	' !An             #.An            !ef_vectors add_vector
+	' ![An]           #.[An]          !ef_vectors add_vector
+	' ![An]+          #.[An]+         !ef_vectors add_vector
+	' ![An-]          #.[An-]         !ef_vectors add_vector
+	' ![n16An]        #.[n16.An]      !ef_vectors add_vector
+	' ![n16]          #.[n16]         !ef_vectors add_vector
+	' ![n32]          #.[n32]         !ef_vectors add_vector
+	' ![#]            #.#             !ef_vectors add_vector
+	' ![n8AnInsc]     #.[n8.An.In.1]  !ef_vectors add_vector
+	' ![n8AnInsc]     #.[n8.An.In.sc] !ef_vectors add_vector
+	' ![nPC]         #.[n.PC]           !ef_vectors add_vector
+	' ![nPCInsc]     #.[n.PC.In.1]      !ef_vectors add_vector
+	' ![nPCInsc]     #.[n.PC.In.sc]     !ef_vectors add_vector
+
+
+
+
+| : ef>543210 ( field_code--)
+  field_address
+  DUP #_code + C@ !ef_vectors vector ;
+
+
+\ the register and mode fields have to be swapped
+:  (543210>BA9876) ( opcode efcode -- opcode)
+	DUP 07 AND \ register field
+	9 LSHIFT
+	\ opcode efcode reg
+	ROT OR
+	SWAP
+	\ opcode effield(--	
+	38 AND 
+	3 LSHIFT
+	OR
+; 
+
+
+| : ef>BA9876 ( code --)
+  %ximage W@ ( get instruction to date) SWAP
+  OVER FFC0 AND %ximage W!  field_address
+  DUP #_code + C@ !ef_vectors vector
+  %ximage W@ (543210>BA9876)
+  %ximage W! ;
+
+
+
+( assembler words)
+( There is a word to assemble each group of instructions)
+
+
+\ i = bit from op code
+\ S = Source data
+\ D = Destination data
+\ F = Third field
+\ C = conditional code
+\ r = relative address
+\ W = Width data
+\ O = Offset data
+\ # = # data
+
+
+
+| : (i16) ( table --)
+	get_opcode XW,  ;
+
+| : (rtsi16) ( table --)
+        %instruction_pointers @ %instruction_pointers cell + @ - 2 =
+        %instruction_pointers cell + @ aw@ FFC0 AND 4E80 = AND ABORT" illegal JMP RTS"
+	get_opcode XW,  ;
+| : (i16+#16) ( table--)
+	 get_opcode XW,
+	 get_#_source XW, ;
+
+| : (i16+#32) ( table--)
+	 get_opcode XW,
+	 get_#_source X, ;
+
+| : (i4C4i8+#) ( table--)
+	 get_opcode get_reg_dest cond>BA98 XW,
+	 get_#_source get_size ,immediate ;
+
+| : (i4C4i8) ( table--)
+	 get_opcode get_reg_source cond>BA98 XW, ;
+
+| : (i4C4i2S6) ( table --)
+	 get_opcode get_reg_dest   cond>BA98 XW,
+	 #source ef>543210 ;
+
+| : (i13S3) ( table --)
+	get_opcode get_reg_source reg>210 XW,   ;
+
+| : (i13S3+#) ( table --)
+  get_opcode get_reg_source   reg>210 XW,
+  get_#_dest get_size ,immediate ;
+
+| : (i13S3+#16) ( table)
+  get_opcode get_reg_source   reg>210 XW,
+  get_#_dest XW, ;
+
+| : (i13S3+AB) ( table --)
+  get_opcode get_reg_source   reg>210 XW,
+  get_AB_dest   X, ;
+
+| : (i13D3+AB) ( table --)
+  get_opcode get_reg_dest     reg>210 XW,
+  get_AB_source X, ;
+
+| : (i13D3) ( table --)
+	get_opcode get_reg_dest reg>210 XW,  ;
+
+
+| : (i13#3) ( table --)
+	get_opcode get_#_source #>210 XW, ;
+
+( Used for Dn CLR)
+| : (i4S3i9) ( table --)
+	get_opcode
+	get_reg_source reg>BA9
+	XW, ;
+
+| : (i4S3i6S3) ( table --)
+  get_opcode
+  get_reg_source reg>210
+  get_reg_source reg>BA9  XW, ;
+
+| : (i4D3s1i5D3) ( table --)
+  get_opcode
+  get_reg_dest   reg>210
+  get_reg_dest   reg>BA9
+  get_size size>8 XW,  ;
+
+| : (i4S3i6D3) ( table --)
+  get_opcode
+  get_reg_dest   reg>210
+  get_reg_source reg>BA9 XW,  ;
+
+| : (i4D3i1s2i3S3)  ( table --)
+  get_opcode
+  get_reg_source reg>210
+  get_reg_dest   reg>BA9
+  get_size       size>76 XW,
+ ;
+
+| : (i4S3i1s2i3D3)  ( table --)
+  get_opcode
+  get_reg_dest     reg>210
+  get_reg_source   reg>BA9
+  get_size         size>76 XW,
+ ;
+
+| : (i4#3i1s2i3D3) ( table --)
+  get_opcode
+  get_reg_dest     reg>210
+  get_#_source     #>BA9
+  get_size         size>76 XW,
+ ;
+
+| : (i4D3i1#8) ( table --)
+  get_opcode
+  get_reg_dest reg>BA9
+  get_#_source #>76543210
+  XW,  ;
+
+| : (i12#4) ( table --)
+  get_opcode
+  get_#_source #>3210
+  XW,  ;
+
+
+( BCC )
+( This handles label CC BCC)
+( We use  HERE 2+ AB CC Bcc to force 16bit extension if offset)
+( is to be loaded later.)
+(         HERE CC Bcc will result in 8bit version.)
+(         HERE 1+ CC Bcc forces 32 bit version.)
+
+| : (a_BCC) ( addr table --)
+  get_opcode
+  get_reg_source cond>BA98  XW,
+  branch_rel DUP #byte = IF
+	 DROP 0FF AND %ximage W@ OR %ximage W! EXIT 
+  THEN
+  DUP #word = IF
+	 DROP XW, EXIT 
+  THEN
+  #long = IF
+	 %ximage W@ 0FF OR %ximage W! X, EXIT 
+  THEN
+  00 03 (system_error)  ;
+
+( [ addr ] CC BCC )
+| : (b_BCC) ( table --)
+  get_opcode
+  get_reg_dest cond>BA98  XW,
+  get_AB_source
+  branch_rel DUP #byte = IF
+	 DROP 0FF AND %ximage W@ OR %ximage W! EXIT THEN
+  DUP #word = IF
+	 DROP XW, EXIT 
+  THEN
+  ( must be long)
+  #long = IF
+	 %ximage W@ 0FF OR %ximage W! X, EXIT THEN
+  00 03 (system_error) ;
+
+( addr BRA  or addr BSR )
+| : (a_BRANCH) ( addr table --)
+  get_opcode
+  XW,
+  branch_rel DUP #byte = IF
+	 DROP 0FF AND %ximage W@ OR %ximage W! EXIT THEN
+  DUP #word = IF
+	 DROP XW, EXIT THEN
+  ( must be long)
+  #long = IF
+	 %ximage W@ 0FF OR %ximage W! X, EXIT THEN
+  00 03 (system_error) ;
+
+( [ addr ] CC BCC )
+| : (b_BRANCH) ( table --)
+  get_opcode
+  XW,
+  get_AB_source
+  branch_rel DUP #byte = IF
+	 DROP 0FF AND %ximage W@ OR %ximage W! EXIT THEN
+  DUP #word = IF
+	 DROP XW, EXIT THEN
+  ( must be long)
+  #long = IF
+	 %ximage W@ 0FF OR %ximage W! X, EXIT THEN
+  00 03 (system_error) ;
+
+| : (i10S6) ( label --)
+  get_opcode XW, #source ef>543210 ;
+
+| : (L.i10S6) ( label --)
+  \ this is used with L. JSR
+  \ butcher act to force absolute address to 32 bits
+  #.[n32] #source field_address #_code + C!
+  get_opcode XW, #source ef>543210 ;
+
+| : (W.i10S6) ( label --)
+  #word !size
+  get_opcode XW, #source ef>543210 ;
+
+| : (i10D6) ( table --)
+  get_opcode XW, #dest ef>543210 ;
+
+| : (i8s2S6) ( table--)
+  get_opcode
+  get_size         size>76 XW,
+  #source ef>543210 ;
+
+| : (i8s2D6) ( table--)
+  get_opcode
+  get_size         size>76 XW,
+  #dest  ef>543210 ;
+
+
+| : (i4#3i3D6) ( table --)
+  get_opcode
+  get_#_source #>BA9 XW,
+  #dest ef>543210 ;
+
+| : (i4#3i3D6n2) ( table --)
+  get_opcode
+  get_#_source #>BA9n2 XW,
+  #dest ef>543210 ;
+
+| : (i4S3i3D6) ( table --)
+  get_opcode
+  get_reg_source reg>BA9 XW,
+  #dest ef>543210 ;
+
+| : (i4D3s1i2S6) ( table --)
+  get_opcode
+  get_reg_dest reg>BA9
+  get_size size>8  XW,
+  #source ef>543210 ;
+
+
+| : (i4D3i2s1S6) (  table --)
+	get_opcode
+	get_reg_dest reg>BA9
+	get_size     asize>6 XW, 
+	 #source ef>543210   
+	;
+
+
+
+| : (i4D3i1s2S6) ( table --)
+  get_opcode
+  get_reg_dest reg>BA9
+  get_size size>76 XW,
+  #source ef>543210 ;
+
+| : (i4D3i3S6) ( table --)
+  get_opcode
+  get_reg_dest reg>BA9 XW,
+  #source ef>543210 ;
+
+| : (W.i4D3i3S6) ( table --)
+  #word !size  get_opcode
+  get_reg_dest reg>BA9 XW,
+  #source ef>543210 ;
+
+| : (i4S3i1s2D6) ( table --)
+  get_opcode
+  get_reg_source reg>BA9
+  get_size       size>76
+  XW,  #dest ef>543210 ;
+
+| : (i4#3i1s2D6) ( table --)
+  get_opcode
+  get_#_source #>BA9
+  get_size size>76 XW,
+  #dest ef>543210 ;
+
+( ################ 1 or 2 words)
+| : (i8s2D6+#) ( table --)
+  get_opcode
+  get_size size>76 XW,
+  get_#_source get_size ,immediate
+  #dest ef>543210 ;
+
+| : (i10D6+#16) ( table --)
+  get_opcode
+  XW,
+  get_#_source XW,
+  #dest ef>543210 ;
+
+| : (i2s2D6S6) ( table --)
+  get_opcode
+  get_size
+  size>DC XW,
+  #source ef>543210
+  #dest   ef>BA9876 ;
+
+
+: mirror ( 16b -- 16b)
+	zero
+	10 0 DO
+		1 RSHIFT
+		OVER 8000 AND IF
+			8000 OR
+		THEN
+		SWAP 1 LSHIFT SWAP
+	LOOP
+	NIP
+;
+
+( Used by memory rl MOVM )
+| : (i9s1S6+#) ( table --)
+  get_opcode
+  get_size size>6
+  XW,
+  get_#_dest XW,
+  #source ef>543210 ;
+
+| : (i9s1D6+#) ( table --)
+  get_opcode
+  get_size size>6
+  XW,
+  get_#_source XW,
+  #dest ef>543210 ;
+
+| : (1i9s1D6+#) ( table --)
+  get_opcode
+  get_size size>6
+  XW,
+  get_#_source mirror XW,
+  #dest ef>543210 ;
+
+
+| : (i10S6+i1F3i9D3) ( table --)
+  DUP get_opcode XW,
+  get_ext
+  get_reg_F    reg>EDC
+  get_reg_dest reg>210
+  XW, #source ef>543210  ;
+
+| : (i10S6+i1D3i9D3) ( table --)
+  DUP get_opcode XW,
+  get_ext
+  get_reg_dest reg>EDC
+  get_reg_dest reg>210
+  XW, #source ef>543210  ;
+
+| : (i13S3+i16) ( table --)
+  DUP get_opcode get_reg_source reg>210 XW,
+  get_ext
+  XW,   ;
+
+| : (i13S3+i1D3i12) ( table --)
+  DUP get_opcode get_reg_source reg>210 XW,
+  get_ext
+  get_reg_dest reg>EDC
+  XW,  ;
+
+( Rc Rn MOVEC)
+| : (i16+D4S12) ( type --)
+  DUP get_opcode XW,
+  get_ext
+  get_reg_source reg>BA9876543210
+  get_reg_dest   reg>FEDC XW, ;
+
+
+( Rn Rc MOVEC)
+| : (i16+S4D12) ( type --)
+  DUP get_opcode XW,
+  get_ext
+  get_reg_dest   reg>BA9876543210
+  get_reg_source reg>FEDC XW, ;
+
+( Rn <ea> MOVS )
+| : (i8s2D6+S4i12) ( table --)
+  DUP get_opcode
+  get_size size>76 XW,
+  get_ext
+  get_reg_source reg>FEDC XW,
+  #dest ef>543210 ;
+
+( <ea> Rn MOVS )
+| : (i8s2S6+D4i12) ( table --)
+  DUP get_opcode
+  get_size size>76 XW,
+  get_ext
+  get_reg_dest reg>FEDC XW,
+  #source ef>543210 ;
+
+
+| : (mac) ( table--)
+	DUP get_opcode  \ table opcode(--
+	get_reg_source reg>6BA9
+	get_reg_dest   reg>3210 XW,
+	get_ext
+	get_size size>B
+	get_sf        9 LSHIFT OR
+	get_ul_source 7 LSHIFT OR
+	get_ul_dest   6 LSHIFT OR  XW,
+
+;
+
+
+| : (macl) ( table--)
+	DUP get_opcode
+	get_reg_W  reg>6BA9 XW,
+	
+	get_ext
+	get_reg_source reg>FEDC
+	get_reg_dest reg>3210
+	get_size size>B
+	get_sf        9 LSHIFT OR
+	get_ul_source 7 LSHIFT OR
+	get_ul_dest   6 LSHIFT OR  
+	get&          5 LSHIFT OR XW,
+	#Freg ef>543210
+;
+
+| : (i12D4) ( type --)
+	get_opcode
+	get_reg_dest reg>3210
+	XW,
+;
+
+| : (i8S2i3D3) ( table --)
+	get_opcode
+	get_reg_source reg>76
+	get_reg_dest   reg>210 XW,
+;
+
+\ | : (i8S2i6) ( table --)
+\  get_opcode
+\  get_reg_source reg>76 XW, ;
+
+( This is for MOVP )
+| : (i4S3i2s1i3D3+disp) (  table --)
+  get_opcode
+  get_reg_dest reg>210
+  get_reg_source reg>BA9
+  get_size     size>6  XW,
+  get_AB_dest XW, ;
+
+	| : (i4D3i2s1i3S3+disp) (  table --)
+		get_opcode
+		get_reg_dest reg>BA9
+		get_reg_source reg>210	
+		get_size     size>6  XW,
+		get_AB_source XW, 
+	;
+
+	| : (i16+i16+#16) (  table --)
+		DUP  get_opcode XW,
+		get_ext    XW,
+		get_#_source XW, 
+	;
+
+	| : (i10S6+i1D3i4s2i6)  ( table --)
+		DUP get_opcode XW,
+		get_ext
+		get_reg_dest reg>EDC
+		get_size     size>76 XW,
+		#source ef>543210 
+	;
+
+	| : (i13S3+i1F3i4s2i3D3)  ( table --)
+		DUP get_opcode get_reg_source reg>210 XW,
+		get_ext get_reg_dest reg>210 get_reg_F reg>EDC
+		get_size size>76 XW, 
+	;
+
+	: !reg ( value)
+		%ef_table #_reg + W!
+	;
+
+
+	: @reg ( --value)
+		%ef_table #_reg + W@
+	;
+
+
+
+	| : compliment_condition
+		@reg 01 XOR !reg 
+	;
+
+	| : compile_branch ( addr --)
+		ahere  OVER 2+ - ( branch size)
+		DUP -80 80 WITHIN OVER 0<> AND IF ( 8bit)
+			\ addr offset (--
+			OVER aw@ 0FF AND DUP 0 = SWAP 0FF = OR not IF ( 8bit )
+				OVER aw@ FF00 AND OR SWAP aw! EXIT 
+			THEN 
+		THEN
+		DUP -8000 8000 WITHIN IF ( 16bit)
+			\ addr offset(--
+			OVER aw@ 0FF AND 0= IF ( 16bit desired)
+				SWAP 2+ aw! EXIT 
+			THEN 
+		THEN
+		OVER aw@ 0FF AND 0FF = IF ( 32bit desired)
+			SWAP 2+ a! EXIT 
+		THEN
+		TRUE ABORT" Branch error." 
+	;
+
+
+
+	forth : OLD_TERMINATOR 
+		assembler
+		(CREATE) tw, DOES> ( pfa --)
+		W@ \ pfa_value(--
+		%indirection @ ABORT" Old and new syntax may not be used together"
+		%field @ not ABORT" No register supplied"
+		%field @ 1 - #ef_fieldASL LSHIFT %ef_table +
+		\ pfa_value from(--
+		DUP DUP #ef_entry_length +  
+		\ pfa_value from from to (--
+		#ef_entry_length MOVE
+		\ pfa_value from(--
+		\ cannot erase #_flags
+		\ no need to erase #_flags
+		DUP #_address_data ERASE
+		\ pfa_value from(--
+		#ef_entry_length + #_mode + C!
+	;
+
+
+	forth : OLD_DISPLACEMENT  
+		assembler
+		(CREATE) tw, DOES>  ( displacement pfa --)
+			W@
+			%field @ #ef_fieldASL LSHIFT
+			%ef_table + #ef_entry_length +
+			\ displacement pfa_data addr(--
+			TUCK #_reg + W!
+			#_] OVER #_mode + C!
+			\ displacement addr(--
+			#_displacement + !
+			1 %field +!
+		;
+				
+
+
+
+	( vector values) HEX
+	zero
+	DUP EQU  i16                 1+
+	DUP EQU  i16+#16             1+
+	DUP EQU  i16+#32             1+
+	DUP EQU  i4C4i8+#            1+
+	DUP EQU  i4C4i2S6            1+
+	DUP EQU  i4C4i8              1+
+	DUP EQU  i13S3               1+
+	DUP EQU  i13D3               1+
+	DUP EQU  i13#3               1+
+	DUP EQU  i4S3i6D3            1+
+	DUP EQU  i4S3i6S3            1+
+	DUP EQU  i4D3s1i5D3          1+
+	DUP EQU  i4D3i1s2i3S3        1+
+	DUP EQU  i4S3i1s2i3D3        1+
+	DUP EQU  i4#3i1s2i3D3        1+
+	DUP EQU  i4S3i9              1+
+	DUP EQU  i4D3i1#8            1+
+	DUP EQU  i12#4               1+
+	DUP EQU  a_BCC               1+
+	DUP EQU  b_BCC               1+
+	DUP EQU  a_BRANCH            1+
+	DUP EQU  b_BRANCH            1+
+	DUP EQU  i10S6               1+
+	DUP EQU  W.i10S6             1+
+	DUP EQU  L.i10S6             1+
+	DUP EQU  i10D6               1+
+	DUP EQU  i8s2S6              1+
+	DUP EQU  i8s2D6              1+
+	DUP EQU  i4#3i3D6            1+
+	DUP EQU  i4#3i3D6n2          1+	
+	DUP EQU  i4S3i3D6            1+
+	DUP EQU  i4D3s1i2S6          1+
+	DUP EQU  i4D3i1s2S6          1+
+	DUP EQU  i4D3i2s1S6          1+
+	DUP EQU  i4D3i3S6            1+
+	DUP EQU  W.i4D3i3S6          1+
+	DUP EQU  i4S3i1s2D6          1+
+	DUP EQU  i4#3i1s2D6          1+
+	DUP EQU  i8s2D6+#            1+
+	DUP EQU  i10D6+#16           1+
+	DUP EQU  i2s2D6S6            1+
+	DUP EQU  i9s1D6+#            1+
+	DUP EQU  i9s1S6+#            1+
+	DUP EQU  1i9s1D6+#           1+
+	DUP EQU i10S6+i1F3i9D3      1+
+	DUP EQU i10S6+i1D3i9D3      1+
+	DUP EQU i16+D4S12           1+
+	DUP EQU i16+S4D12           1+
+	DUP EQU  i8s2D6+S4i12       1+
+	DUP EQU  i8s2S6+D4i12       1+
+	DUP EQU  i8S2i3D3           1+
+	DUP EQU  i13S3+i1D3i12      1+
+	DUP EQU  i13S3+i1F3i4s2i3D3 1+
+	DUP EQU  i13S3+#            1+
+	DUP EQU  i13S3+#16          1+
+	DUP EQU  i13D3+AB           1+
+	DUP EQU  i13S3+AB           1+
+	DUP EQU  i4S3i2s1i3D3+disp  1+
+	DUP EQU  i4D3i2s1i3S3+disp  1+
+	DUP EQU  i16+i16+#16        1+
+	DUP EQU  i10S6+i1D3i4s2i6   1+
+	DUP EQU i13S3+i16           1+
+	DUP EQU  mac                1+
+	DUP EQU  macl               1+
+	DUP EQU  i12D4              1+
+        DUP EQU  rtsi16             1+
+	EQU #num_!codes
+
+	( default entry in vector table) HEX
+	| : !code_error ( --)
+		00  04 (system_error) 
+	;
+
+	\ table contins xt values
+	( compile_vector)
+	| CREATE (!code)
+
+	' !code_error #num_!codes init_vectors
+
+	' (i16)                 i16                  (!code) add_vector
+	' (i16+#16)             i16+#16              (!code) add_vector
+	' (i16+#32)             i16+#32              (!code) add_vector
+	' (i4C4i8+#)            i4C4i8+#             (!code) add_vector
+	' (i4C4i8)              i4C4i8               (!code) add_vector
+	' (i4C4i2S6)            i4C4i2S6             (!code) add_vector
+	' (i13S3)               i13S3                (!code) add_vector
+	' (i13D3)               i13D3                (!code) add_vector
+	' (i13#3)               i13#3                (!code) add_vector
+	' (i4S3i6D3)            i4S3i6D3             (!code) add_vector
+	' (i4S3i6S3)            i4S3i6S3             (!code) add_vector
+	' (i4D3s1i5D3)          i4D3s1i5D3           (!code) add_vector
+	' (i4D3i1s2i3S3)        i4D3i1s2i3S3         (!code) add_vector
+	' (i4S3i1s2i3D3)        i4S3i1s2i3D3         (!code) add_vector
+	' (i4#3i1s2i3D3)        i4#3i1s2i3D3         (!code) add_vector
+	' (i4D3i1#8)            i4D3i1#8             (!code) add_vector
+	' (i4S3i9)              i4S3i9               (!code) add_vector
+	' (i12#4)               i12#4                (!code) add_vector
+	' (a_BCC)               a_BCC                (!code) add_vector
+	' (b_BCC)               b_BCC                (!code) add_vector
+	' (a_BRANCH)            a_BRANCH             (!code) add_vector
+	' (b_BRANCH)            b_BRANCH             (!code) add_vector
+	' (i10S6)               i10S6                (!code) add_vector
+	' (W.i10S6)             W.i10S6              (!code) add_vector
+	' (L.i10S6)             L.i10S6              (!code) add_vector
+	' (i10D6)               i10D6                (!code) add_vector
+	' (i8s2S6)              i8s2S6               (!code) add_vector
+	' (i8s2D6)              i8s2D6               (!code) add_vector
+	' (i4#3i3D6)            i4#3i3D6             (!code) add_vector
+	' (i4#3i3D6n2)           i4#3i3D6n2          (!code) add_vector
+
+	' (i4S3i3D6)            i4S3i3D6             (!code) add_vector
+	' (i4D3s1i2S6)          i4D3s1i2S6           (!code) add_vector
+	' (i4D3i2s1S6)          i4D3i2s1S6           (!code) add_vector	
+	' (i4D3i1s2S6)          i4D3i1s2S6           (!code) add_vector
+	' (i4D3i3S6)            i4D3i3S6             (!code) add_vector
+	' (W.i4D3i3S6)          W.i4D3i3S6           (!code) add_vector
+	' (i4S3i1s2D6)          i4S3i1s2D6           (!code) add_vector
+	' (i4#3i1s2D6)          i4#3i1s2D6           (!code) add_vector
+	' (i8s2D6+#)            i8s2D6+#             (!code) add_vector
+	' (i10D6+#16)           i10D6+#16            (!code) add_vector
+	' (i2s2D6S6)            i2s2D6S6             (!code) add_vector
+	' (i9s1S6+#)            i9s1S6+#             (!code) add_vector
+	' (i9s1D6+#)            i9s1D6+#             (!code) add_vector
+	' (1i9s1D6+#)            1i9s1D6+#           (!code) add_vector
+	' (i10S6+i1F3i9D3)      i10S6+i1F3i9D3       (!code) add_vector
+	' (i10S6+i1D3i9D3)      i10S6+i1D3i9D3       (!code) add_vector
+	' (i16+D4S12)           i16+D4S12            (!code) add_vector
+	' (i16+S4D12)           i16+S4D12            (!code) add_vector
+	' (i8s2D6+S4i12)        i8s2D6+S4i12         (!code) add_vector
+	' (i8s2S6+D4i12)        i8s2S6+D4i12         (!code) add_vector
+	' (i8S2i3D3)            i8S2i3D3             (!code) add_vector
+	' (i13S3+i1D3i12)       i13S3+i1D3i12        (!code) add_vector
+	' (i13S3+i16)           i13S3+i16            (!code) add_vector
+	' (i13D3+AB)            i13D3+AB             (!code) add_vector
+	' (i13S3+AB)            i13S3+AB             (!code) add_vector
+	' (i13S3+#)             i13S3+#              (!code) add_vector
+	' (i13S3+#16)           i13S3+#16            (!code) add_vector
+	' (i4S3i2s1i3D3+disp)   i4S3i2s1i3D3+disp    (!code) add_vector
+	' (i4D3i2s1i3S3+disp)   i4D3i2s1i3S3+disp    (!code) add_vector
+	' (i16+i16+#16)         i16+i16+#16          (!code) add_vector
+	' (i10S6+i1D3i4s2i6)    i10S6+i1D3i4s2i6     (!code) add_vector
+	' (i13S3+i1F3i4s2i3D3) i13S3+i1F3i4s2i3D3    (!code) add_vector
+	' (mac)                 mac                  (!code) add_vector
+	' (macl)                macl                 (!code) add_vector
+ 	' (i12D4)               i12D4               (!code) add_vector
+ 	' (rtsi16)              rtsi16               (!code) add_vector
+
+	( size range) HEX
+
+
+	: |#=#|  ( addr value --addr flag) 
+		DROP FALSE 
+	;
+
+	
+	\ TRUE failed
+	: |0|  ( addr value --addr flag) 
+		0<> 
+	;
+
+	: |1>8|  ( addr value --addr flag) 
+		DUP 1 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 08 > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+	: |-1>7|  ( addr value --addr flag) 
+		DUP -1 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 07 > IF
+			DROP TRUE EXIT
+		THEN
+		\ zero is not allowed also
+		DUP 00 = IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+	: |u3|  ( addr value --addr flag) 
+		DUP 00 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 07 > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |u4|  ( addr value --addr flag)
+		DUP 00 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 0F > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+
+	: |u5|  ( addr value --addr flag) 
+		DUP 00 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 01F > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |u8|  ( addr value --addr flag) 
+		DUP 00 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 0FF > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |n8|  ( addr value --addr flag) 
+		DUP -80 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 07F > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |n16|  ( addr value --addr flag) 
+		DUP -8000 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 07FFF > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |u16|  ( addr value --addr flag) 
+		DUP 0< IF
+			DROP TRUE EXIT
+		THEN
+		DUP 0FFFF > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: |16b|  ( addr value --addr flag) 
+		DUP -8000 < IF
+			DROP TRUE EXIT
+		THEN
+		DUP 0FFFF > IF
+			DROP TRUE EXIT
+		THEN
+		DROP
+		FALSE
+	;
+
+
+	: vector_error  00 05 (system_error) ;
+
+	( # codes) HEX
+	10
+	DUP EQU #=0          10 +
+	DUP EQU #=1>8        10 +
+	DUP EQU #=u3         10 +
+	DUP EQU #=u4         10 +
+	DUP EQU #=u5         10 +
+	DUP EQU #=u8         10 +
+	DUP EQU #=n8         10 +
+	DUP EQU #=u16        10 +
+	DUP EQU #=n16        10 +
+	DUP EQU #=16b        10 +
+	DUP EQU #=-1>7       10 +
+	10 / #max_#vectors ??<
+
+
+	\ contains xt
+	( # vectors) HEX
+	| CREATE #vectors
+ 
+	 ' vector_error #max_#vectors init_vectors
+ 
+	' |#=#|     0            #vectors add_vector
+	' |0|       #=0     10 / #vectors add_vector
+	' |1>8|     #=1>8   10 / #vectors add_vector
+	' |u3|      #=u3    10 / #vectors add_vector
+	' |u4|      #=u4    10 / #vectors add_vector
+	' |u5|      #=u5    10 / #vectors add_vector
+	' |u8|      #=u8    10 / #vectors add_vector
+	' |n8|      #=n8    10 / #vectors add_vector
+	' |u16|     #=u16   10 / #vectors add_vector
+	' |n16|     #=n16   10 / #vectors add_vector
+	' |16b|     #=16b   10 / #vectors add_vector
+	' |-1>7|    #=-1>7  10 / #vectors add_vector
+
+
+	\ TRUE then failed
+	: check#  ( addr # addr -- addr flag)
+		#at_flags + C@ 00F0 AND
+		2 RSHIFT
+		#vectors W@ 4* MIN
+		#vectors + 2+ @execute
+	;
+	
+
+
+	( flags are NBWL)
+	| CREATE val>flag 08 tc, 04 tc, 02  tc, 01 tc,
+
+	\ TRUE failed
+	: test_size ( addr value flags --addr flag)
+		SWAP val>flag + C@ AND 0=
+	;
+	
+
+
+	( flag is true if not in set)
+	: ?indataset ( addr value set -- addr flag )
+		[ <ea_sets> 2+ ]T LITERAL + @  \ addr value set(--
+		BEGIN
+			2DUP C@ < IF \ failed
+				2DROP
+				TRUE 
+				EXIT
+			THEN
+			2DUP C@ = IF \ this is it
+				2DROP
+				FALSE
+				EXIT
+			THEN
+			1+
+		AGAIN
+	;
+
+
+	( true all ok)
+	| : test_conditions ( addr -- flag)
+		%ef_table #_code + C@
+		OVER #at_ef0 + C@  ?indataset IF
+			DROP FALSE EXIT
+		THEN
+		%ef_table #_code + C@ #.# = IF
+			%ef_table #_displacement + @ OVER 
+			check# IF 
+				DROP FALSE EXIT 
+			THEN
+		THEN
+		%ef_table [ #ef_field_length  #_code + ]T LITERAL + C@
+		OVER #at_ef1 + C@  ?indataset IF
+			DROP FALSE EXIT
+		THEN
+		%ef_table [ #ef_field_length #_code + ]T LITERAL + C@
+		#.# = IF
+			%ef_table [ #ef_field_length #_displacement + ]T
+			LITERAL + @ OVER check# IF
+				DROP FALSE EXIT
+			THEN 
+		THEN
+		%ef_table [ #ef_field_length 2* #_code + ]T LITERAL + C@
+		OVER #at_ef2 + C@  ?indataset IF
+			DROP FALSE EXIT
+		THEN
+		%ef_table [ #ef_field_length 2* #_code + ]T LITERAL + C@
+		#.# = IF
+			%ef_table [ #ef_field_length 2* #_displacement + ]T
+			LITERAL + @ OVER  check# IF
+				DROP FALSE EXIT 
+			THEN 
+		THEN
+		%ef_table [ #ef_field_length  3 * #_code + ]T LITERAL + C@
+		OVER #at_ef3 + C@  ?indataset IF
+			DROP FALSE EXIT
+		THEN
+		%ef_table [ #ef_field_length 3 * #_code + ]T LITERAL + C@
+		#.# = IF
+			%ef_table [ #ef_field_length 3 * #_displacement + ]T
+			LITERAL + @ OVER  check# IF
+				DROP FALSE EXIT 
+			THEN 
+		THEN
+
+		%ef_table [ #ef_field_length 4 * #_code + ]T LITERAL + C@
+		#.null <> ABORT" Too many instruction modifiers."
+		get_size  OVER #at_flags + C@ 0F AND test_size IF
+			DROP FALSE EXIT
+		THEN
+		DUP  #at_cpu + C@  %cpu @ AND
+		NIP 
+	;
+
+	( compile code)
+	| : !code
+		%xh @ %ximage -
+		%ximage ahere jump agap ROT AMOVE 
+	;
+
+
+	| : compile_code ( addr --)
+		DUP #at_group + C@ (!code) vector
+		!code 
+	;
+
+	: INIT_ASSEMBLER ( --)
+		%ximage #max_instruction ERASE
+		%ximage %xh !
+		zero %indirection !
+		zero %field       !
+		@s %ind_stack !
+		%ef_table [ #ef_field_length #num_fields * ]T LITERAL ERASE 
+	;
+
+
+
+	: # ( value --)
+		%indirection @
+		#ef_entryASL LSHIFT  \ value offset(--
+		%field @ #num_fields < not IF
+			to_many_fields
+		THEN
+		%field @ #ef_fieldASL LSHIFT +        \ value offset2(--
+		%ef_table +                            \ value addr(--
+		#_# OVER #_mode + C@ OR OVER #_mode + C! \ value addr(--
+		#_displacement + !
+		1 %field +!
+	;
+
+
+
+
+forth : INSTRUCTION
+	assembler
+	(CREATE) DOES>
+                move_instruction_pointers
+                ahere %instruction_pointers !
+		%ef_table                                     ef_code
+		%ef_table #ef_field_length +                  ef_code
+		%ef_table [ #ef_field_length 2*  ]T LITERAL + ef_code
+		%ef_table [ #ef_field_length 3 * ]T LITERAL + ef_code
+		%ef_table [ #ef_field_length 4 * ]T LITERAL + ef_code
+		DUP C@ ( number of loops)  SWAP 2+ ( first entry)
+		BEGIN
+			DUP test_conditions   IF
+				NIP compile_code  
+				INIT_ASSEMBLER  EXIT 
+			THEN
+			#at_entry_length + SWAP 1- SWAP
+			OVER not 
+		UNTIL 
+		2DROP
+		INIT_ASSEMBLER
+		TRUE  ABORT" Wrong instruction modifiers." 
+	;
+
+
+binary
+
+
+INSTRUCTION ADD   0101 tc, 00 tc,
+
+( ADDQ coldfire is long only )
+<#>        tc, <ea01>      tc, null tc, null tc, null tc, N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                 tc,      i4#3i1s2D6         tc,
+0101000000000000    tw,  0000000000000000 tw,
+
+( ADDI coldfire is long only and to data regiser only )
+( his has to go first to cut out immediate data)
+<#>        tc, Dn          tc, null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i8s2D6+#           tc,
+0000011000000000    tw,  0000000000000000 tw,
+
+( add to data register coldfire is long only but from all sources)
+<ea00>     tc, Dn          tc, null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4D3i1s2S6         tc,
+1101000000000000    tw,  0000000000000000 tw,
+
+( from data register coldfire is long only)
+Dn         tc, <ea02>      tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i1s2D6         tc,
+1101000100000000    tw,  0000000000000000 tw,
+
+( to address register is long only)
+<ea00>     tc, An          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4D3s1i2S6         tc,
+1101000011000000    tw,  0000000000000000 tw,
+
+
+
+
+INSTRUCTION ADDX  001 tc, 00 tc,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4D3i1s2i3S3       tc,
+1101000100000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION AND 0011 tc, 00 tc,
+<#>        tc, Dn      tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i8s2D6+#           tc,
+0000001000000000   tw,  0000000000000000 tw,
+Dn         tc, <ea02>      tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i1s2D6         tc,
+1100000100000000   tw,  0000000000000000 tw,
+<ea06>     tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4D3i1s2S6         tc,
+1100000000000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION ASL 010 tc, 00 tc,
+<#>       tc, Dn          tc,  null tc, null tc, null tc, N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                 tc,      i4#3i1s2D6         tc,
+1110000100000000   tw,  0000000000000000 tw,
+Dn        tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i1s2i3D3       tc,
+1110000100100000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION ASR 0010 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                 tc,      i4#3i1s2D6         tc,
+1110000000000000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i1s2i3D3       tc,
+1110000000100000   tw,  0000000000000000 tw,
+
+
+( coldfire same as 68k)
+INSTRUCTION BCC  010 tc, 00 tc,
+<cond>     tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,       a_BCC             tc,
+0110000000000000   tw,  0000000000000000 tw,
+<PC>       tc, <cond>      tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,       b_BCC             tc,
+0110000000000000   tw,  0000000000000000 tw,
+
+( coldfire same as 68k)
+INSTRUCTION BCHG  100 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, N__L #=u5 + tc,
+#all_68000 #all_coldfire +                           tc,      i10D6+#16          tc,
+0000100001000000   tw,  0000000000000000 tw,
+<#>        tc, <ea02>      tc,  null tc, null tc, null tc, NB__ #=u3 + tc,
+#all_68000 #all_coldfire +                           tc,      i10D6+#16          tc,
+0000100001000000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4S3i3D6           tc,
+0000000101000000   tw,  0000000000000000 tw,
+Dn         tc, <ea02>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                           tc,      i4S3i3D6           tc,
+0000000101000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION BCLR  100 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, N__L #=u5 + tc,
+#all_68000 #all_coldfire  +                tc,      i10D6+#16          tc,
+0000100010000000   tw,  0000000000000000 tw,
+<#>        tc, <ea16>      tc,  null tc, null tc, null tc, NB__ #=u3 + tc,
+#all_68000 #all_coldfire +                 tc,      i10D6+#16          tc,
+0000100010000000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i3D6           tc,
+0000000110000000   tw,  0000000000000000 tw,
+Dn         tc, <ea17>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i3D6           tc,
+0000000110000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION BKPT 1 tc, 00 tc,
+<#>        tc, null        tc,  null tc, null tc, null tc, N___ #=u3 + tc,
+#68040 #CPU32 + #5300 + #5400 + tc,   i13#3      tc,
+0100100001001000   tw,  0000000000000000 tw,
+
+( address limitations are looked after by the code that generates the relative address)
+INSTRUCTION BRA  010 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,      a_BRANCH           tc,
+0110000000000000   tw,  0000000000000000 tw,
+<PC>       tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,      b_BRANCH           tc,
+0110000000000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION BSET  100 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, N__L #=u5 + tc,
+#all_68000 #all_coldfire +                 tc,       i10D6+#16         tc,
+0000100011000000   tw,  0000000000000000 tw,
+<#>        tc, <ea16>      tc,  null tc, null tc, null tc, NB__ #=u3 + tc,
+#all_68000 #all_coldfire +                 tc,      i10D6+#16          tc,
+0000100011000000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i3D6           tc,
+0000000111000000   tw,  0000000000000000 tw,
+Dn         tc, <ea17>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                 tc,      i4S3i3D6           tc,
+0000000111000000   tw,  0000000000000000 tw,
+
+
+( coldfire same as 68000, addressing offset looks after reduced range)
+INSTRUCTION BSR  010 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,      a_BRANCH           tc,
+0110000100000000   tw,  0000000000000000 tw,
+<PC>       tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,      b_BRANCH           tc,
+0110000100000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION BTST  100 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, N__L #=u5 + tc,
+#all_68000 #all_coldfire +                           tc,       i10D6+#16         tc,
+0000100000000000   tw,  0000000000000000 tw,
+<#>        tc, <ea16>      tc,  null tc, null tc, null tc, NB__ #=u3 + tc,
+#all_68000 #all_coldfire +                           tc,      i10D6+#16          tc,
+0000100000000000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4S3i3D6           tc,
+0000000100000000   tw,  0000000000000000 tw,
+Dn         tc, <ea12>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                           tc,      i4S3i3D6           tc,
+0000000100000000   tw,  0000000000000000 tw,
+
+
+INSTRUCTION CHK   001 tc, 00 tc,
+<ea06>     tc, Dn          tc,  null tc, null tc, null tc, __W_         tc,
+#all_68000                                 tc,       i4D3i3S6           tc,
+0100000110000000   tw,  0000000000000000 tw,
+
+
+
+( Coldfire same as 68000)
+INSTRUCTION CLR 011 tc, 00 tc,
+Dn         tc, null        tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,       i4S3i9            tc,
+0111000000000000   tw,  0000000000000000 tw, ( 0 # Dn MOV)
+<ea03>     tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,       i8s2S6            tc,
+0100001000000000   tw,  0000000000000000 tw,
+An         tc, null        tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,       i4S3i6S3        tc,
+1001000111001000   tw,  0000000000000000 tw, ( An An SUB )
+
+INSTRUCTION CMP  1000 tc, 00 tc,
+( 0 # <ea> CMP -> <ea> TST )
+<#>        tc, <ea06>      tc,  null tc, null tc, null tc, NBWL #=0 +  tc,
+#all_68000 #all_coldfire +  tc,          i8s2D6         tc,
+0100101000000000    tw,  0000000000000000 tw,
+( 0 # A0 CMP -> A0 TST for #all_coldfire)
+\ bug fix version 2.3; now only allows long word for #5307
+<#>        tc, An          tc,  null tc, null tc, null tc, N__L #=0 +  tc,
+#68040 #CPU32 #all_coldfire +   + tc,        i8s2D6         tc,
+0100101000000000    tw,  0000000000000000 tw,
+<#>        tc, Dn     tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,          i8s2D6+#       tc,
+0000110000000000    tw,  0000000000000000 tw,
+<#>        tc, Dn     tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #5400 +                           tc,          i8s2D6+#       tc,
+0000110000000000    tw,  0000000000000000 tw,
+<ea00>     tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,          i4D3i1s2S6     tc,
+1011000000000000    tw,  0000000000000000 tw,
+<ea00>     tc, An          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,          i4D3s1i2S6     tc,
+1011000011000000    tw,  0000000000000000 tw,
+\ 5407 has more options.
+<ea00>     tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #5400 +                           tc,          i4D3i1s2S6     tc,
+1011000000000000    tw,  0000000000000000 tw,
+<ea00>     tc, An          tc,  null tc, null tc, null tc, N_WL        tc,
+#all_68000 #5400 +                           tc,          i4D3s1i2S6     tc,
+1011000011000000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION CPUSHL 0001 tc, 00 tc,
+<caches> tc, An tc, null tc, null tc, null tc, N___ tc, 
+#all_coldfire tc,  i8S2i3D3 tc,
+1111010000101000 tw, 0000000000000000 tw,
+
+
+\ No size modifier is now 32 bit as per rest of instruction set.
+INSTRUCTION DIVS  010 tc, 00 tc,
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, __W_ #=n16 + tc,
+#all_68000 #5300 + #5400 +  tc,      W.i4D3i3S6          tc,
+1000000111000000    tw,  0000000000000000 tw,
+
+\ #### manual was not consistant may need more work
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, N__L         tc,
+#68040 #5300 + #5400 + #CPU32 +                         tc,    i10S6+i1D3i9D3      tc,
+0100110001000000    tw,  0000100000000000 tw,
+
+\ note the second source and destination must be different.
+INSTRUCTION REMS 001 tc, 00 tc, 
+<ea06>      tc,  Dn            tc, Dn      tc,  null tc, null tc, N__L         tc,
+#68040 #5300 + #5400 + #CPU32  +                        tc,   i10S6+i1F3i9D3      tc,
+0100110001000000    tw,  0000100000000000 tw,
+
+INSTRUCTION DIVU  010 tc, 00 tc,
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, __W_ #=u16 + tc,
+#all_68000 #5300 + #5400 +    tc, W.i4D3i3S6           tc,
+1000000011000000    tw,  0000000000000000 tw,
+
+\ #### manual was not consistant may need more work
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, N__L         tc,
+#68040 #5300 + #5400 + #CPU32 +                          tc,    i10S6+i1D3i9D3      tc,
+0100110001000000    tw,  0000000000000000 tw,
+
+\ note the second source and destination must be different.
+INSTRUCTION REMU 001 tc, 00 tc,
+<ea20>      tc, Dn         tc, Dn          tc,  null tc, null tc, N__L         tc,
+#68040 #5300 + #5400 + #CPU32 +                  tc,   i10S6+i1F3i9D3      tc,
+0100110001000000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION EOR  010 tc, 00 tc,
+
+<#>         tc, Dn     tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                 tc,     i8s2D6+#            tc,
+0000101000000000    tw,  0000000000000000 tw,
+Dn          tc, <ea03>     tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,     i4S3i1s2D6          tc,
+1011000100000000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION EXT  010 tc, 00 tc,
+Dn          tc, null       tc,  null tc, null tc, null tc, __W_        tc,
+#all_68000 #all_coldfire +                           tc,     i13S3               tc,
+0100100010000000    tw,  0000000000000000 tw,
+Dn          tc, null       tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,     i13S3               tc,
+0100100011000000    tw,  0000000000000000 tw,
+
+INSTRUCTION EXTB  010 tc, 00 tc,
+Dn          tc, null       tc,  null tc, null tc, null tc, N__L        tc,
+#68040  #CPU32 #all_coldfire +  + tc,     i13S3            tc,
+0100100111000000    tw,  0000000000000000 tw,
+Dn          tc, null       tc,  null tc, null tc, null tc, __W_        tc,
+#all_68000 #all_coldfire +                           tc,     i13S3               tc,
+0100100010000000    tw,  0000000000000000 tw,
+
+INSTRUCTION EXTW  001 tc, 00 tc,
+Dn          tc, null       tc,  null tc, null tc, null tc, N__L       tc,
+#all_68000 #all_coldfire +                           tc,     i13S3               tc,
+0100100011000000    tw,  0000000000000000 tw,
+
+INSTRUCTION HALT  001 tc, 00 tc,
+null        tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_coldfire                            tc,     i16                 tc,
+0100101011001000    tw,  0000000000000000 tw,
+
+\ #### I think his exists for the 5300
+INSTRUCTION ILLEGAL  001 tc, 00 tc,
+null        tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_68000                            tc,     i16                 tc,
+0100101011111100    tw,  0000000000000000 tw,
+
+
+INSTRUCTION INTOUCH 001 tc, 00 tc,
+An          tc, null      tc,  null tc, null tc, null tc, N___  tc,
+#5400                           tc,      i13S3            tc,
+1111010000101000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION JMP  001 tc, 00 tc,
+<ea07>      tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                           tc,     i10S6               tc,
+0100111011000000    tw,  0000000000000000 tw,
+
+INSTRUCTION JSR  010 tc, 00 tc,
+<ea07>      tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                           tc,     i10S6               tc,
+0100111010000000    tw,  0000000000000000 tw,
+\ needed to force the AB address of a JSR into 4 bytes so it can 
+\ be altered by  DOES> and code;
+<ea23>      tc, null       tc,  null tc, null tc, null tc, ___L        tc,
+#all_68000 #all_coldfire +                           tc,     L.i10S6               tc,
+0100111010000000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION LEA  001 tc, 00 tc,
+<ea07>      tc, An       tc,  null tc, null tc, null tc, N__L          tc,
+#all_68000 #all_coldfire +                           tc,     i4D3i3S6            tc,
+0100000111000000    tw,  0000000000000000 tw,
+
+INSTRUCTION LINK  001 tc, 00 tc,
+An       tc, <#>         tc,  null tc, null tc, null tc,  N_W_ #=n16 + tc,
+#all_68000 #all_coldfire +                           tc,     i13S3+#16           tc,
+0100111001010000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION LSL  010 tc, 00 tc,
+
+<#>      tc, Dn          tc,  null tc, null tc, null tc,  N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                           tc,     i4#3i1s2i3D3        tc,
+1110000100001000    tw,  0000000000000000 tw,
+Dn       tc, Dn           tc,  null tc, null tc, null tc, N__L         tc,
+#all_68000 #all_coldfire +                           tc,     i4S3i1s2i3D3        tc,
+1110000100101000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION LSR  010 tc, 00 tc,
+<#>      tc, Dn          tc,  null tc, null tc, null tc,  N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                           tc,     i4#3i1s2i3D3        tc,
+1110000000001000    tw,  0000000000000000 tw,
+Dn       tc, Dn           tc,  null tc, null tc, null tc, N__L         tc,
+#all_68000 #all_coldfire +                           tc,     i4S3i1s2i3D3        tc,
+1110000000101000    tw,  0000000000000000 tw,
+
+
+
+
+INSTRUCTION MOV  100011 tc, 00 tc,
+( MOVQ )
+<#>      tc, Dn          tc,  null tc, null tc, null tc,  N__L #=n8 +  tc,
+#all_68000 #all_coldfire +                           tc,     i4D3i1#8            tc,
+0111000000000000    tw,  0000000000000000 tw,  ( # Dn MOVQ)
+
+( CLR )
+<#>      tc, <ea03>          tc,  null tc, null tc, null tc, NBWL #=0 +    tc,
+#all_68000 #all_coldfire +                           tc,     i8s2D6              tc,
+0100001000000000    tw,  0000000000000000 tw,  ( <ea03> CLR)
+
+( 0 to an address register An An SUB)
+<#>      tc, An              tc,  null tc, null tc, null tc, N__L #=0 +    tc,
+#all_68000 #all_coldfire +                           tc,     i4D3s1i5D3          tc,
+1001000011001000    tw,  0000000000000000 tw,  ( An An SUB)
+( life gets complicated. The coldfire will only compile instructions)
+( that are 16,32 or 48 bits long)
+
+( MOV3Q )
+\ this really is of limited use.
+<#>        tc, <ea01>      tc, null tc, null tc, null tc, N__L #=-1>7 + tc,
+#5400                  tc,      i4#3i3D6n2      tc,
+1010000101000000    tw,  0000000000000000 tw,
+
+( MOVE proper coldfire )
+( Dn,[An],[An]+,[An-] All possible)
+<ea18>   tc, <ea03>          tc,  null tc, null tc, null tc, NBWL      tc,
+#all_68000 #all_coldfire +                 tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( [n16.An],[n16.PC] -> Dn,[An],[An]+,[An-],[n16.An])
+<ea19>   tc, <ea20>          tc,  null tc, null tc, null tc, NBWL      tc,
+#all_68000 #all_coldfire +                 tc,    i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( [n8.An.In.sc],[n8.PC.In.sc],[n32],[n16],# -> Dn,[An],[An]+,[An-] )
+<ea21>   tc, <ea18>          tc,  null tc, null tc, null tc, NBWL      tc,
+#all_68000 #all_coldfire +                tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+\ 5407 adds byte and word immediate value moves to n16An.
+<#>   tc, [n16An]          tc,  null tc, null tc, null tc, _BW_      tc,
+#5400                 tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+
+( MOVE proper coldfire, to and from address register )
+\ 2.3 byte moves to and from address was a mistake in manual nothing more
+( Dn,[An],[An]+,[An-] -> An)
+<ea18>   tc, An          tc,  null tc, null tc, null tc, N_WL      tc,
+#all_coldfire                                 tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( [n16.An],[n16.PC] -> An)
+<ea19>   tc, An          tc,  null tc, null tc, null tc, N_WL      tc,
+#all_68000 #all_coldfire  +                    tc,    i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( [n8.An.In.sc],[n8.PC.In.sc],[n32],[n16],# -> An)
+<ea21>   tc, An          tc,  null tc, null tc, null tc, N_WL      tc,
+#all_68000 #all_coldfire +                     tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+An   tc, <ea03>          tc,  null tc, null tc, null tc, N_WL      tc,
+#all_68000 #all_coldfire +                    tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( An -> An)
+An   tc, An         tc,  null tc, null tc, null tc, N_WL      tc,
+#all_68000 #all_coldfire +                    tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+
+( to/from  CCR and SR )
+<ea22>   tc, <CCR>          tc,  null tc, null tc, null tc, N_W_ #=u8 + tc,
+#all_68000 #all_coldfire + tc,     W.i10S6             tc,
+0100010011000000    tw,  0000000000000000 tw,
+<CCR>    tc, Dn         tc,  null tc, null tc, null tc, N_W_       tc,
+#all_68000 #all_coldfire + tc,      i10D6              tc,
+0100001011000000    tw,  0000000000000000 tw,
+<ea22>   tc, <SR>           tc,  null tc, null tc, null tc, N_W_ #=u16 + tc,
+#all_68000 #all_coldfire +                           tc,     W.i10S6              tc,
+0100011011000000    tw,  0000000000000000 tw,
+<SR>     tc, Dn              tc,  null tc, null tc, null tc, N_W_        tc,
+#all_68000 #all_coldfire +                           tc,     i10D6                tc,
+0100000011000000    tw,  0000000000000000 tw,
+
+
+
+An       tc, <USP>          tc,  null tc, null tc, null tc, N__L       tc,
+#all_68000 #5474 +          tc,     i13S3               tc,
+0100111001100000    tw,  0000000000000000 tw,
+
+<USP>    tc, An             tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #5474 +          tc,     i13D3               tc,
+0100111001101000    tw,  0000000000000000 tw,
+
+
+Rc        tc, Rn         tc,  null tc, null tc, null tc,  N__L          tc,
+#68040 #CPU32 #all_coldfire +  + tc, i16+D4S12     tc,
+0100111001111010 tw,  0000000000000000 tw,
+Rn        tc, Rc         tc,  null tc, null tc, null tc, N__L           tc,
+#68040  #CPU32 #all_coldfire +  + tc, i16+S4D12     tc,
+0100111001111011 tw,  0000000000000000 tw,
+
+( additional modes for 68000)
+<ea06>   tc, <ea03>          tc,  null tc, null tc, null tc, NBWL      tc,
+#all_68000                                 tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( move from address)
+An       tc, <ea03>          tc,  null tc, null tc, null tc, N_WL      tc,
+#all_68000
+                           tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+( move to an address)
+<ea00>   tc, An             tc,  null tc, null tc, null tc, N_WL       tc,
+#all_68000                 tc,     i2s2D6S6            tc,
+0000000000000000    tw,  0000000000000000 tw,
+
+( to/from CCR )
+<ea06>   tc, <CCR>          tc,  null tc, null tc, null tc, N_W_ #=u8 + tc,
+#all_68000                           tc,     W.i10S6             tc,
+0100010011000000    tw,  0000000000000000 tw,
+<CCR>    tc, <ea03>         tc,  null tc, null tc, null tc, N_W_       tc,
+#68040 #CPU32 + tc,      i10D6              tc,
+0100001011000000    tw,  0000000000000000 tw,
+<ea06>   tc, <SR>           tc,  null tc, null tc, null tc, N_W_ #=u16 + tc,
+#all_68000                               tc,     W.i10S6              tc,
+0100011011000000    tw,  0000000000000000 tw,
+<SR>     tc, <ea03>         tc,  null tc, null tc, null tc, N_W_        tc,
+#all_68000                            tc,     i10D6                tc,
+0100000011000000    tw,  0000000000000000 tw,
+
+<ea24>   tc, <ACC>           tc,  null tc, null tc, null tc, N__L  tc,
+#5300 #5400 +                               tc,     i10S6              tc,
+1010000100000000    tw,  0000000000000000 tw,
+<ACC>     tc, Rn        tc,  null tc, null tc, null tc, N__L        tc,
+#5300 #5400 +                            tc,     i12D4                tc,
+1010000110000000    tw,  0000000000000000 tw,
+
+<ea24>   tc, <MASK>           tc,  null tc, null tc, null tc, N__L  tc,
+#5300 #5400 +                               tc,     i10S6              tc,
+1010110100000000    tw,  0000000000000000 tw,
+<MASK>     tc, Rn        tc,  null tc, null tc, null tc, N__L        tc,
+#5300 #5400 +                            tc,     i12D4                tc,
+1010110110000000    tw,  0000000000000000 tw,
+
+<ea24>   tc, <MACSR>           tc,  null tc, null tc, null tc, N__L  tc,
+#5300 #5400 +                               tc,     i10S6              tc,
+1010100100000000    tw,  0000000000000000 tw,
+<MACSR>     tc, Rn        tc,  null tc, null tc, null tc, N__L        tc,
+#5300 #5400 +                            tc,     i12D4                tc,
+1010100110000000    tw,  0000000000000000 tw,
+
+<MACSR>   tc, <CCR>    tc,  null tc, null tc, null tc, N__L  tc,
+#5300 #5400 +                               tc,     i16              tc,
+1010100111000000    tw,  0000000000000000 tw,
+
+
+\ ---------------------------------------------------------------
+INSTRUCTION MOV16 0101 tc, 00 tc,
+[An]+    tc, [An]+       tc,  null tc, null tc, null tc,  N___         tc,
+#68040                       tc,     i13S3+i1D3i12         tc,
+1111011000100000 tw,  1000000000000000 tw,
+<AB>      tc, [An]           tc,  null tc, null tc, null tc, N___          tc,
+#68040                   tc,        i13D3+AB              tc,
+1111011000011000 tw,  0000000000000000 tw,
+<AB>      tc, [An-]          tc,  null tc, null tc, null tc, N___          tc,
+#68040                         tc,  i13D3+AB              tc,
+1111011000001000  tw,  0000000000000000 tw,
+[An]      tc, <AB>           tc,  null tc, null tc, null tc, N___      tc,
+#68040                         tc,  i13S3+AB              tc,
+1111011000010000  tw,  0000000000000000 tw,
+[An]+     tc, <AB>           tc,  null tc, null tc, null tc, N___      tc,
+#68040                         tc,  i13S3+AB               tc,
+1111011000000000  tw,  0000000000000000 tw,
+
+INSTRUCTION MMOV 101 tc, 00 tc,
+Rlist     tc, <ea15>     tc,  null tc, null tc, null tc,  N__L         tc,
+#all_68000 #all_coldfire +                                  tc, i9s1D6+#          tc,
+0100100010000000 tw,  0000000000000000 tw,
+<ea15>    tc, Rlist      tc,  null tc, null tc, null tc, N__L          tc,
+#all_68000 #all_coldfire +                                  tc, i9s1S6+#          tc,
+0100110010000000 tw,  0000000000000000 tw,
+( register list to be mirrored)
+Rlist     tc, [An-]      tc,  null tc, null tc, null tc,  N_WL         tc,
+#all_68000                                 tc, 1i9s1D6+#         tc,
+0100100010000000 tw,  0000000000000000 tw,
+\ the addressing modes of the first two entries are repeated here but no matter.
+Rlist     tc, <ea04>     tc,  null tc, null tc, null tc,  N_WL         tc,
+#all_68000                                  tc, i9s1D6+#          tc,
+0100100010000000 tw,  0000000000000000 tw,
+<ea08>    tc, Rlist      tc,  null tc, null tc, null tc, N_WL          tc,
+#all_68000                                  tc, i9s1S6+#          tc,
+0100110010000000 tw,  0000000000000000 tw,
+
+INSTRUCTION MOVS 010 tc, 00 tc,
+Rn     tc, <ea02>        tc,  null tc, null tc, null tc,  NBWL         tc,
+#68040 #CPU32   +  tc,  i8s2D6+S4i12 tc,
+0000111000000000 tw,  0000100000000000 tw,
+<ea02> tc, Rn            tc,  null tc, null tc, null tc, NBWL          tc,
+#68040  #CPU32   + tc,  i8s2S6+D4i12 tc,
+0000111000000000 tw,  0000000000000000 tw,
+
+INSTRUCTION MULS  0100 tc, 00 tc,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, N_W_ #=n16 + tc,
+#all_68000 #all_coldfire +                           tc,      W.i4D3i3S6         tc,
+1100000111000000    tw,  0000000000000000 tw,
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, ___L        tc,
+#68040 #CPU32  + #all_coldfire + tc,    i10S6+i1D3i9D3     tc,
+0100110000000000    tw,  0000100000000000 tw,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, ___L        tc,
+#68040 #CPU32  + tc,    i10S6+i1D3i9D3     tc,
+0100110000000000    tw,  0000100000000000 tw,
+( 64 bit results in two registers)
+<ea06>      tc,  Dn            tc, Dn      tc,  null tc, null tc,  N__L        tc,
+#68040  #CPU32   + tc,   i10S6+i1F3i9D3     tc,
+0100110000000000    tw,  0000110000000000 tw,
+
+INSTRUCTION MULU  0100 tc, 00 tc,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, N_W_ #=u16 + tc,
+#all_68000 #all_coldfire +                           tc,      W.i4D3i3S6         tc,
+1100000011000000    tw,  0000000000000000 tw,
+<ea20>      tc, Dn         tc,  null tc, null tc, null tc, ___L        tc,
+#68040  #CPU32 #all_coldfire +  + tc,    i10S6+i1D3i9D3     tc,
+0100110000000000    tw,  0000000000000000 tw,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, ___L        tc,
+#68040  #CPU32  + tc,    i10S6+i1D3i9D3     tc,
+0100110000000000    tw,  0000000000000000 tw,
+( 64 bit result)
+<ea06>      tc, Dn         tc, Dn          tc,  null tc, null tc, N__L        tc,
+#68040  #CPU32  + tc,   i10S6+i1F3i9D3     tc,
+0100110000000000    tw,  0000010000000000 tw,
+
+
+INSTRUCTION MVS  01 tc, 00 tc,
+<ea00>      tc, Dn       tc,  null tc, null tc, null tc, _BW_        tc,
+#5400                     tc,     i4D3i2s1S6               tc,
+0111000100000000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION MVZ  01 tc, 00 tc,
+<ea00>      tc, Dn       tc,  null tc, null tc, null tc, _BW_        tc,
+#5400                     tc,     i4D3i2s1S6               tc,
+0111000110000000    tw,  0000000000000000 tw,
+
+INSTRUCTION NBCD  01 tc, 00 tc,
+<ea03>      tc, null       tc,  null tc, null tc, null tc, _B__        tc,
+#all_68000                     tc,     i10S6               tc,
+0100100000000000    tw,  0000000000000000 tw,
+
+INSTRUCTION NEG  10 tc, 00 tc,
+Dn          tc, null       tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire  +                tc,     i8s2S6              tc,
+
+0100010000000000    tw,  0000000000000000 tw,
+<ea03>      tc, null       tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                     tc,     i8s2S6              tc,
+0100010000000000    tw,  0000000000000000 tw,
+
+INSTRUCTION NEGX 10 tc, 00 tc,
+Dn      tc, null       tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                            tc,    i8s2S6              tc,
+0100000000000000    tw,  0000010000000000 tw,
+
+<ea03>      tc, null       tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,    i8s2S6              tc,
+0100000000000000    tw,  0000010000000000 tw,
+
+INSTRUCTION NOP  01 tc, 00 tc,
+null        tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                           tc,     i16                 tc,
+0100111001110001    tw,  0000000000000000 tw,
+
+INSTRUCTION NOT  10 tc, 00 tc,
+Dn      tc, null       tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,     i8s2S6              tc,
+0100011000000000    tw,  0000000000000000 tw,
+
+<ea03>      tc, null       tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                           tc,     i8s2S6              tc,
+0100011000000000    tw,  0000000000000000 tw,
+
+INSTRUCTION OR  1000 tc, 00 tc,
+<#>         tc, Dn     tc,  null tc, null tc, null tc, N__L       tc,
+#all_68000 #all_coldfire +                           tc,     i8s2D6+#           tc,
+0000000000000000    tw,  0000000000000000 tw,
+<ea06>      tc, Dn        tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,     i4D3i1s2S6         tc,
+1000000000000000    tw,  0000000000000000 tw,
+Dn          tc, <ea02>    tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,     i4S3i1s2D6         tc,
+1000000100000000    tw,  0000000000000000 tw,
+
+<#>         tc, <ea03>     tc,  null tc, null tc, null tc, NBWL       tc,
+#all_68000                                tc,     i8s2D6+#           tc,
+0000000000000000    tw,  0000000000000000 tw,
+<ea06>      tc, Dn        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                                tc,     i4D3i1s2S6         tc,
+1000000000000000    tw,  0000000000000000 tw,
+Dn          tc, <ea02>    tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                                tc,     i4S3i1s2D6         tc,
+1000000100000000    tw,  0000000000000000 tw,
+<#>         tc, <CCR>     tc,  null tc, null tc, null tc, NB__ #=u8 + tc,
+#all_68000                                tc,     i16+#16            tc,
+0000000000111100    tw,  0000000000000000 tw,
+<#>          tc, <SR>     tc,  null tc, null tc, null tc, N_W_ #=u16 + tc,
+#all_68000                                tc,     i16+#16            tc,
+0000000001111100    tw,  0000000000000000 tw,
+
+INSTRUCTION PEA  01 tc, 00 tc,
+<ea07>     tc, null       tc,  null tc, null tc, null tc, N__L         tc,
+#all_68000 #all_coldfire +                           tc,     i10S6               tc,
+0100100001000000    tw,  0000000000000000 tw,
+
+INSTRUCTION PTESTW  01 tc, 00 tc,
+[An]      tc, null       tc,  null tc, null tc, null tc, N___         tc,
+#68040                         tc,     i13S3              tc,
+1111010101001000    tw,  0000000000000000 tw,
+
+INSTRUCTION PTESTR  01 tc, 00 tc,
+[An]      tc, null       tc,  null tc, null tc, null tc, N___         tc,
+#68040                         tc,     i13S3              tc,
+1111010101101000    tw,  0000000000000000 tw,
+
+
+INSTRUCTION PMOV 010 tc, 00 tc,
+Dn         tc, [n16An]    tc,  null tc, null tc, null tc,  N_WL         tc,
+#all_68000                             tc,  i4S3i2s1i3D3+disp tc,
+0000000110001000 tw,  0000000000000000 tw,
+[n16An]    tc, Dn         tc,  null tc, null tc, null tc, N_WL          tc,
+#all_68000                                tc,  i4D3i2s1i3S3+disp tc,
+0000000100001000 tw,  0000000000000000 tw,
+
+INSTRUCTION PULSE  001 tc, 00 tc,
+null        tc, null       tc,  null tc, null tc, null tc, N___        tc,
+#all_coldfire                           tc,     i16                 tc,
+0100101011001100    tw,  0000000000000000 tw,
+
+INSTRUCTION RESET  01 tc, 00 tc,
+null       tc, null       tc,  null tc, null tc, null tc, N__L         tc,
+#all_68000                          tc,     i16                 tc,
+0100111001110000    tw,  0000000000000000 tw,
+
+INSTRUCTION ROL 011 tc, 00 tc,
+<#>       tc, Dn          tc,  null tc, null tc, null tc, NBWL #=1>8 + tc,
+#all_68000                            tc,      i4#3i1s2D6         tc,
+1110000100011000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4S3i1s2i3D3       tc,
+1110000100111000   tw,  0000000000000000 tw,
+<ea02>     tc, null        tc,  null tc, null tc, null tc, __W_        tc,
+#all_68000                           tc,      i10S6              tc,
+1110011111000000   tw,  0000000000000000 tw,
+
+INSTRUCTION ROR 011 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, NBWL #=1>8 + tc,
+#all_68000                            tc,      i4#3i1s2D6         tc,
+1110000000011000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4S3i1s2i3D3       tc,
+1110000000111000   tw,  0000000000000000 tw,
+<ea02>     tc, null        tc,  null tc, null tc, null tc, __W_        tc,
+#all_68000                            tc,      i10S6              tc,
+1110011011000000   tw,  0000000000000000 tw,
+
+INSTRUCTION ROXL 011 tc, 00 tc,
+<#>       tc, Dn          tc,  null tc, null tc, null tc, NBWL #=1>8 + tc,
+#all_68000                          tc,      i4#3i1s2D6         tc,
+1110000100010000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4S3i1s2i3D3       tc,
+1110000100110000   tw,  0000000000000000 tw,
+<ea02>     tc, null        tc,  null tc, null tc, null tc, N_W_        tc,
+#all_68000                           tc,      i10S6              tc,
+1110010111000000   tw,  0000000000000000 tw,
+
+INSTRUCTION ROXR 011 tc, 00 tc,
+<#>        tc, Dn          tc,  null tc, null tc, null tc, NBWL #=1>8 + tc,
+#all_68000                           tc,      i4#3i1s2D6         tc,
+1110000000010000   tw,  0000000000000000 tw,
+Dn         tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4S3i1s2i3D3       tc,
+1110000000110000   tw,  0000000000000000 tw,
+<ea02>     tc, null        tc,  null tc, null tc, null tc, N_W_        tc,
+#all_68000                            tc,      i10S6              tc,
+1110010011000000   tw,  0000000000000000 tw,
+
+INSTRUCTION RTD 01 tc, 00 tc,
+<#>        tc, null        tc,  null tc, null tc, null tc, NBWL #=n16 + tc,
+#68040 #CPU32   + tc,  i16+#16    tc,
+0100111001110100   tw,  0000000000000000 tw,
+
+INSTRUCTION RTE 01 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                                  tc,   i16            tc,
+0100111001110011   tw,  0000000000000000 tw,
+
+INSTRUCTION RTR 01 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, N___        tc,
+#all_68000                               tc,   i16            tc,
+0100111001110111   tw,  0000000000000000 tw,
+
+INSTRUCTION RTS 01 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                                  tc,   rtsi16            tc,
+0100111001110101   tw,  0000000000000000 tw,
+
+
+INSTRUCTION SATS  001 tc, 00 tc,
+Dn          tc, null       tc,  null tc, null tc, null tc, N__L       tc,
+#5400                           tc,     i13S3               tc,
+0100110010000000    tw,  0000000000000000 tw,
+
+INSTRUCTION SCC 10 tc, 00 tc,
+Dn     tc, <cond>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                           tc,      i4C4i2S6           tc,
+0101000011000000   tw,  0000000000000000 tw,
+
+<ea03>     tc, <cond>      tc,  null tc, null tc, null tc, NB__        tc,
+#all_68000 #all_coldfire +                           tc,      i4C4i2S6           tc,
+0101000011000000   tw,  0000000000000000 tw,
+
+INSTRUCTION STOP  001 tc, 00 tc,
+<#>          tc, null      tc,  null tc, null tc, null tc, N_W_ #=u16 + tc,
+#all_68000 #all_coldfire +                           tc,      i16+#16            tc,
+0100111001110010    tw,  0000000000000000 tw,
+
+
+INSTRUCTION SUB  1010 tc, 00 tc,
+<#>         tc, <ea01>     tc,  null tc, null tc, null tc, N__L #=1>8 + tc,
+#all_68000 #all_coldfire +                           tc,      i4#3i1s2D6         tc,
+0101000100000000    tw,  0000000000000000 tw, ( # <ea1> SUBQ)
+<#>         tc, Dn     tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i8s2D6+#           tc,
+0000010000000000    tw,  0000000000000000 tw, ( # <ea03>SUBI)
+Dn          tc, <ea02>     tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4S3i1s2D6         tc,
+1001000100000000    tw,  0000000000000000 tw,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4D3i1s2S6         tc,
+1001000000000000    tw,  0000000000000000 tw,
+An          tc, Dn         tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4D3i1s2S6         tc,
+1001000000000000    tw,  0000000000000000 tw,
+<ea00>      tc, An         tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4D3s1i2S6         tc,
+1001000011000000    tw,  0000000000000000 tw,
+
+<#>         tc, <ea01>     tc,  null tc, null tc, null tc, NBWL #=1>8 + tc,
+#all_68000                          tc,      i4#3i1s2D6         tc,
+0101000100000000    tw,  0000000000000000 tw, ( # <ea1> SUBQ)
+<#>         tc, <ea03>     tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                           tc,      i8s2D6+#           tc,
+0000010000000000    tw,  0000000000000000 tw, ( # <ea03>SUBI)
+Dn          tc, <ea02>     tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                           tc,      i4S3i1s2D6         tc,
+1001000100000000    tw,  0000000000000000 tw,
+<ea06>      tc, Dn         tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                           tc,      i4D3i1s2S6         tc,
+1001000000000000    tw,  0000000000000000 tw,
+An          tc, Dn         tc,  null tc, null tc, null tc, N_WL        tc,
+#all_68000                           tc,      i4D3i1s2S6         tc,
+1001000000000000    tw,  0000000000000000 tw,
+<ea00>      tc, An         tc,  null tc, null tc, null tc, N_WL        tc,
+#all_68000                           tc,      i4D3s1i2S6         tc,
+1001000011000000    tw,  0000000000000000 tw,
+
+INSTRUCTION SUBX  010 tc, 00 tc,
+
+Dn         tc, Dn          tc,  null tc, null tc, null tc, N__L        tc,
+#all_68000 #all_coldfire +                           tc,      i4D3i1s2i3S3       tc,
+1001000100000000   tw,  0000000000000000 tw,
+
+Dn         tc, Dn          tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4D3i1s2i3S3       tc,
+1001000100000000   tw,  0000000000000000 tw,
+[An-]      tc, [An-]       tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000                            tc,      i4D3i1s2i3S3       tc,
+1001000100001000    tw,  0000000000000000 tw,
+
+INSTRUCTION SWP  01 tc, 00 tc,
+Dn         tc, null        tc,  null tc, null tc, null tc, N_W_        tc,
+#all_68000 #all_coldfire +                           tc,      i13S3              tc,
+0100100001000000   tw,  0000000000000000 tw,
+
+INSTRUCTION TAS  01 tc, 00 tc,
+<ea03>         tc, null        tc,  null tc, null tc, null tc,  NB__   tc,
+#all_68000 #5400 +                    tc,      i10S6              tc,
+0100101011000000   tw,  0000000000000000 tw,
+
+INSTRUCTION TRAP  01 tc, 00 tc,
+<#>         tc, null        tc,  null tc, null tc, null tc,   NB__ #=u4 + tc,
+#all_68000 #all_coldfire +                           tc,      i12#4              tc,
+0100111001000000   tw,  0000000000000000 tw,
+.S .( after TRAP)
+
+INSTRUCTION TRAPCC  011 tc, 00 tc,
+<#>         tc, <cond>      tc,  null tc, null tc, null tc, __W_ #=16b  + tc,
+#68040 #CPU32   + tc,   i4C4i8+#           tc,
+0101000011111010   tw,  0000000000000000 tw,
+<#>         tc, <cond>      tc,  null tc, null tc, null tc, N__L          tc,
+#68040  #CPU32  + tc,    i4C4i8+#           tc,
+0101000011111011   tw,  0000000000000000 tw,
+<cond>      tc, null        tc,  null tc, null tc, null tc, N___          tc,
+#68040 #CPU32   + tc,    i4C4i8             tc,
+0101000011111100   tw,  0000000000000000 tw,
+
+\ coldfire specific, not really of much use
+INSTRUCTION TRAPFF  011 tc, 00 tc,
+<#>         tc, null      tc,  null tc, null tc, null tc, __W_ #=16b  + tc,
+#all_coldfire tc,   i16+#16           tc,
+0101000111111010   tw,  0000000000000000 tw,
+<#>         tc, null      tc,  null tc, null tc, null tc, N__L          tc,
+#all_coldfire tc,    i16+#32           tc,
+0101000111111011   tw,  0000000000000000 tw,
+<cond>      tc, null        tc,  null tc, null tc, null tc, N___          tc,
+#all_coldfire    tc,    i16             tc,
+0101000111111100   tw,  0000000000000000 tw,
+
+INSTRUCTION TRAPV  01 tc, 00 tc,
+null        tc, null        tc,  null tc, null tc, null tc, N___        tc,
+#all_68000                          tc,      i16                tc,
+0100111001110110 tw,  0000000000000000 tw,
+
+INSTRUCTION TST  010 tc, 00 tc,
+<ea06>      tc, null        tc,  null tc, null tc, null tc, NBWL        tc,
+#all_68000 #all_coldfire +                           tc,      i8s2S6             tc,
+0100101000000000 tw,  0000000000000000 tw,
+An          tc, null        tc,  null tc, null tc, null tc, N_WL        tc,
+#68040  #CPU32 + #5300 + #5400  + tc,    i8s2S6             tc,
+0100101000000000 tw,  0000000000000000 tw,
+
+INSTRUCTION UNLK  01 tc, 00 tc,
+An          tc, null        tc, null tc, null tc, null tc, N___        tc,
+#all_68000 #all_coldfire +                           tc,      i13S3              tc,
+0100111001011000 tw,  0000000000000000 tw,
+
+
+INSTRUCTION BGND 01 tc, 00 tc,
+null       tc, null        tc,  null tc, null tc, null tc, N___        tc,
+#CPU32                          tc,      i16                tc,
+0100101011111010   tw,  0000000000000000 tw,
+
+
+\ new coldfire instructions
+INSTRUCTION MAC 01 tc, 00 tc,
+Rn tc, Rn tc, null tc, null tc, null tc, N_WL tc,
+#5300 #5400 + tc, mac tc,
+1010000000000000   tw,  0000000000000000 tw,
+
+INSTRUCTION MACL 01 tc, 00 tc,
+Rn tc, Rn tc, <ea16> tc, Rn tc, null tc, N_WL tc,
+#5300 #5400 + tc, macl tc,
+1010000010000000   tw, 0000000000000000 tw,
+
+INSTRUCTION MSAC 01 tc, 00 tc, 
+Rn tc, Rn tc, null tc, null tc, null tc, N_WL tc,
+#5300 #5400 + tc, mac tc,
+1010000000000000   tw,  0000000100000000 tw,
+
+INSTRUCTION MSACL 01 tc, 00 tc,
+Rn tc, Rn tc, <ea16> tc, Rn tc, null tc, N_WL tc, 
+#5300 #5400 + tc, macl tc,
+1010000010000000   tw,  0000000100000000 tw,
+
+
+
+	( define the registers) HEX
+	#all_68000 #all_coldfire + #cpu_reg #data +   00 + REGISTER D0
+	#all_68000 #all_coldfire + #cpu_reg #data +   01 + REGISTER D1
+	#all_68000 #all_coldfire + #cpu_reg #data +   02 + REGISTER D2
+	#all_68000 #all_coldfire + #cpu_reg #data +   03 + REGISTER D3
+	#all_68000 #all_coldfire + #cpu_reg #data +   04 + REGISTER D4
+	#all_68000 #all_coldfire + #cpu_reg #data +   05 + REGISTER D5
+	#all_68000 #all_coldfire + #cpu_reg #data +   06 + REGISTER D6
+	#all_68000 #all_coldfire + #cpu_reg #data +   07 + REGISTER D7
+	#all_68000 #all_coldfire + #cpu_reg #addr +  00 + REGISTER A0
+	#all_68000 #all_coldfire + #cpu_reg #addr +  01 + REGISTER A1
+	#all_68000 #all_coldfire + #cpu_reg #addr +  02 + REGISTER A2
+	#all_68000 #all_coldfire + #cpu_reg #addr +  02 + REGISTER OP
+	#all_68000 #all_coldfire + #cpu_reg #addr +  03 + REGISTER A3
+	#all_68000 #all_coldfire + #cpu_reg #addr +  03 + REGISTER U
+	#all_68000 #all_coldfire + #cpu_reg #addr +  04 + REGISTER A4
+	#all_68000 #all_coldfire + #cpu_reg #addr +  04 + REGISTER W
+	#all_68000 #all_coldfire + #cpu_reg #addr +  05 + REGISTER A5
+	#all_68000 #all_coldfire + #cpu_reg #addr +  05 + REGISTER LP		
+	#all_68000 #all_coldfire + #cpu_reg #addr +  06 + REGISTER A6
+	#all_68000 #all_coldfire + #cpu_reg #addr +  06 + REGISTER S
+	#all_68000 #all_coldfire + #cpu_reg #addr +  07 + REGISTER A7
+	#all_68000 #all_coldfire + #cpu_reg #addr +  07 + REGISTER R
+
+
+	( conditional codes) HEX
+	#all_68000 #all_coldfire + #flag   00  +   REGISTER  TR
+	#all_68000 #all_coldfire + #flag   01  +   REGISTER  FS   ( Not available for Bcc)
+	#all_68000 #all_coldfire + #flag   02  +   REGISTER  HI
+	#all_68000 #all_coldfire + #flag   03  +   REGISTER  LS
+	#all_68000 #all_coldfire + #flag   04  +   REGISTER  CC
+	#all_68000 #all_coldfire + #flag   05  +   REGISTER  CS
+	#all_68000 #all_coldfire + #flag   06  +   REGISTER  NE
+	#all_68000 #all_coldfire + #flag   07  +   REGISTER  EQ
+	#all_68000 #all_coldfire + #flag   08  +   REGISTER  VC
+	#all_68000 #all_coldfire + #flag   09  +   REGISTER  VS
+	#all_68000 #all_coldfire + #flag   0A  +   REGISTER  PL
+	#all_68000 #all_coldfire + #flag   0B  +   REGISTER  MI
+	#all_68000 #all_coldfire + #flag   0C  +   REGISTER  GE
+	#all_68000 #all_coldfire + #flag   0D  +   REGISTER  LT
+	#all_68000 #all_coldfire + #flag   0E  +   REGISTER  GT
+	#all_68000 #all_coldfire + #flag   0F  +   REGISTER  LE
+
+
+	( special REGISTER s) HEX
+	#all_68000 #all_coldfire + #special_reg #PC        + REGISTER  PC
+	#all_68000 #all_coldfire + #special_reg #CCR       + REGISTER  CCR
+	#all_68000 #all_coldfire + #special_reg #SR        + REGISTER  SR
+	#all_68000 #all_coldfire + #special_reg #ACC       + REGISTER  ACC
+	#all_68000 #all_coldfire + #special_reg #MASK      + REGISTER  MASK
+	#all_68000 #all_coldfire + #special_reg #MACSR     + REGISTER  MACSR
+
+
+	( control REGISTER )  HEX
+	( Missing code generates an illegal instruction exception)
+	#68040  #CPU32  + #control_reg 000 +
+	REGISTER     SFC     ( source function code)
+	\ ##### remove #5300 + #5400 +
+	#68040  #CPU32 + #5300 + #5400 + #control_reg 001 +
+	REGISTER     DFC     ( Destination function code)
+
+
+	#5300 #5400 +    #control_reg 002 +
+	REGISTER     CACR     ( )
+
+	#5300 #5400 +    #control_reg 004 +
+	REGISTER     ACR0     ( Access control register 0)
+
+	#5300 #5400 +    #control_reg 005 +
+	REGISTER     ACR1     ( Access control register 1)
+
+	#5400    #control_reg 006 +
+	REGISTER     ACR2     ( Access control register 3)
+
+	#5400    #control_reg 007 +
+	REGISTER     ACR3     ( Access control register 4)
+
+	#all_68000 #all_coldfire +  #control_reg 800 +
+	REGISTER     USP     ( User stack pointer)
+
+	#68040 #CPU32 + #5300 + #5400 + #control_reg 801 +
+	REGISTER     VBR     ( Vector base REGISTER )
+
+
+	#5300 #control_reg C04 +
+	REGISTER     RAMBAR   ( Ram base address register)
+	#5300 #5400 +    #control_reg C0F +
+	REGISTER     MBAR     ( Module base address register)
+
+
+	#5400    #control_reg C04 +
+	REGISTER     RAMBAR0   ( Ram base address register)
+
+	#5400    #control_reg C05 +
+	REGISTER     RAMBAR1   ( Ram base address register)
+		
+	( special REGISTERs)  HEX
+	#5400  #cache      01         + REGISTER DC ( Data)
+	#5400  #cache      02         + REGISTER IC ( instruction)
+	#5300  #5400 + #cache      03         + REGISTER BC ( Both cache )
+	#5400  #cache      00         + REGISTER NC ( No caches)
+
+
+	( W. L. B. )  HEX
+	#byte SIZE B.
+	#word SIZE W.
+	#long SIZE L.
+
+
+	#flags>> _flags >>
+	#flags<< _flags << 
+	#flags&  _flags &
+	#flagsU. _flags U.
+
+
+	#_]+    TERMINATOR  ]+
+	#_-]    TERMINATOR  -]
+	#_]     TERMINATOR  ]
+	#_}     TERMINATOR  |]
+
+	#_]+    OLD_TERMINATOR )+
+	#_-]    OLD_TERMINATOR -)
+	#_]     OLD_TERMINATOR )
+
+
+
+	: [ ( --)
+		1 %indirection +!
+		%indirection @ #indirection < not ABORT" Too many [ "
+		@s %ind_stack %indirection @ 4* + !
+	;
+
+
+	: \\
+		%indirection @ #ef_fieldASL LSHIFT
+		%field @ #num_fields < not IF
+			to_many_fields 
+		THEN
+		%field @ #ef_fieldASL LSHIFT +
+		%ef_table +
+		\ addr (--
+		DUP #_mode + C@ not IF
+			\ addr (--
+			#_\\ SWAP #_mode + C!
+			EXIT
+		THEN
+		\ addr (--
+		DUP #_mode + C@ #_\\ <> ABORT" Mixed mode"
+		( addr (--)
+		#_reg OVER + W@
+		( addr reg(--)
+		OVER #_index + W@ not IF
+			2DUP SWAP #_index + W!
+		THEN
+		OVER #_index + W@
+		( addr reg1 reg2(--)
+		#set&reg forth_and
+		SWAP #set&reg forth_and
+		2DUP < IF
+			SWAP
+		THEN
+		( addr large small(--)
+		SWAP 1+ SWAP
+		DO  ( addr(--)
+			DUP #_displacement + @
+			I 2** forth_or
+			OVER #_displacement + !
+		LOOP
+		0 OVER #_reg + W!
+		0 OVER #_index + W!
+		DROP
+		1 %field +!
+	;
+
+
+
+
+
+	: +XL ( --)
+		%indirection @ ABORT" Old and new syntax may not be used together"
+		%field @ not ABORT" No register supplied"
+		%field @ 1 - #ef_fieldASL LSHIFT
+		%ef_table +
+		\ from(--
+		DUP DUP #ef_entry_length +  
+		\ from from to (--
+		#ef_entry_length MOVE
+		\ from(--
+		DUP #_address_data ERASE
+		\ from(--
+		#ef_entry_length +
+		\ to(--
+		DUP #_reg + W@ OVER #_index + W!
+		0 OVER #_reg + W!
+		\ pfa_value from(--
+		#long SWAP #_size + C!
+	;
+
+
+	: \ ( --)
+		%indirection @ #ef_entryASL LSHIFT
+		%field @ #num_fields < not ABORT" Too many fields"
+		%field @ #ef_fieldASL LSHIFT
+		+ %ef_table +
+		( addr (--)
+		#_mode OVER + C@ not IF 
+			( a comment)
+			DROP
+			#TIB @ >IN !
+			EXIT
+		THEN
+		( addr (--)
+		#_mode OVER + C@ #_\\ <> ABORT" Mixed addressing mode"
+		( addr (--)
+		#_reg OVER + W@
+		( addr reg(--)
+		OVER #_index + W@ not IF
+			2DUP SWAP #_index + W!
+		THEN
+		OVER #_index + W@
+		( addr reg1 reg2(--)
+		#set&reg forth_and
+		SWAP #set&reg forth_and
+		2DUP < IF
+			SWAP
+		THEN
+		( addr large small(--)
+		SWAP 1+ SWAP
+		DO  ( addr(--)
+			DUP #_displacement + @
+			I 2** forth_or
+			OVER #_displacement + !
+		LOOP
+		0 OVER #_reg + W!
+		0 OVER #_index + W!
+		DROP
+	;
+
+
+	: AB ( addr --)
+		%field @ #ef_fieldASL LSHIFT
+		%ef_table +
+		#ef_entry_length +
+		#_] OVER #_mode + C!
+		#_displacement + !
+		1 %field +!
+	;
+
+
+	( standard macros, no checking that conditionals match ) HEX
+
+	: IF compliment_condition ahere
+		DUP BCC  ;
+
+	: UNTIL compliment_condition BCC ;
+
+	: THEN ( addr --) compile_branch  ;
+
+	: ELSE FS IF SWAP THEN ;
+
+	: BEGIN ahere   ;
+
+	: WHILE IF  ;
+
+	: REPEAT  >R  BRA  R> THEN ;
+
+	\ so we pick up the forth versions of IF THEN
+	target_also FORTH
+
+	: NEXT
+		( word exit code)
+		 _%local_use @ IF
+			_%local_output_bytes @ IF
+				_%local_output_bytes @ 4 /
+				7000 OR
+					 XW,
+				204D XW,
+
+				2D20 XW,
+				5380 XW,
+				66FA XW,
+			THEN
+			4E5D XW,
+			PREVIOUS  ( get rid of &local)
+			_end_local_dictionary
+		THEN
+		4E75 XW,
+		!code
+		INIT_ASSEMBLER
+		PREVIOUS
+	;
+
+	\ same as NEXT but doesn't change vocabulary order.
+	\ This version has same effective action as the FORTH EXIT.
+	\ That is it leaves the current definition.
+	: EXIT
+		( word exit code)
+		_%local_use @ IF
+			_%local_output_bytes @ IF
+				_%local_output_bytes @ 4 /
+				7000 OR
+					 XW,
+				204D XW,
+
+				2D20 XW,
+				5380 XW,
+				66FA XW,
+			THEN
+				4E5D XW,
+		THEN
+		4E75 XW,
+	;
+
+	target_previous
+	assembler
+
+
+
+	( the words that were used for indirect with displacment)  HEX
+	#cpu_reg #addr + 00 + OLD_DISPLACEMENT 0)
+	#cpu_reg #addr + 01 + OLD_DISPLACEMENT 1)
+	#cpu_reg #addr + 02 + OLD_DISPLACEMENT 2)
+	#cpu_reg #addr + 03 + OLD_DISPLACEMENT 3)
+	#cpu_reg #addr + 04 + OLD_DISPLACEMENT W)
+	#cpu_reg #addr + 05 + OLD_DISPLACEMENT LP)
+	#cpu_reg #addr + 06 + OLD_DISPLACEMENT S)
+	#cpu_reg #addr + 07 + OLD_DISPLACEMENT R)
+	#special_reg #PC    + OLD_DISPLACEMENT PC)
+
+
+
+
+	: U)   user_base  - 3) ;
+
+	' INIT_ASSEMBLER 'init_assembler t!
+
+#5307 [IF]
+	 : assembler>dictionary ( --)
+		['] HERE 'ahere !
+		['] W!   'aw!   !
+		['] W@   'aw@   !
+		['] ALLOT  'agap  !
+		#5300 %cpu !
+	;
+[THEN]
+
+
+#5407 #5474 + [IF]
+	 : assembler>dictionary ( --)
+		['] HERE 'ahere !
+		['] W!   'aw!   !
+		['] W@   'aw@   !
+		['] ALLOT  'agap  !
+		#5400 %cpu !
+	;
+[THEN]
+	' assembler>dictionary (assembler>dict) t!
+
+
+
+	HOST DEFINITIONS
+	target_previous
+	target_previous_definitions
+
+	assembler DEFINITIONS
+
+	forth : EXCEPTION ( a n--)
+		assembler
+		SWAP # D0 MOV
+		D0 4* _interrupt_vectors +  AB MOV
+	;
+
+	HOST      DEFINITIONS
+
+	: @exception ( n -- addr )
+		4* _interrupt_vectors + @
+	;
+
+
+</code>
+</pre>
+</body>
+</html>

@@ -1,0 +1,2315 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<p>
+The new I/O system.
+</p>
+<pre>
+1.   Shall be based on objects.
+2.   Shall do all input and output using addr and len.
+</pre>
+<p>
+We have to decide what we are trying to to do.
+Lets take a file first
+</p>
+<pre> <samp>
+S" drive/file.name"  mode Sopen
+</samp> </pre>
+<p>
+Or a port perhaps.
+</p>
+<pre> <samp>
+S" ethernet/tcp-ip/06" mode Sopen
+</samp> </pre>
+<p>
+This is what I want to do, lets not get too complex.
+</p>
+
+<p>
+As application program should be able to CATCH a file operation ABORT and expect
+the task to be in good shape. For this reason an ABORT will return buffers,
+remove locks and close open files as required.
+</p>
+
+
+<h4>File access methods</h4>
+<p>
+The modes are bits in a 32 bit word. First we define the bits from
+the OS point of view from these we derive the STANDARD words.
+</p>
+
+<p>
+The basic block file system assumes READ-LINE is character base
+as you don't know where the line ends if the OS doesn't make assumptions about
+character encoding. READ-FILE is binary based and no assumptions are mode.
+However the standard has a BIN word and who knows what use the furture may bring.
+</p>
+<p>
+Lets be honest here. This OS uses classes it does need a lot of the bits as the
+object address gives the details. The mode codes fall through but I have put no effort
+into using them.
+</p>
+	<pre> <code>
+	\ file mode bits, taken from NFS
+	| $000001 CONSTANT _#mode_world_ex
+	| $000002 CONSTANT _#mode_world_write
+	| $000004 CONSTANT _#mode_world_read
+	| $000008 CONSTANT _#mode_group_ex
+	| $000010 CONSTANT _#mode_group_write
+	| $000020 CONSTANT _#mode_group_read
+	| $000040 CONSTANT _#mode_user_ex
+	| $000080 CONSTANT _#mode_user_write
+	| $000100 CONSTANT _#mode_user_read
+	| $000200 CONSTANT _#mode_save_swapped
+	| $000400 CONSTANT _#mode_group_id_ex
+	| $000800 CONSTANT _#mode_user_id_ex
+	| $002000 CONSTANT _#mode_char_spec
+	| $004000 CONSTANT _#mode_dir
+	| $006000 CONSTANT _#mode_block_spec
+	| $008000 CONSTANT _#mode_reg_file
+	| $00A000 CONSTANT _#mode_sym_link
+	| $00C000 CONSTANT _#mode_socket
+
+
+	\ these come about because of the forth standard.
+        \ There are ANSI standard words to add them to your access mode.
+        \ This kernel takes no notice and it never will, it is already to complex.
+|	$100000 CONSTANT #fl_mode_write
+|	$080000 CONSTANT #fl_mode_extend
+|	$040000 CONSTANT #fl_mode_create
+|	$020000 CONSTANT #fl_mode_read_stop
+|	$010000 CONSTANT #fl_mode_binary
+
+
+
+\ <a name="character#"></a>
+: character# ( --num) 'output_file @ :character# ;
+
+\ <a name="line#"></a>
+: line# ( --num) 'output_file @ :line# ;
+
+\ <a name="page#"></a>
+: page# ( --num) 'output_file @ :page# ;
+
+\ <a name="page!"></a>
+: page! ( num --) 'output_file @ :page! ;
+
+\ <a name="line_max"></a>
+: line_max ( --addr) 'output_file @ :line_max ;
+
+\ <a name="character_max"></a>
+: character_max ( --addr) 'output_file @ :character_max ;
+
+	</code> </pre>
+<a name="BIN"></a>
+<h5>11.6.1.0765 BIN</h5>
+<p>
+FILE
+</p>
+<p>
+( fam1 -- fam2 )
+</p>
+<p>
+Modify the implementation-defined file access method fam1 to
+additionally select a binary, i.e., not line oriented, file
+access method, giving access method fam2.
+</p>
+	<pre> <code>
+	: BIN ( fam1 -- fam2)
+		#fl_mode_binary OR
+	;
+	</code> </pre>
+<a name="R/O"></a>
+<h5>11.6.1.2054 R/O</h5>
+<p>
+r-o FILE
+</p>
+<p>
+( -- fam )
+</p>
+<p>
+fam is the implementation-defined value for selecting the read
+only file access method.
+</p>
+<p>
+This is the default mode.
+</p>
+	<pre> <code>
+	: R/O ( --fam)
+		zero
+	;
+	</code> </pre>
+<a name="R/W"></a>
+<h5>11.6.1.2056 R/W</h5>
+<p>
+r-w FILE
+</p>
+<p>
+( -- fam )
+</p>
+<p>
+fam is the implementation-defined value for selecting the
+read/write file access method.
+</p>
+	<pre> <code>
+	: R/W ( --fam)
+		[ #fl_mode_write
+		#fl_mode_extend OR ]T LITERAL
+	;
+	</code> </pre>
+<a name="W/O"></a>
+<h5>11.6.1.2425 W/O</h5>
+<p>
+w-o FILE
+</p>
+<p>
+( -- fam )
+</p>
+<p>
+fam is the implementation-defined value for selecting the
+write only file access method.
+</p>
+	<pre> <code>
+	: W/O ( --fam)
+		[ #fl_mode_write
+		#fl_mode_extend OR
+		#fl_mode_read_stop OR ]T LITERAL
+	;
+	</code> </pre>
+<a name="left_split"></a>
+<h4>String manipulation</h4>
+<p>
+Scan from the left looking for the character. If found split the string at the character.
+The right string contains the character.
+</p>
+	<pre> <code>
+	: left_split { variable %addr variable %num variable %char --
+			( L-addr L-len R-addr R-len ) }
+		%num @ zero ?DO
+			%addr @ I CHARS + char@ %char @ = IF
+				%addr @ I
+				%addr @ I CHARS + %num @ I -
+				UNLOOP
+				EXIT
+			THEN
+		[ 1 CHARS ]T LITERAL +LOOP
+		%addr @ %num @
+		%addr @ %num @ + zero
+	;
+
+        \ <a name="remove_leading"></a>
+	: remove_leading ( addr num char -- addr num)
+		\ count of zero go.
+		OVER not IF
+			DROP EXIT
+		THEN
+		jump char@ = IF
+			1- SWAP 1 CHARS + SWAP
+		THEN
+	;
+
+
+	\ generic error
+
+	| CREATE $file_not_found ," file not found"
+
+	</code> </pre>
+<a name="right_split"></a>
+<p>
+Scan from the right looking for the character. If found split the string at
+the charcter. the right string is left with the split character.
+</p>
+	<pre> <code>
+	: right_split { variable %addr variable %num variable %char --
+		( L-addr L-len R-addr R-len ) }
+		%addr @ DUP  %num @ 1 - CHARS + ?DO
+			I char@ %char @ = IF
+				%addr @ I %addr @ - bytes>chars 1 + \ L-addr l-len (--
+				I 1 CHARS + OVER %num @ SWAP -
+				UNLOOP
+				EXIT
+			THEN
+		[ 1 CHARS NEGATE ]T LITERAL +LOOP
+		%addr @ %num @
+		%addr @ %num @ CHARS + zero
+	;
+	</code> </pre>
+<a name="close"></a>
+<p>
+The file words set. The standard word set is far from a useful set of words so a few non
+standard words are found here.
+</p>
+	<pre> <code>
+
+	: close ( object --)
+		DUP :parent_instance
+		\ :destruct object and reclaim memory
+		SWAP heap_object_free
+		\
+		?DUP IF
+			RECURSE
+		THEN
+	;
+
+
+	</code> </pre>
+<a name="CLOSE-FILE"></a>
+<h5>11.6.1.0900 CLOSE-FILE</h5>
+<p>FILE</p>
+<p>( fileid -- ior )</p>
+<p>
+Close the file identified by fileid. ior is the implementation-defined
+I/O result code.
+</p>
+	<pre> <code>
+	: CLOSE-FILE ( fileid -- ior )
+		['] close CATCH DUP IF
+			NIP
+		THEN
+	;
+
+        \ <a name="(Sopen)"></a>
+	\ Why do we have :file_open ?
+	\ -----------------------
+        \ :contruct creates the driver object
+        \ :file_open creates the file object if needed.
+
+	\ after the working directory has been added if required
+	: (Sopen) { ( ?? addr num ) variable %mode -- ( object) }{
+			variable %root_object
+			variable %driver_object }
+		\ this object saves info for .opened, nothing more.
+		root heap_object  \ addr num root_handle(--
+		%root_object !
+		\ save root name
+		2DUP %root_object @ :!name
+		\ using our provided string we now have to
+		\ open the driver
+		\ addr num(--
+		[CHAR] / remove_leading
+		[CHAR] / left_split
+		\ driver_addr driver_len file_addr file_data (-
+
+		2SWAP
+
+		\ file_addr file_num driver_addr driver_num (--
+
+		\ OPEN THE DEVICE
+		\ ---------------
+		~drivers SEARCH-WORDLIST not IF
+			%root_object @  heap_object_free
+			TRUE ABORT" Driver lookup failed"
+		THEN
+		EXECUTE    \ a driver is a class, returns a class address
+                \ linked into the driver object so a close will destoy the root object
+                \ Remeber the root object only keeps info for .opened.
+		%root_object @        \ addr num class parent_object
+		\ create the driver object
+		\ if this aborts there is no object
+		SWAP heap_object
+		\ ?? addr num  driver_object(--
+		%driver_object !
+		%mode @ %driver_object @
+
+		\ note we do a close so the drivers must take care to leave
+		\ the structure in a valid state for destruct.
+
+		['] :file_open CATCH ?DUP IF
+			\ we are closing the driver object; which will destoy itself and the root object
+			%driver_object @ close
+			$ABORT
+		THEN
+		\ file_handle(--
+		%driver_object @ %root_object @ :root_!device
+		\ if not equal a file is involved as well
+		DUP %driver_object @ <> IF
+			DUP %root_object @ :root_!file
+		THEN
+	;
+
+
+	\ contains the base directory, task specific
+	#$buffer ufree_buffer $working_directory
+
+
+ </code></pre>
+ <a name="Sopen"></a>
+ <pre><code>
+
+	\ if file name starts with ./ remove . and add wd
+	ram_variable %open_debug
+	: Sopen { ( addr n ) variable %mode ( --) }
+		2DUP
+		[CHAR] / left_split
+		\ addr num  left_addr left_num right_addr right_num(--
+		2DROP
+		\ one character and char is .
+		01 = SWAP char@ [CHAR] . = AND
+
+		IF
+			#$buffer get_buffer
+			\ addr n --
+			\ remove the .
+			[CHAR] / left_split 2SWAP 2DROP
+			\ add in working directory
+			$working_directory COUNT >R buffer R@ MOVE
+			\ c-addr u (--
+			TUCK
+			\ u c-addr u (--
+			%open_debug @ IF
+				.S
+			THEN
+			\ check that the result will fit
+			DUP R@ + #$buffer > ABORT" file name too long"
+
+			buffer R@ + SWAP MOVE
+			R> + buffer SWAP
+			\ add n (--
+
+			%open_debug @ IF
+				2DUP TYPE
+			THEN
+
+			%mode @
+			['] (Sopen) CATCH
+			%open_debug @ IF
+				." about to kill file buffer"
+			THEN
+			kill_buffer
+			\ if catch value is zero this will not abort
+			$ABORT
+		ELSE
+			%mode @ (Sopen)
+		THEN
+	;
+	</code> </pre>
+<a name="OPEN-FILE"></a>
+<h5>11.6.1.1970 OPEN-FILE</h5>
+<p>FILE</p>
+<p>( c-addr u fam -- fileid ior )</p>
+<p>
+Open the file named in the character string specified by c-addr u,
+with file access method indicated by fam. The meaning of values of fam
+is implementation defined.
+</p>
+<p>
+If the file is successfully opened, ior is zero, fileid is its
+identifier, and the file has been positioned to the start of the file.
+</p>
+<p>
+Otherwise, ior is the implementation-defined I/O result code and fileid
+is undefined.
+</p>
+<p>
+<b>COLDFORTH</b> The error code is the address of a string describing the error.
+</p>
+	<pre> <code>
+	: OPEN-FILE ( addr num mode -- fileid ior)
+		['] Sopen CATCH DUP IF
+			\ on error have to tidy up stack
+			>R 2DROP DROP
+			zero R>
+		THEN
+	;
+
+ </code></pre>
+ <a name="$open"></a>
+ <pre><code>
+
+	: $open ( $ mode --handle)
+		SWAP COUNT ROT 
+		Sopen
+	;
+</code></pre>
+<a name="open"></a>
+<pre><code>
+
+	: open ( mode "file" --handle)
+		BL (word) ROT Sopen
+	;
+
+ </code></pre>
+ <a name="Smkfile"></a>
+ <pre><code>
+	\ use the left portion of string to open directory, right portion as
+	\ a name of a file to add to the directory.
+	: Smkfile { ( addr n --) }{
+					variable %file_handle
+				}
+
+		[CHAR] / right_split  \ addrl nl addr nr(-- 
+		2SWAP
+		\ opening a directory
+		zero Sopen  
+		\ addr1 n1 handle (--
+		%file_handle !
+		%file_handle @ ['] :?directory CATCH ?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		not IF
+			%file_handle @ close
+			TRUE ABORT" Not a directory"
+		THEN
+		\ addr n (--
+		%file_handle @ ['] :make_file CATCH
+		?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		%file_handle @ close
+	;
+ </code></pre>
+ <a name="$mkfile"></a>
+ <pre><code>
+
+	: $mkfile ( $ --)
+		COUNT Smkfile
+	;
+</code></pre>
+<a name="mkfile"></a>
+<pre><code>
+	: file ( "name" --)
+		BL (word) Smkfile
+	;
+
+	: mkfile ( "name" --)
+		BL (word) Smkfile
+	;
+
+
+        \ <a name="Smkdir"></a>
+	\ support words
+	\ Remove the left portion of string
+	\ open file as a directory ( if possible)
+	\ and create a directory using right portion
+	\ e.g.
+	\ /red/bill
+	\ make directory bill in directory red
+
+	: Smkdir { ( add n --) }{
+					variable %file_handle
+			}
+		[CHAR] / right_split  \ addrl nl addr nr(--
+		2SWAP
+		R/W Sopen  \ addrr nr handle (--
+		%file_handle !
+		%file_handle @ ['] :?directory CATCH ?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		not IF
+			%file_handle @ close
+			TRUE ABORT" Not a directory"
+		THEN
+
+		\ :make_directory makes the files, sets the file mode to directory
+		\ and adds the . and .. entries
+		\ addr n(--
+		%file_handle @ DUP ['] :make_directory CATCH
+		?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		%file_handle @ close
+	;
+
+
+        \ <a name="$mkdir"></a>
+	: $mkdir ( $ --)
+		COUNT Smkdir
+	;
+
+        \ <a name="mkdir"></a>
+	: mkdir ( --)
+		BL (word) Smkdir
+	;
+
+	| : _print_dir_name { ( cookie) variable %handle -- }{
+		$20 CONSTANT #column_size }
+		#$buffer get_buffer
+		buffer #$buffer %handle @ ['] :get_directory_name CATCH
+		?DUP IF
+			kill_buffer
+			$ABORT
+		THEN
+		\ will it fit on current line.
+		DUP character# + character_max @ < not IF \ >
+			CR
+		THEN
+		\ print the directory name.
+		buffer SWAP TYPE
+		kill_buffer
+		\ move to next colume
+		character#
+		#column_size /MOD 1 + #column_size *
+		character_max @ < not IF \ >
+			DROP CR
+		ELSE
+			#column_size SWAP - SPACES
+		THEN
+	;
+
+
+	\ The handle is the object_instance for the dir file.
+	| : _dir  { variable %handle -- }
+		\ make sure directory remains stable for listing
+		%handle @ :facility grab
+		%handle @ :first_directory_cookie
+		BEGIN
+			\ cookie(--
+			DUP %handle @ ['] _print_dir_name CATCH ?DUP IF
+				%handle @ :facility release
+				$ABORT
+			THEN
+			%handle @ :next_directory_cookie
+		not UNTIL
+		%handle @ :facility release
+	;
+
+        \ <a name="Sdir"></a>
+        : Sdir { ( addr len  --) }
+		CR
+		R/O Sopen \ handle (--
+		>R
+		R@ ['] :?directory CATCH ?DUP IF
+			R> close
+			$ABORT
+		THEN
+		IF
+			R@ ['] _dir CATCH ?DUP IF
+				R> close
+				$ABORT
+			THEN
+			R> close
+			EXIT
+		ELSE
+			R> close
+			TRUE ABORT" Not a directory"
+		THEN
+	;
+
+        \ <a name="$dir"></a>
+	: $dir ( $ --)
+		COUNT Sdir
+	;
+
+        \ <a name="dir"></a>
+	: dir ( "string" --)
+		BL (word) Sdir
+	;
+
+        \ <a name="Sformat"></a>
+	: Sformat ( addr n --)
+		R/W Sopen \ handle(--
+		>R
+		I :facility grab
+		I :number_of_links 1 <> IF
+			I :facility release
+			I close
+			TRUE ABORT" Files open on device, can't format"
+		THEN
+		I ['] :format CATCH
+		?DUP IF
+			I :facility release
+			I close
+			$ABORT
+		THEN
+		I :facility release
+		R> close
+	;
+
+        \ <a name="$format"></a>
+	: $format ( $ --)
+		COUNT Sformat
+	;
+
+        \ <a name="format"></a>
+	: format ( "string" --)
+		BL (word) Sformat
+	;
+        </code></pre>
+        <a name="Sremove"></a>
+        <pre><code>
+	\ use the left portion of string to open directory, right portion as
+	\ a name of a file to remove from directory.
+	: Sremove { ( addr n --) }{
+					variable %file_handle
+				}
+
+		[CHAR] / right_split  \ addrl nl addr nr(--
+		2SWAP
+		R/W Sopen  \ addr nr handle (--
+		%file_handle !
+		%file_handle @ ['] :?directory CATCH ?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		not IF
+			%file_handle @ close
+			TRUE ABORT" Not a directory"
+		THEN
+
+		\ addr n (--
+		%file_handle @ ['] :remove_file CATCH
+		?DUP IF
+			%file_handle @ close
+			$ABORT
+		THEN
+		%file_handle @ close
+
+	;
+
+        </code></pre>
+        <a name="$remove"></a>
+        <pre><code>
+
+
+	: $remove ( $ --)
+		COUNT Sremove
+	;
+
+        </code></pre>
+        <a name="remove"></a>
+        <pre><code>
+
+	: remove ( "name" --)
+		BL (word) Sremove
+	;
+        </code></pre>
+        <a name="rm"></a>
+        <pre><code>
+
+	\ the unix command
+	: rm ( "name" -- )
+		remove
+	;
+	</code> </pre>
+<a name="DELETE-FILE"></a>
+<h5>11.6.1.1190 DELETE-FILE</h5>
+<p>FILE</p>
+<p>( c-addr u -- ior )</p>
+<p>
+Delete the file named in the character string specified by c-addr u. ior is
+the implementation-defined I/O result code.
+</p>
+
+	<pre> <code>
+	: DELETE-FILE ( c-addr u -- ior )
+		['] Sremove CATCH DUP IF
+			NIP NIP
+		THEN
+	;
+	</code> </pre>
+
+<a name="CREATE-FILE"></a>
+<h5>11.6.1.1010 CREATE-FILE</h5>
+<p>FILE</p>
+<p>( c-addr u fam -- fileid ior )</p>
+<p>
+Create the file named in the character string specified by c-addr and u,
+and open it with file access method fam. The meaning of values of
+fam is implementation defined. If a file with the same name already
+exists, recreate it as an empty file. If the file was successfully
+created and opened, ior is zero, fileid is its identifier, and the file
+has been positioned to the start of the file. Otherwise, ior is the
+implementation-defined I/O result code and fileid is undefined.
+</p>
+	<pre> <code>
+	: CREATE-FILE { ( c-addr u ) variable %fam -- ( fileid ior ) }
+		\ ignore the remove error
+		\ it may be the file is not there it may be other.
+		\ If other it will happen on Smkfile and we will exit then.
+		2DUP ['] Sremove CATCH IF
+			\ if error is caught, stack will be as on entry
+			2DROP
+		THEN
+		2DUP ['] Smkfile CATCH ?DUP IF
+			>R 2DROP 2DROP zero R>
+			EXIT
+		THEN  
+		\ OPEN-FILE has already caught the abort and set a ior.
+		%fam @ OPEN-FILE
+	;
+
+
+        \ <a name="Scopy"></a>
+	\ copy file, you end up with two versions of the file
+	: Scopy ( addr1 n1 addr2 n2--)
+		2SWAP R/O Sopen \ from file
+		>R
+		2DUP ['] Smkfile CATCH \ create the to file, this will abort if file exists
+		?DUP IF
+			R> close $ABORT
+		THEN
+		R/W ['] Sopen CATCH \ handle_from handle_to(--
+		?DUP IF
+			R> close
+			$ABORT
+		THEN
+		R> \ handle_to handle_from
+		\ copy a zone at a time gives resonable performance.
+		DUP :bytes_a_zone get_buffer
+		\ handle_too handle_from(--
+		BEGIN
+			buffer OVER :bytes_a_zone jump
+			['] :read CATCH
+			?DUP IF
+				kill_buffer
+				close
+				close
+				$ABORT
+			THEN
+			\ handle_too handle_from num(--
+			>R
+			OVER buffer R@ ROT
+			['] :write CATCH
+			?DUP IF
+				kill_buffer
+				close
+				close
+				$ABORT
+			THEN
+			R> OVER :bytes_a_zone  <>
+		UNTIL
+		kill_buffer
+		close
+		close
+	;
+
+        \ <a name="$copy"></a>
+	: $copy (  $ $ --)
+		COUNT ROT COUNT 2SWAP Scopy
+	;
+
+        \ <a name="copy"></a>
+	: copy ( "from" "to" --)
+		BL WORD #$buffer get_buffer
+		buffer #$buffer $move
+		buffer  \ $from(--
+		BL WORD \ $from $to(--
+		['] $copy CATCH
+		?DUP IF
+			kill_buffer
+			$ABORT
+		THEN
+		kill_buffer
+	;
+
+        \ <a name="Srename"></a>
+	\ rename file add1 n1 as addr2 n2
+	\ Two case:
+	\ 1) Same device, use the :rename method
+	\ 2) Different devices, copy and remove old.
+	\ well that is the right way to do it.
+	\ The quick way copy and delete the original, and as we are running
+	\ out of time.
+	: Srename  ( add1 n1 addr2 n2 --)
+		4dup
+		Scopy
+		2DROP
+		Sremove
+	;
+
+        \ <a name="$rename"></a>
+	: $rename (  $ $ --)
+		COUNT ROT COUNT 2SWAP Srename
+	;
+
+        \ <a name="rename"></a>
+	: rename ( "from" "to" --)
+		BL WORD #$buffer get_buffer
+		buffer #$buffer $move
+		buffer  \ $from(--
+		BL WORD \ $from $to(--
+		['] $rename CATCH
+		?DUP IF
+			kill_buffer
+			$ABORT
+		THEN
+		kill_buffer
+	;
+	</code> </pre>
+<a name="RENAME-FILE"></a>
+<h5>11.6.2.2130 RENAME-FILE</h5>
+<p>FILE EXT</p>
+<p>( c-addr1 u1 c-addr2 u2 -- ior )</p>
+<p>
+Rename the file named by the character string c-addr1 u1 to the name in
+the character string c-addr2 u2. ior is the implementation-defined I/O result code.
+</p>
+
+	<pre> <code>
+	: RENAME-FILE ( c-addr1 u1 c-addr2 u2 -- ior )
+		['] Srename CATCH DUP IF
+			>R 2DROP 2DROP R>
+		THEN
+	;
+	</code> </pre>
+
+<p>
+Following code allows you to create a large test file. Usefull for testing.
+</p>
+	<pre> <samp>
+	\ create a large file with every location written with an offset value.
+	: Stestfile { ( addr num --) }{
+		variable %handle }
+		2DUP Smkfile
+		R/W Sopen   \ handle(--
+		%handle !
+		%handle @ :bytes_a_zone get_buffer
+		$8000 0 DO
+			%handle @ :bytes_a_zone zero DO
+				J I + buffer I  + !
+			4 +LOOP
+			buffer %handle @ :bytes_a_zone %handle @ ['] :write CATCH
+			?DUP IF
+				kill_buffer
+				%handle @ close
+				$ABORT
+			THEN
+		%handle @ :bytes_a_zone +LOOP
+		kill_buffer
+		%handle @ close
+	;
+
+	: $tesetfile ( $ --)
+		COUNT Stestfile
+	;
+
+	: testfile ( "name" --)
+		BL (word) Stesetfile
+	;
+	</samp> </pre>
+<a name="READ-LINE"></a>
+<h5>Comments</h5>
+<p>
+When it comes to the ansi standard the definition of characters is a mess. To do basic I/O in any
+other units than a byte is a problem. Yet the file words are
+all specified in terms of characters. It is for this reason COLDFORTH defines char@ and char!
+for operations that must use characters and use a 8 bit bytes as the forth standard
+words. For the FILE words there has to be a clarification.
+</p>
+<p>
+READ-LINE must understand the characters being read as it must understand the line
+terminating character. So:
+</p>
+<pre>
+READ-FILE deals with bytes.
+READ-LINE deals in characters.
+</pre>
+<p>
+Be under no illusion this is not how the standard will be sorted out, it is my quess a new set of
+file words will be introduced.
+</p>
+<h5>11.6.1.2090 READ-LINE</h5>
+<p>
+FILE
+</p>
+<p>
+( c-addr u1 fileid -- u2 flag ior )
+</p>
+<p>
+Read the next line from the file specified by fileid into memory at the address c-addr.
+At most u1 characters are read. Up to two implementation-defined line-terminating
+characters may be read into memory at the end of the line, but are not included in
+the count u2. The line buffer provided by c-addr should be at least u1+2 characters long.
+</p>
+<p>
+If the operation succeeded, flag is true and ior is zero. If a line terminator
+was received before u1 characters were read, then u2 is the number of characters,
+not including the line terminator, actually read (0 <= u2 <= u1). When u1 = u2,
+the line terminator has yet to be reached.
+</p>
+<p>
+If the operation is initiated when the value returned by FILE-POSITION is equal to
+the value returned by FILE-SIZE for the file identified by fileid, flag is false,
+ior is zero, and u2 is zero. If ior is non-zero, an exception occurred during the
+operation and ior is the implementation-defined I/O result code.
+</p>
+<p>
+An ambiguous condition exists if the operation is initiated when the
+value returned by FILE-POSITION is greater than the value returned by
+FILE-SIZE for the file identified by fileid, or if the requested operation
+attempts to read portions of the file not written.
+</p>
+
+<p>
+At the conclusion of the operation, FILE-POSITION returns the next file position
+after the last character read.
+</p>
+
+<p>
+Specifically, if the last line in the file is non-empty, but has no terminator,
+an attempt to read that line will "succeed", returning the number of
+characters thus read, and flag will be true. The next read, assuming that
+no intervening REPOSITION-FILE occurs, will return u2=0, flag=false, ior=false.
+</p>
+
+<p>
+Here is complete list of return value combinations and their meanings:
+</p>
+<pre>
+u2          flag    ior     Meaning
+--          ----    ---     -------
+X           X       nonzero Something bad and unexpected happened
+                        (end-of-file is not "unexpected")
+
+0           false   zero    End-of-file; no characters were read
+
+0           true    zero    A blank line was read
+
+0 < u2 < u1 true    zero    The entire line was read
+
+u1          true    zero    A partial line was read; the rest would
+                            not fit in the buffer, and can be acquired
+                            by additional calls to READ-LINE.
+</pre>
+<p>
+Considing how simple it is to turn an abort into a ior, asking for it to be done in the
+kernel is a nonsence but so be it.
+</p>
+
+	<pre> <code>
+	: READ-LINE ( c-addr u1 fileid -- u2 flag ior )
+		['] :read_line CATCH DUP IF
+			>R DROP 2DROP
+			zero zero R>
+		THEN
+	;
+	</code> </pre>
+<a name="READ-FILE"></a>
+<h5>11.6.1.2080 READ-FILE</h5>
+<p>FILE</p>
+<p>( c-addr u1 fileid -- u2 ior )</p>
+<p>
+Read u1 consecutive characters to c-addr from the current position of
+the file identified by fileid.
+</p>
+<p>
+If u1 characters are read without an exception, ior
+is zero and u2 is equal to u1.
+</p>
+<p>
+If the end of the file is reached before u1 characters are read,
+ior is zero and u2 is the number of characters actually read.
+</p>
+<p>
+If the operation is initiated when the value returned by FILE-POSITION is
+equal to the value returned by FILE-SIZE for the file
+identified by fileid, ior is zero and u2 is zero.
+</p>
+<p>
+If an exception occurs, ior is the implementation-defined I/O result code,
+and u2 is the number of characters transferred to c-addr
+without an exception.
+</p>
+<p>
+An ambiguous condition exists if the operation is initiated when
+the value returned by FILE-POSITION is greater than the value returned
+by FILE-SIZE for the file identified by fileid, or if the requested operation
+attempts to read portions of the file not written.
+</p>
+<P>
+At the conclusion of the operation, FILE-POSITION returns the next
+file position after the last character read.
+</P>
+<p>
+A typical sequential file-processing algorithm might look like:
+</p>
+	<pre> <samp>
+   BEGIN                (  )
+   ... READ-FILE THROW  ( length )
+   ?DUP WHILE           ( length )
+   ...                  (  )
+   REPEAT               (  )
+   </samp> </pre>
+<p>
+In this example, THROW is used to handle (unexpected) exception conditions,
+which are reported as non-zero values of the ior return
+value from READ-FILE. End-of-file is reported as a zero value of the length return value.
+</p>
+<p>
+I don't know, you go to all the trouble to catch the error for the standard words and
+the example in the standard goes and throws it.
+</p>
+	<pre> <code>
+		: READ-FILE ( c-addr u1 fileid -- u2 ior )
+			['] :read CATCH DUP IF
+				>R 2DROP zero R>
+			THEN
+		;
+	</code> </pre>
+<a name="REFILL"></a>
+<h5>6.2.2125 REFILL</h5>
+<p>CORE EXT</p>
+<p>( -- flag )</p>
+<p>
+Attempt to fill the input buffer from the input source,
+returning a true flag if successful.
+</p>
+<p>
+When the input source is the user input device, attempt to receive
+input into the terminal input buffer. If successful, make the result the
+input buffer, set >IN to zero, and return true. Receipt of a line
+containing no characters is considered successful. If there is no input
+available from the current input source, return false.
+</p>
+<p>
+When the input source is a string from EVALUATE, return
+false and perform no other action.
+</p>
+	<pre> <code>
+	: REFILL ( --flag )
+		SOURCE-ID @ -1 = IF
+			FALSE EXIT
+		THEN
+		SOURCE-ID @ IF
+			SOURCE-ID @
+		ELSE
+			'input_file @
+		THEN
+		TIB DUP buffer_size ROT :read_line
+		SWAP #TIB !
+		zero >IN !
+		1 %line +!
+	;
+
+		</code> </pre>
+		<p>
+		Note that _interpret and _compile use local variables.
+		This means return stack errors will be dealt with. I am
+		not sure if this a good thing or a bad thing.
+		</p>
+		<p>
+		These are written to token date is left in the input stream.
+		<pre> <code>
+
+	: new_interpret { (  ?  ) variable _%addr variable _%n -- ( ?) }
+    	_%addr @ _%n @ sfind IF
+    		EXECUTE
+			EXIT
+    	THEN                    \ addr-c
+        _%addr @ _%n @ ['] Snumber CATCH IF
+			CR _%addr @ _%n @ TYPE
+			TRUE ?token
+		THEN
+    ;
+
+	: new_compiler {  variable _%addr variable _%n -- }
+		_%addr @ _%n @ sfind ?DUP IF
+			_#immediate = IF
+				EXECUTE
+			ELSE
+				\ we found the word so it must have a head
+				\ so we can use this version of compile.
+				_:compile,
+			THEN
+		ELSE
+    		 _%addr @ _%n @ ['] Snumber CATCH IF
+				CR _%addr @ _%n @ TYPE
+				TRUE ?token
+			THEN
+		THEN
+	;
+
+       \ <a name="scan"></a>
+       : scan ( ? --?  )
+    	BEGIN
+			^C
+			BL (word) DUP
+    	WHILE
+			\ add n (--
+			STATE @ IF
+				new_compiler
+			ELSE
+				new_interpret
+			THEN
+			[ #5407 #5474 + [IF] ]T
+			cache_flush
+			[ [THEN] ]T
+			_?stack_empty
+      	REPEAT
+		\ addr zero(--
+		2DROP
+        ;
+
+    \ describe the link
+    zero
+    | DUP CONSTANT _input$_link CELL+
+    | DUP CONSTANT _input$_file CELL+
+    DROP
+
+    \ save input source.
+    \ This is vectored. This version works with applications.
+    : _link_input$ ( --)
+                HERE
+                %input_files @ ,
+                %input_files !
+                %$input @ ,
+    ;
+
+    : _empty_input_files ( addr --)
+        BEGIN
+                DUP %input_files @ &lt; not IF
+                        EXIT
+                THEN
+                %input_files @ @ %input_files !
+        AGAIN
+    ;
+
+
+        \ if %input_files points back 8 bytes the file loaded nothing.
+        \ We then have to unlink and remove added string; else we have to link in the
+        \ return
+
+    | : _restore_input$ ( --)
+                HERE %enter_here @  = IF
+                        %input_files @ _input$_file + @ ?DUP IF
+                                \ deallocate dictionary
+                                \ string address points to start of area used.
+                                HERE - ALLOT
+                                %input_files @ @ %input_files !
+                        ELSE
+                                [ 2 CELLS NEGATE ]T LITERAL  ALLOT
+                        THEN
+                ELSE
+                        _link_input$
+                THEN
+        ;
+
+
+	: _save_input$ ( -- )
+		SOURCE-ID @ -1 = IF
+		        zero
+		ELSE
+		        SOURCE-ID @ IF
+                                \ we have to create a dictionary entry
+                                \ using the vectored word. This is modified when cross compiling
+                                \ it is zero in a task that doesn have a dictionary.
+                                \ the word vectored to has to take
+                                HERE
+                                SOURCE-ID @ :@root 
+
+					\ mistake found in version 9.3
+					\ :@name \ addr n
+                                ,string
+ 		        ELSE
+		                zero
+		        THEN
+                THEN
+                %$input !
+                _link_input$
+
+        ;
+
+        \ <a name="save_stream"></a>
+	: save_stream ( --)
+		R>
+		>IN @ >R
+		#TIB @ >R
+		%line @ >R
+		%tib @ >R
+		SOURCE-ID @ >R
+                \ address of string describing what we are loading from
+                %$input @ >R
+                %enter_here @ >R
+                HERE %enter_here !
+		>R
+ 	;
+
+
+        \ <a name="restore_stream"></a>
+	: restore_stream ( --)
+		R>
+                \ address of string describing what we are loading from
+                R> %enter_here !
+                R> %$input !
+		R> SOURCE-ID !
+		R> %tib !
+		R> %line !
+		R> #TIB !
+		R> >IN !
+		>R
+	;
+	</code> </pre>
+<a name="INCLUDE-FILE"></a>
+<h5>11.6.1.1717 INCLUDE-FILE</h5>
+<p>FILE</p>
+<p>( i*x fileid -- j*x )</p>
+<p>
+Remove fileid from the stack. Save the current input source specification,
+including the current value of SOURCE-ID. Store fileid in
+SOURCE-ID. Make the file specified by fileid the input source.
+Store zero in BLK. Other stack effects are due to the words included.
+</p>
+<p>
+Repeat until end of file: read a line from the file, fill the input buffer from
+the contents of that line, set >IN to zero, and interpret.
+</p>
+<p>
+<b>Text interpretation begins at the file position where the
+next file read would occur.
+</b>
+</p>
+<p>
+When the end of the file is reached, close the file and restore the
+input source specification to its saved value.
+</p>
+<p>
+An ambiguous condition exists if fileid is invalid, if there is an
+I/O exception reading fileid, or if an I/O exception occurs while closing fileid.
+When an ambiguous condition exists, the status (open or closed) of any
+files that were being interpreted is implementation-defined.
+</p>
+<p>
+<b>COLDFORTH</b> In this sytem the file is left upon, it is up to the user to deal with it.
+See <i>INCLUDED</i> for an example of how.
+</p>
+	<pre> <code>
+	: INCLUDE-FILE ( fileid --)
+		save_stream
+                \ this write the file name to the dictionary
+                \ and adds a link.
+                \ If cross compiling it has to be to the target dictionary.
+                SOURCE-ID !
+                (save_input$) @execute
+			#$buffer get_buffer
+				buffer %tib !
+				0 %line !
+				BEGIN
+					REFILL
+				WHILE
+					scan
+				REPEAT
+			kill_buffer
+		restore_stream
+		\ this adds a link to the dictionary
+		\ if cross compiling it has to be to the target dictionary.
+		(restore_input$) @execute
+	;
+
+	</code> </pre>
+<a name="INCLUDED"></a>
+<h5>11.6.1.1718 INCLUDED</h5>
+<p>
+FILE
+</p>
+
+<p>
+( i*x c-addr u -- j*x )
+</p>
+<p>
+Remove c-addr u from the stack. Save the current input source specification,
+including the current value of SOURCE-ID. Open the file
+specified by c-addr u, store the resulting fileid in SOURCE-ID, and make it
+the input source. Store zero in BLK. Other stack effects are
+due to the words included.
+</p>
+
+<p>
+Repeat until end of file: read a line from the file, fill the input buffer
+from the contents of that line, set >IN to zero, and interpret.
+</p>
+<p>
+Text interpretation begins at the file position where the next file read would occur.
+</p>
+<p>
+When the end of the file is reached, close the file and restore the input source
+specification to its saved value.
+</p>
+<p>
+An ambiguous condition exists if the named file can not be opened,
+if an I/O exception occurs reading the file, or if an I/O exception
+occurs while closing the file. When an ambiguous condition exists,
+the status (open or closed) of any files that were being interpreted is
+implementation-defined.
+</p>
+<p>
+<b>COLDFORTH</b> All files are closed the location of the error is saved in<br>
+<i>$error_file</i><br>
+<i>%error_line</i><br>
+<i>%error_character</i><br>
+<i>.error_position</i> displays the information. <i>error_edit</i> can by used to open up the line editor
+at the errors location.
+</p>
+
+	<pre> <code>
+	\ included files are linked in here. These files are
+	\ closed on an abort. See <i>_close_included_files</i>
+	uvariable _%included_handles
+
+
+
+	: INCLUDED ( c-addr u --)
+		R/O Sopen  \ handle(--
+		\ do it this way so stack errors do not cause failure
+		>R \ (--
+		\ the cleanup link is used to close files on an abort.
+		_%included_handles R@ :link_cleanup
+		R@ INCLUDE-FILE
+		R@ :unlink_cleanup
+		R> close
+	;
+	</code> </pre>
+<a name="REPOSITION-FILE"></a>
+<h5>11.6.1.2142 REPOSITION-FILE</h5>
+<p>FILE</p>
+<p>( ud fileid -- ior )</p>
+<p>
+Reposition the file identified by fileid to ud. ior is the implementation-defined
+I/O result code. An ambiguous condition exists if the file is positioned outside
+the file boundaries.
+</p>
+<p>
+At the conclusion of the operation, FILE-POSITION returns the value ud.
+</p>
+	<pre> <code>
+	: REPOSITION-FILE ( ud fileid -- ior )
+		>R D>S R> ['] :reposition_file CATCH DUP IF
+			>R 2DROP R>
+		THEN
+	;
+
+	</code> </pre>
+
+<p>
+When something goes wrong it is really nice if you know where. These words are used in
+abort to save off details of where a compile error occured. Even better you can use <i>edit</i>
+to open the file in line editor mode just like you could in the good old block days.
+</p>
+
+	<pre> <code>
+
+
+	| : _close_included_files ( --)
+		_%included_handles @ BEGIN
+			DUP
+		WHILE
+			\ get next link before we close the object
+			DUP @
+			SWAP cleanup>object
+			DUP :unlink_cleanup
+			close
+		REPEAT
+		DROP
+	;
+
+	\ used in the abort code which was defined in previous files.
+	' _close_included_files _(close_included_files) t!
+	.( _close_include_files)
+	</code> </pre>
+<a name="$swd"></a>
+<p>
+The working directory is task specific. It is nothing more than a string that is added
+to the front of file names. Unlike unix the code has no . or .. concept. Both reduce
+the general nature of the file system.
+</p>
+
+	<pre> <code>
+	\ set working directory
+	: $swd ( $ --)
+		 $working_directory #$buffer $move
+	;
+
+        \ <a name="swd"></a>
+	: swd ( "wd" --)
+		BL WORD $swd
+	;
+
+        \ <a name="cd"></a>
+	: cd ( "wd" --)
+		swd
+	;
+
+        \ <a name=".wd"></a>
+	\ print working directory
+	: .wd ( --)
+		$working_directory $type
+	;
+
+        \ <a name="pwd"></a>
+	\ the unix token
+	: pwd ( --)
+	;
+	</code> </pre>
+
+<p>
+Well the standard words are all pretty nice but
+<i>include</i><i>Sinclude</i> and <i>$include</i> are the wordset we need.
+</p>
+
+	<pre> <code>
+        \ <a name="Sinclude"></a>
+
+	: Sinclude ( addr num --)
+		INCLUDED
+	;
+
+        \ <a name="$include"></a>
+	: $include ( $ --)
+		COUNT INCLUDED
+	;
+
+       \ <a name="include"></a>
+	: include ( "name" --)
+		BL (word) INCLUDED
+	;
+	: ^ include ;
+	</code> </pre>
+<a name="FILE-POSITION"></a>
+<h5>11.6.1.1520 FILE-POSITION</h5>
+<p>FILE</p>
+<p>( fileid -- ud ior )</p>
+<p>ud is the current file position for the file identified by fileid.
+ior is the implementation-defined I/O result code.
+ud is undefined if ior is non-zero.
+</p>
+	<pre> <code>
+	: FILE-POSITION  ( fileid -- ud ior )
+		['] :file_position CATCH DUP IF
+			>R DROP zero zero R>
+		ELSE
+			>R S>D R>
+		THEN
+	;
+	</code> </pre>
+<a name="FILE-SIZE"></a>
+<h5>11.6.1.1522 FILE-SIZE</h5>
+<p>FILE</p>
+<p>( fileid -- ud ior )</p>
+<p>
+ud is the size, in characters, of the file identified by fileid ( a file object).
+ior is the implementation-defined I/O result code. This operation does not affect
+the value returned by <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>
+ud is undefined if ior is non-zero.
+</p>
+	<pre> <code>
+	: FILE-SIZE ( handle -- ud ior )
+		['] :@file_size CATCH DUP IF
+			>R DROP zero zero R>
+		ELSE
+			\ as the top of stack is zero and as S>D simple adds a
+			\ zero you could just add a zero to get the correct result
+			\ But it is better to say what you mean and mean what you say.
+			>R S>D R>
+		THEN
+	;
+	</code> </pre>
+<a name="RESIZE-FILE"></a>
+<h5>11.6.1.2147 RESIZE-FILE</h5>
+<p>FILE</p>
+<p>( ud fileid -- ior )</p>
+<p>
+Set the size of the file identified by fileid to ud. ior is the
+implementation-defined I/O result code.
+</p>
+<p>
+If the resultant file is larger than the file before the operation,
+the portion of the file added as a result of the operation might not have been
+written.
+</p>
+<p>
+At the conclusion of the operation,
+<a HREF="./input_output.html#FILE-SIZE">FILE-SIZE</a>
+returns the value ud and <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>
+returns an unspecified value.
+<p>
+	<pre> <code>
+	: RESIZE-FILE ( ud fileid -- ior )
+		>R D>S R>  \ u fileid
+		['] :!file_size CATCH DUP IF
+			>R 2DROP R>
+		THEN
+	;
+ 	</code> </pre>
+<a name="WRITE-FILE"></a>
+<h5>11.6.1.2480 WRITE-FILE</h5>
+<p>FILE</p>
+<p>( c-addr u fileid -- ior )</p>
+<p>
+Write u characters from c-addr to the file identified by fileid starting
+at its current position. ior is the implementation-defined I/O result
+code.
+</p>
+<p>
+At the conclusion of the operation, <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>
+returns the next file position after the last character written to the file, and
+<a HREF="./input_output.html#FILE-SIZE">FILE-SIZE</a> returns a value greater
+than or equal to the value returned by  <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>
+</p>
+	<pre> <code>
+	: WRITE-FILE ( c-addr u fileid -- ior )
+		['] :write CATCH DUP IF
+			>R DROP 2DROP R>
+		THEN
+	;
+	</code> </pre>
+<a name="WRITE-LINE"></a>
+<h5>11.6.1.2485 WRITE-LINE</h5>
+<p>FILE</p>
+<p>( c-addr u fileid -- ior )</p>
+<p>
+Write u characters from c-addr followed by the implementation-dependent
+line terminator to the file identified by fileid starting at its
+current position. ior is the implementation-defined I/O result code.
+</p>
+<p>
+At the conclusion of the operation, <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>
+returns the next file position after the last character written to the file, and
+<a HREF="./input_output.html#FILE-SIZE">FILE-SIZE</a> returns a value greater
+than or equal to the value returned by
+<a HREF="./input_output.html#FILE-POSITION">FILE-POSITION</a>.
+</p>
+	<pre> <code>
+	: WRITE-LINE ( c-addr u fileid -- ior )
+		['] :write_line CATCH DUP IF
+			>R DROP 2DROP R>
+		THEN
+	;
+	</code> </pre>
+<a name="FILE-STATUS"></a>
+<h5>11.6.2.1524 FILE-STATUS</h5>
+<p>FILE EXT</p>
+<p>( c-addr u -- x ior )</p>
+<p>
+Return the status of the file identified by the character string c-addr u.
+If the file exists, ior is zero; otherwise ior is the
+implementation-defined I/O result code. x contains implementation-defined
+information about the file.
+</p>
+	<pre> <code>
+	: FILE-STATUS ( c-addr u -- x ior )
+		OPEN-FILE ?DUP IF
+			\ zero error(--
+			EXIT
+		THEN
+		\ fileid(--
+		DUP :status
+		SWAP
+		CLOSE-FILE
+		\ ior(--
+	;
+	</code> </pre>
+<a name="FLUSH-FILE"></a>
+<h5>11.6.2.1560 FLUSH-FILE</h5>
+<p>FILE EXT</p>
+<p>( fileid -- ior )</p>
+<p>
+Attempt to force any buffered information written to the file referred
+to by fileid to be written to mass storage, and the size information for
+the file to be recorded in the storage directory if changed. If the
+operation is successful, ior is zero. Otherwise, it is an
+implementation-defined I/O result code.
+</p>
+
+	<pre> <code>
+	: FLUSH-FILE ( fileid -- ior)
+		['] :flush_file CATCH DUP IF
+			NIP
+		THEN
+	;
+	</code> </pre>
+<a name="TYPE"></a>
+<h5>ANS 6.1.2310 TYPE</h5>
+<p>( c-addr u -- )</p>
+<p>
+If u is greater than zero, display the character string specified by c-addr
+and u.
+</p>
+<p>
+When passed a character in a character string whose character-defining bits
+have a value between hex 20 and 7E inclusive, the corresponding standard
+character, specified by 3.1.2.1 graphic characters, is displayed.
+Because different output devices can respond differently to control characters,
+programs that use control characters to perform specific functions have an
+environmental dependency.
+</p>
+	<pre> <code>
+
+	: TYPE ( addr num--)
+		'output_file @ :type
+	;
+
+	' TYPE (_type_) t!
+	</code> </pre>
+<a name="ACCEPT"></a>
+<h5>6.1.0695 ACCEPT</h5>
+<p>
+CORE
+</p>
+<p>
+( c-addr +n1 -- +n2 )
+</p>
+<p>
+Receive a string of at most +n1 characters. An ambiguous condition exists if
++n1 is zero or greater than 32,767. Display graphic characters as they are received.
+A program that depends on the presence or absence of non-graphic characters
+in the string has an environmental dependency. The editing functions, if any,
+that the system performs in order to construct the string are
+implementation-defined.
+</p>
+<p>
+Input terminates when an implementation-defined line terminator is received.
+When input terminates, nothing is appended to the string,
+and the display is maintained in an implementation-defined way.
+</p>
+<p>
++n2 is the length of the string stored at c-addr.
+</p>
+<p>
+####
+<b>COLDFORTH discussion.</b> The ANSI standard assumes that ACCEPT is
+line base and KEY is binary based. COLDFORTH supports terminal I/O though
+pipes. The remote task can set echo and binary modes, and use one expect and
+one type word. This could be changed so that the expect came with it's own
+method codes but it is too late. That is the trouble with this sort of thing
+once a standard for communication is set you have to stick to it. Just look
+at the mess that is the TCP/IP standard.
+</p>
+
+	<pre> <code>
+	: ACCEPT ( addr num -- num)
+		'input_file @ DUP :terminal_mode@ IF
+			:read_line DROP
+		ELSE
+			:read
+		THEN
+	;
+	</code> </pre>
+<a name="EXPECT"></a>
+<h5>6.2.1390 EXPECT</h5>
+<p>CORE EXT</p>
+<p>( c-addr +n -- )</p>
+<p>
+Receive a string of at most +n characters. Display graphic characters as
+they are received. A program that depends on the presence or absence
+of non-graphic characters in the string has an environmental dependency.
+The editing functions, if any, that the system performs in order to
+construct the string of characters are implementation-defined.
+</p>
+<p>
+Input terminates when an implementation-defined line terminator is received
+or when the string is +n characters long. When input terminates, nothing
+is appended to the string and the display is maintained in an
+implementation-defined way.
+</p>
+<p>
+Store the string at c-addr and its length in SPAN.
+</p>
+<p>
+Note: This word is obsolescent and is included as a concession to
+existing implementations. Its function is superseded by 6.1.0695 ACCEPT.
+</p>
+	<pre> <code>
+	: EXPECT ( addr num --)
+		ACCEPT 'input_file @ :span !
+	;
+
+	' EXPECT (_expect_) t!
+	</code> </pre>
+<a name="KEY"></a>
+<h5>ANS 6.1.1750 KEY</h5>
+<p>( -- char )</p>
+<p>
+Receive one character char, a member of the implementation-defined
+character set. Keyboard events that do not correspond to such characters
+are discarded until a valid character is received, and those events
+are subsequently unavailable.
+</p>
+<p>
+All standard characters can be received. Characters received by
+KEY are not displayed.
+</p>
+<p>
+Any standard character returned by KEY has the numeric value specified
+in 3.1.2.1 Graphic characters. Programs that require the ability to
+receive control characters have an environmental dependency.
+</p>
+<p>
+In <b>COLDFORTH</b> you turn echo on and off with <i>echo_on</i> and <i>echo_off</i>.
+To change this reduces the usefullness of ACCEPT and KEY
+</p>
+<p>
+The handleing of binary mode may be altered when TELNET is implemented.
+</p>
+	<pre> <code>
+    : KEY ( --char)
+    	keybuffer 'input_file @ DUP :terminal_mode@ IF
+    		\ in line mode room has to be left for the termination code
+			two SWAP :read_line 2DROP keybuffer C@
+		ELSE
+			one SWAP :read DROP keybuffer C@
+		THEN
+    ;
+    </code> </pre>
+<p>
+Words to print data using 'file_xxx contents as a pointer to the device driver.
+</p>
+<a name="CR"></a>
+<h5>6.1.0990 CR</h5>
+<p>c-r CORE</p>
+<p>( -- )</p>
+<p>
+Cause subsequent output to appear at the beginning of the next line.
+</p>
+
+	<pre> <code>
+
+	: CR 'output_file @ :cr ;
+	' CR (_cr_) t!
+
+
+\ The idea behind these words. When using a terminal it is pretty frustrating
+\ when the previous page just goes. If true the output is supposed to wait for
+\ input.
+: page_free ( --) FALSE 'output_file @ :!?page ;
+: page_hold ( --) TRUE  'output_file @ :!?page ;
+
+: ?page ( --) 'output_file @ :?page ;
+
+
+	: MARK 'output_file @ :mark ;
+	</code> </pre>
+<a name="PAGE"></a>
+<h5>10.6.1.2005 PAGE</h5>
+<p>FACILITY</p>
+<p>( -- )</p>
+<p>
+Move to another page for output. Actual function depends on the output device.
+On a terminal, PAGE clears the screen and resets the cursor position to
+the upper left corner. On a printer, PAGE performs a form feed.
+</p>
+	<pre> <code>
+	: PAGE 'output_file @ :page ;
+
+
+: TAB 'output_file @ :tab ;
+</code></pre>
+<a name="tab"></a>
+<p>
+Not an ansi standard
+</p>
+<pre><code>
+
+        \ <a name="tab"></a>
+        : tab 'output_file @ :tab ;
+
+        \ <a name="&gt;|"></a>
+        : >| 'output_file @ :>| ;
+
+        \ <a name="|&gt;"></a>
+        : |> 'output_file @ :|> ;
+
+        \ <a name="|i"></a>
+        : |i 'output_file @ :|i ;
+
+        \ <a name="|o"></a>
+        : |o 'output_file @ :|o ;
+
+        \ <a name="|v"></a>
+        : |v 'output_file @ :|v ;
+
+        \ <a name="|h"></a>
+        : |h 'output_file @ :|h ;
+
+        \ <a name="|n"></a>
+        : |n 'output_file @ :|n ;
+
+        \ <a name="|tl"></a>
+        : |tl 'output_file @ :|tl ;
+
+        \ <a name="|tr"></a>
+        : |tr 'output_file @ :|tr ;
+
+        \ <a name="|bl"></a>
+        : |bl 'output_file @ :|bl ;
+
+        \ <a name="|br"></a>
+        : |br 'output_file @ :|br ;
+
+        \ <a name=".box"></a>
+        : .box 'output_file @ :box ;
+
+        \ <a name=".element"></a>
+        : .element 'output_file @ :element ;
+
+        \ <a name=".line"></a>
+        : .line 'output_file @ :line ;
+
+        \ <a name=".zed"></a>
+        : .zed 'output_file @ :zed ;
+
+        \ <a name="normal"></a>
+        : normal 'output_file @ :normal ;
+
+        \ <a name="rev"></a>
+        : rev 'output_file @ :rev ;
+
+        \ <a name="blink"></a>
+        : blink 'output_file @ :blink ;
+
+        \ <a name="dim"></a>
+        : dim 'output_file @ :dim ;
+
+        \ <a name="udl"></a>
+        : udl 'output_file @ :udl ;
+
+        \ <a name="dim&blink"></a>
+        : dim&blink 'output_file @ :dim&blink ;
+
+        \ <a name="rev&blink"></a>
+        : rev&blink 'output_file @ :rev&blink ;
+
+        \ <a name="rev&dim"></a>
+        : rev&dim 'output_file @ :rev&dim ;
+
+        \ <a name="rev&udl"></a>
+        : rev&udl 'output_file @ :rev&udl ;
+
+        \ <a name="rev&dim&blink"></a>
+        : rev&dim&blink 'output_file @ :rev&dim&blink ;
+
+        \ <a name="REV&DIM&UDL"></a>
+        : rev&dim&udl 'output_file @ :rev&dim&udl ;
+
+        \ <a name="labels"></a>
+        : labels 'output_file @ :labels ;
+
+        \ <a name="shift_labels"></a>
+        : shift_labels 'output_file @ :shift_labels ;
+
+        \ <a name="cursor"></a>
+        : cursor 'output_file @ :cursor ;
+
+        \ <a name="no_cursor"></a>
+        : no_cursor 'output_file @ :no_cursor ;
+
+        \ <a name="message"></a>
+        : message 'output_file @ :message ;
+
+        \ <a name="no_message"></a>
+        : no_message 'output_file @ :no_message ;
+
+        \ <a name="foreground"></a>
+        : foreground 'output_file @ :foreground ;
+
+        \ <a name="background"></a>
+        : background 'output_file @ :background ;
+
+        \ <a name="border"></a>
+        : border 'output_file @ :border ;
+
+        \ <a name="a4"></a>
+        : a4 'output_file @ :a4 ;
+
+        \ <a name="quarto"></a>
+        : quarto 'output_file @ :quarto ;
+
+        \ <a name="eoj"></a>
+        : eoj 'output_file @ :eoj ;
+	</code> </pre>
+
+<a name="?key"> </a>
+<h5>10.6.1.1755 KEY?</h5>
+<p> key-question FACILITY</p>
+<p>( -- flag )</p>
+<p>
+If a character is available, return true. Otherwise, return false.
+If non-character keyboard events are available before the first
+valid character, they are discarded and are subsequently unavailable. The
+character shall be returned by the next execution of KEY.
+</p>
+<p>
+After KEY? returns with a value of true, subsequent executions of KEY?
+prior to the execution of KEY or EKEY also return true,
+without discarding keyboard events.
+</p>
+	<pre> <code>
+	: KEY?    ( -- flag) 'input_file @ :key?  ;
+
+	: clear    ( --)      'input_file @ :clear ;
+	</code> </pre>
+<a name="SPAN"></a>
+<h5>6.2.2240 SPAN</h5>
+<p>CORE EXT</p>
+<p>( -- a-addr )</p>
+<p>
+a-addr is the address of a cell containing the count of characters stored
+by the last execution of EXPECT.
+</p>
+<p>
+Note: This word is obsolescent and is included as a concession to existing
+implementations.
+</p>
+	<pre> <code>
+	: SPAN ( --addr) 'input_file @ :span ;
+
+
+\ <a name="!control"></a>
+: !control ( 16b --)  'output_file @ :!control ;
+
+\ <a name="!device"></a>
+: !device  ( n --)    'output_file @ :!device ;
+
+\ <a name="!eot"></a>
+: !eot ( addr--) 'output_file @ :!eot ;
+
+\ <a name="!timeout"></a>
+: !timeout ( n --)  'output_file @ :!timeout ;
+
+\ <a name="baud"></a>
+: baud ( n --) 'output_file @ :baud ;
+
+\ <a name="send"></a>
+: send 'output_file @ :flush_file ;
+' send (_send_) t!
+
+\ <a name="?send"></a>
+: ?send ( num --) 'output_file @ :?send ;
+
+	</code> </pre>
+\ <a name="~MARK"></a>
+<h5>Words derived from MARK</h5>
+	<pre> <code>
+
+	\ convert invisible characters to ~ and underline.
+	: ~MARK ( addr num --)
+		DUP IF
+			$buffer
+				TUCK
+				buffer visible
+				buffer SWAP
+				MARK
+			kill_buffer
+		ELSE
+			2DROP
+			xpause
+		THEN
+	;
+
+	</code> </pre>
+<p>
+Code to deal with the printing of errors.
+</p>
+	<pre> <code>
+
+	| #$buffer ufree_buffer $error_file
+        | uvariable %error_line
+	| uvariable %error_character
+	| uvariable %error_source
+
+        | : _save_off_source ( --)
+		SOURCE-ID @ DUP %error_source !
+		0> IF
+			SOURCE-ID @ :@root #$buffer MIN
+			$error_file $make
+			%line @ %error_line !
+			>IN @ %error_character !
+		THEN
+	;
+
+        \ <a name=".error_position"></a>
+
+	: .error_position
+		%error_source @ 0> IF
+			CR
+			$error_file $type SPACE
+			." Line: " %error_line @ .d
+			." Character: " %error_character @ .d
+		THEN
+	;
+
+        \ <a name="list_error"></a>
+	\ has to be used before error file is closed
+	| 8 CONSTANT _#list_lines
+	| 4 CONSTANT _#back_lines
+	: list_error ( --)
+		\ error source is set to -1 if error was in EVALUATE
+		%error_source @ 0> IF
+			_#back_lines %error_line @ 1 - MIN %error_source @ :previous_line \ file_position flag(--
+			IF \ can get previous line position
+				S>D %error_source @ REPOSITION-FILE IF
+					\ we are dealing with an abort don't abort on this
+					\ error just tidy up and exit
+					EXIT
+				THEN
+				%error_line @
+				_#back_lines %error_line @ 1 - MIN - \ line_listed zero base(--
+				\ saved error line is one based
+				#$buffer get_buffer
+				CR CR
+				_#list_lines 0 DO
+					buffer #$buffer %error_source @ READ-LINE
+
+					IF
+						\ dealing with error just tidy up and exit
+						kill_buffer
+						2DROP  \ return values
+						DROP   \ line being listed
+						UNLOOP
+						EXIT
+					THEN
+					\ line count flag(--
+					\ end of file
+					not IF
+						kill_buffer
+						2DROP
+						UNLOOP
+						EXIT
+					THEN
+					\ line_being_listed count(--
+					BASE @ >R
+					DECIMAL
+					OVER  5 .R SPACE
+					R> BASE !
+					OVER %error_line @ = IF
+						buffer %error_character @ TYPE
+						buffer %error_character @ + SWAP %error_character @ -
+						zero MAX MARK
+					ELSE
+						buffer SWAP TYPE
+					THEN
+					CR
+					send
+					1+
+				LOOP
+				DROP
+				kill_buffer
+			THEN
+		THEN
+	;
+
+
+	| : _error_position ( --)
+		_save_off_source
+		.error_position
+		list_error
+	;
+
+	\ used in the abort code which was been defined already.
+	' _error_position (error_position) t!
+
+
+    forth : device-set
+		HOST
+		(CREATE) HOST tw, DOES>
+			!device
+	;
+
+
+
+
+
+    01 device-set PARITY_ODD
+    02 device-set PARITY_EVEN
+    03 device-set PARITY_OFF
+    04 device-set SBIT1
+    05 device-set SBIT1.5
+    06 device-set SBIT2
+    07 device-set BITS7
+    08 device-set BITS8
+
+
+
+    \ CONSTANT returns the value stored at xcompile time, CREATE returns the address
+    forth : unit-set
+		HOST
+		CREATE t,
+	DOES>
+    		@ !control
+	;
+
+    ( Generic words for terminal setup) HEX
+    01 unit-set echo_on
+    02 unit-set echo_off
+	\ transmit an XOFF if rotating buffer becomes full
+    03 unit-set RXON_ON
+    04 unit-set RXON_OFF
+	\ look at input and if a XOFF is received stop the transmission.
+    05 unit-set SXON_ON
+    06 unit-set SXON_OFF
+	\ If binary is on the del key is not looked at, and the 8th bit is not
+	\ played with.
+    07 unit-set binary_on
+    08 unit-set binary_off
+
+
+	</code> </pre>
+<a name="SAVE-INPUT"></a>
+<h5>6.2.2182 SAVE-INPUT</h5> 
+<p>CORE EXT</p> 
+<p>( -- xn ... x1 n )</p>
+<p>
+x1 through xn describe the current state of the input source specification 
+for later use by RESTORE-INPUT. 
+</p>
+<p>
+SAVE-INPUT and RESTORE-INPUT allow the same degree of input 
+source repositioning within a text file as is
+available with BLOCK input. SAVE-INPUT and RESTORE-INPUT hide 
+the details of the operations necessary to
+accomplish this repositioning, and are used the same way with all input sources.  
+This makes it easier for programs to reposition the input source, because they 
+do not have to inspect several variables and take different action depending on
+the values of those variables. 
+</p>
+<p>
+SAVE-INPUT and RESTORE-INPUT are intended for repositioning within 
+a single input source; for example, the
+following scenario is NOT allowed for a Standard Program:
+</p> 
+<pre> <samp>
+   : XX
+       SAVE-INPUT  CREATE
+       S" RESTORE-INPUT" EVALUATE
+       ABORT" couldn't restore input"
+   ;
+</samp> </pre>
+<p>
+This is incorrect because, at the time RESTORE-INPUT is executed, 
+the input source is the string via EVALUATE,
+which is not the same input source that was in effect when
+SAVE-INPUT was executed. 
+</p>
+<p>
+The following code is allowed: 
+</p>
+<pre> <samp>
+: XX
+    SAVE-INPUT  CREATE
+    S" .( Hello)" EVALUATE
+    RESTORE-INPUT ABORT" couldn't restore input"
+;
+</samp> </pre>
+<p>
+After EVALUATE returns, the input source specification is restored 
+to its previous state, thus SAVE-INPUT and
+RESTORE-INPUT are called with the same input source in effect.
+</p> 
+<p>
+In the above examples, the EVALUATE phrase could have been 
+replaced by a phrase involving INCLUDE-FILE and
+the same rules would apply. 
+</p>
+<p>
+The Standard does not specify what happens if a program violates 
+the above rules. A Standard System might check for
+the violation and return an exception indication from RESTORE-INPUT, 
+or it might fail in an unpredictable way. 
+</p>
+<p>
+The return value from RESTORE-INPUT is primarily intended to 
+report the case where the program attempts to restore
+the position of an input source whose position cannot be restored. 
+The keyboard might be such an input source. 
+</p>
+<p>
+Nesting of SAVE-INPUT and RESTORE-INPUT is allowed. For example, 
+the following situation works as expected: 
+</p>
+<pre> <samp>
+: XX
+    SAVE-INPUT
+    S" f1" INCLUDED      \ The file "f1" includes:
+    \   ... SAVE-INPUT ... RESTORE-INPUT ...
+    \ End of file "f1"
+    RESTORE-INPUT  ABORT" couldn't restore input"
+;
+</samp> </pre>
+<p>
+In principle, RESTORE-INPUT could be implemented to always fail, e.g.: 
+</p>
+<pre> <samp>
+: RESTORE-INPUT  ( x1 ... xn n -- flag )
+    0 ?DO DROP LOOP TRUE
+;
+</samp> </pre>
+<p>
+Such an implementation would not be useful in most cases. 
+It would be preferable for a system to leave SAVE-INPUT
+and RESTORE-INPUT undefined, rather than to create a useless 
+implementation. In the absence of the words, the
+application programmer could choose whether or not to 
+create dummy implementations or to work-around the problem
+in some other way.
+</p> 
+<p>
+Examples of how an implementation might use the return values 
+from SAVE-INPUT to accomplish the save/restore
+function:
+</p> 
+	<pre> <code>
+	: SAVE-INPUT ( -- x1 x2 x3 x4 x5 x6 6 )
+		>IN @ 
+		#TIB @ 
+		%line @
+		%tib @
+		SOURCE-ID @ 
+		\ we ignore error if we can't get the file position then it is not relevent
+		DUP FILE-POSITION  ( fileid -- ud ior )
+		DROP
+		6
+	;
+	</code> </pre>    
+<a name="RESTORE-INPUT"></a>
+<h5>6.2.2148 RESTORE-INPUT</h5> 
+<p>CORE EXT</p> 
+<p>( xn ... x1 n -- flag )</p>
+<p>
+Attempt to restore the input source specification to the state 
+described by x1 through xn. flag is true if the input source
+specification cannot be so restored. 
+</p>
+<p>
+An ambiguous condition exists if the input source represented 
+by the arguments is not the same as the current input
+source. 
+</p>
+	<pre> <code>
+	: RESTORE-INPUT ( x1 x2 x3 x4 x5 x6 6--flag)
+		6 <> IF
+			TRUE EXIT
+		THEN
+		OVER REPOSITION-FILE DROP
+		SOURCE-ID !
+		%tib !
+		%line !
+		#TIB !
+		>IN !
+		FALSE
+	;
+	</code> </pre>
+<a name="display"></a>
+        <p>
+        Display the contents of a file.
+        </p>
+        <pre><code>
+        : display {  ( "name" --) }{ variable %handle }
+                open  %handle !
+                #$buffer get_buffer
+                BEGIN
+                buffer #$buffer %handle @ READ-LINE ?DUP IF
+                        \ we had an error reading
+                        kill_buffer
+                        %handle @ close
+                        $ABORT
+                THEN
+                WHILE
+                        buffer SWAP TYPE CR
+                REPEAT
+                kill_buffer
+                %handle @ close
+        ;
+        </code></pre>
+</body>
+</html>
+

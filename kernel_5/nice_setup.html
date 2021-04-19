@@ -1,0 +1,32 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="../license.html">license</a>
+<p>
+This file is used to set up the nice interface. It sould be included in the flash file
+system and altered if required.
+</p>
+<p>
+On entry the stack contains the nice object address.
+</p>
+<pre> <code>
+\ object(--
+\ The interface hardware address
+#$nice_default OVER $set_nif
+
+\ the ip address
+\ and network mask.
+\ This only details the sement connected to the nice interface.
+\ See routeing.html to set the datagrams routed to the RTI1000 cards.
+10.0.0.1 OVER set_ip
+$FFFFFF00       OVER set_mask
+DROP
+</code> </pre>
+</body>
+</html>

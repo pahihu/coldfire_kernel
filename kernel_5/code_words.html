@@ -1,0 +1,492 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>COLDFORTH Assembler words</h3>
+<a HREF="./license.html">license</a>
+<pre> <code>
+	HEX
+</code> </pre>
+
+<h5>lock_word unlock_word</h5>
+<p>
+Most of the system runs in user mode. In user mode you cannot disable 
+interrupt. There are however times when interrupts must be disabled. When
+you are updating system list for instance.
+</p>
+<p>
+Trap 08 to 0F can be used to control interrupts level enabling and disableing. 
+Many systems however don't have the rich interrrupt control that is available 
+with the 68k family so we have limited ourselves to these two functions.
+Enable and disable.  
+</p>
+	<pre> <code>
+#BVP5552 #BVP6552 + [IF]
+        \ do
+        \ don't lock out DMA
+        \ It doesn't use the a system stack
+        CODE _lock_word
+		0D # TRAP
+        NEXT inline
+[ELSE]
+	CODE _lock_word ( --)
+                0F # TRAP
+	NEXT inline
+[THEN]
+	CODE _unlock_word ( -- )
+	        08 # TRAP
+	NEXT inline
+
+	</code> </pre>
+<p>
+run_tcp is executed when a packet is queue by udp or tcp
+</p>
+	<pre> <code>
+	CODE run_tcp
+		06 # TRAP
+	NEXT inline
+	</code> </pre>
+<p>
+Used to execute a word in superviser state
+</p>
+	<pre><code>
+	CODE super_execute ( ?? code --)
+		03 # TRAP
+	NEXT inline
+	</code> </pre>
+<a name="4/"></a>
+<h5>4/ ( n1--n2)</h5>
+<p>
+Divide the input by 4.
+</p>
+	<pre> <code>
+	CODE 4/ ( n1 --n2)
+		S )+ D0 MOV
+		2 # D0 ASR
+		D0 S -) MOV
+	NEXT inline \ 8 bytes allow for speed.	
+	</code> </pre>
+
+
+<a name="-rot"></a>
+<h5>-rot</h5>
+<p>
+	The top stack to the third.
+</p>
+	<pre> <code>    
+	CODE -rot ( 32b1 32b2 32b3 -- 32b3 32b1 32b2)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		S )+ D2 MOV
+		D0 S -) MOV
+		D2 S -) MOV
+		D1 S -) MOV
+	NEXT
+	</code> </pre>
+
+<a name="sqrt"></a>
+<h5>sqrt</h5>
+<p>
+	Square root of an unsigned integer
+</p>
+  
+	<pre> <code>
+	CODE sqrt ( u0 -- u1 )
+		S )+ D0 MOV		         \ i
+		0 # D1  MOV              \ a
+		0 # D2  MOV              \ c
+		0F # D3 MOV				 \ j
+		40000000 # D4 MOV		 \ s = 1 << (j*2)
+		BEGIN
+			D1 D6 MOV
+			D3 D6 LSL
+			1 # D6 LSL           \ a<<(j+1) 
+			D2 D6 ADD            \ c + (a<<(j+1))
+			D4 D6 ADD            \ d = c + (a<<(j+1)) + s)
+			                     \ D6 = d D0 = i
+			D6 D0 CMP  CC IF     \ if d<=i
+				D6 D2 MOV        \ c = d
+				1 # D7 MOV
+				D3 D7 LSL        \ 1<< j
+				D7 D1 OR         \ a |= 1<< j
+			THEN
+			D0 D6 CMP EQ IF      \ d = i
+				D1 S -) MOV
+				NEXT assembler 
+			THEN
+			2 # D4 LSR           \ s>>=2
+		1 # D3 SUB
+		LT UNTIL
+		D1 S -) MOV
+	NEXT
+	</code> </pre>
+
+<a name="gtlt"></a>
+<h5> >< </h5>
+<p>
+	Swap the low two bytes of the top stack item.
+	<br>
+	AABBCCDD -> AABBDDCC
+</p>
+  
+	<pre> <code>  
+	CODE >< ( 32b1 - 32b2)
+		3 S) D0 B. MOV  
+		2 S) 3 S) B. MOV  
+		D0  2 S) B. MOV 
+	NEXT inline
+	</code> </pre>
+
+<a name="gtwlt"></a>
+<h5> >w< </h5>
+<p>
+	Swap the two words of the top stack item.
+	<br>
+	AABBCCDD -> CCDDAABB    
+</p>
+	
+	<pre> <code>
+	CODE >w< ( 32b1 - 32b2)
+		S ) D0 MOV   
+		D0 SWP   
+		D0 S ) MOV   
+	NEXT inline
+	</code> </pre>
+<a name="gtwlt"></a>
+<h5> >e< </h5>
+<p>
+	AABBCCDD -> DDCCBBAA   
+</p>
+	
+	<pre> <code>
+	CODE >l< ( 32b1 - 32b2)
+		S ) D0 MOV   
+		D0 D1 MOV
+		8 # D1 LSL
+		8 # D0 LSR
+		D0 D1 B. MOV
+		8 # D1 LSL
+		8 # D0 LSR
+		D0 D1 B. MOV
+		8 # D1 LSL
+		8 # D0 LSR
+		D0 D1 B. MOV
+		D1 S ) MOV   
+	NEXT 
+	</code> </pre>
+
+<a name="3drop"></a>
+<h5> 3drop </h5>
+<p>
+	Drop the top three stack items.
+</p>
+  
+	<pre> <code>         
+	CODE 3drop 
+		0C # S ADD 
+	NEXT inline
+	</code> </pre>
+
+<a name="4drop"></a>
+<h5>4drop</h5>
+<p>
+	Drop the top four stack items.
+</p>
+  
+	<pre> <code>      
+	CODE 4drop 
+		10 # S ADD 
+	NEXT inline
+	</code> </pre>
+
+<a name="@u"></a>
+<h5>@u</h5>
+<p>
+	The base address of the tasks user area.
+</p>
+
+	<pre> <code>
+	CODE @u
+		U S -) MOV
+	NEXT inline
+	</code> </pre>
+<p>
+Takes the address of the stack doing so is not recommended.
+</p>
+	<pre> <code>
+	CODE @s ( - addr)
+		S S -) MOV
+	NEXT
+	</code> </pre>
+        <a name="!s"></a>
+	<p>Definitly a no no.
+	You will find it used in the rpc code.
+	The parameters are moved to the call buffer
+	using a MOVE.
+	<pre> <code>
+	CODE !s
+		S ) S MOV
+	NEXT
+	</code> </pre>
+        <a name="@r"></a>
+
+<p>
+Takes the address of the return stack doing so is not recommended.
+</p>
+	<pre> <code>
+	CODE @r ( - addr)
+		R S -) MOV
+	NEXT
+	</code> </pre>
+        <a name="@lp"></a>
+
+<p>
+Takes the address of the lp doing so is not recommended.
+</p>
+	<pre> <code>
+	CODE @lp ( - addr)
+		LP S -) MOV
+	NEXT
+	</code> </pre>
+        <a name="i'"></a>
+<p>
+The loop limit. It is no longer a standard word.
+</p>
+	<pre> <code>
+	CODE i'   ( - 32b)
+		8 R) S -) MOV
+	NEXT
+	</code> </pre>
+        <a name="!s"></a>
+
+<p>
+Fetch a sixteen bit value; you also need one to fetch the valuein
+network order; irrelivent for COLDFORTH but very relevent for
+intel based system.
+</p>
+	<pre> <code>
+	#5407 [IF]
+	    CODE W@  ( addr -- 16b)
+	    	S )+ A0 MOV
+	    	A0 ) D0 W. MVZ
+	    	D0 S -) MOV
+	    NEXT
+	    inline
+	[ELSE]
+    	CODE W@  ( addr -- 16b)
+    		S )+ A0 MOV
+    		0 # D0 MOV
+    		A0 ) D0 W. MOV
+    		D0 S -) MOV
+    	NEXT
+        [THEN]
+    </code> </pre>
+    <a name="s@"></a>
+
+<p>
+Fetch a sixteen bit signed value.
+</p>
+	<pre> <code>
+    CODE s@  ( addr -- n)
+    	S )+ A0 MOV
+    	A0 ) A1 W. MOV
+    	A1 S -) MOV
+    NEXT inline
+
+    \ <a name="W!"></a>
+    CODE W! ( n a)
+    	S )+ A0 MOV
+    	2 # S ADD
+    	S )+ A0 ) W. MOV
+    NEXT inline
+
+    \ <a name="W+!"></a>
+    CODE W+! ( n a--)
+    	S )+ A0 MOV
+    	S )+ D0 MOV
+		\ we only use the low sixteen bits so it doesn't matter
+		\ how the high bits are set.
+		[ A0 ] D1 W. MOV
+		D1 D0 ADD
+    	D0 A0 ) W. MOV
+    NEXT
+
+        \ <a name="C+!"></a>
+	CODE C+! ( n a --)
+		S )+ A0 MOV
+		S )+ D0 MOV
+		\ we only use the low eight bits so we don't
+		\ have to worry about how the high bits are set.
+		[ A0 ] D1 B. MOV
+		D1 D0 ADD
+		D0 [ A0 ] B. MOV
+	NEXT
+
+        \ <a name="&gt;op"></a>
+	\ set the op register
+	CODE &gt;op ( addr --)
+		S )+ OP MOV
+	NEXT
+        </code></pre>
+        <h5> >>a ( xi u --x2)</h5>
+<p>IEEE1275</p>
+<a name="&gt;&gt;a"></a>
+<p>
+Arithmetic shift x1 right by u bit-places
+</p>
+	<pre> <code>
+	CODE &gt;&gt;a
+		S )+ D0 MOV
+		S ) D1 MOV
+		D0 D1 ASR
+		D1 S ) MOV
+	NEXT
+	</code> <pre>
+<a name="d&gt;&gt;"></a>
+<h5> d>> ( lowd1 highd2 u -- lowd2 highd2 )</h5>
+<p>
+	Double number logical shift right, u is limited to 32
+</p>
+	<pre> <code>
+	| 20 CONSTANT #cell_bits
+	CODE d&gt;&gt;  ( lowd1 highd2 u -- lowd2 highd2 )
+		S )+ D0 MOV
+		1 # D1 MOV
+		D0 D1 LSL
+		( bits of interest.)
+		1 # D1 SUB
+		S )+ D6 MOV
+		D6 D2 MOV
+		( low bits in high cell that have to be placed in low cell)
+		D1 D2 AND
+		#cell_bits # D3 MOV
+		D0 D3 SUB
+		D3 D2 LSL ( bits now as they have to be placed in low)
+		S )+ D7 MOV
+
+		D0 D7 LSR  ( shifted in bits are zero)
+		D2 D7 OR
+		D0 D6 LSR
+
+		D7 S -) MOV
+		D6 S -) MOV
+	NEXT
+	</code> </pre>
+<a name="d&lt;&lt;"></a>
+<h5> d<< ( lowd1 highd2 u -- lowd2 highd2 )</h5>
+<p>
+	Double number logical shift right, u is limited to 32
+</p>
+	<pre> <code>
+	CODE d&lt;&lt; ( lowd1 highd2 u -- lowd2 highd2 )
+		S )+ D0 MOV
+		1 # D1 MOV
+		D0 D1 LSL
+		( bits of interest.)
+		1 # D1 SUB
+		#cell_bits # D3 MOV
+		D0 D3 SUB
+		( bits to be used from low cell)
+		D3 D1 LSL
+		S )+ D6 MOV
+		S )+ D7 MOV
+		D7 D2 MOV
+		( low bits in high cell that have to be placed in low cell)
+		D1 D2 AND
+		D3 D2 LSR ( bits now as they have to be placed in high)
+
+		D0 D6 LSL  ( shifted in bits are zero)
+		D2 D6 OR
+		D0 D7 LSL
+
+		D7 S -) MOV
+		D6 S -) MOV
+
+	NEXT
+	</code> </pre>
+        <a name="d&gt;&gt;a"></a>
+<h5> d>>a ( lowd1 highd2 u -- lowd2 highd2 )</h5>
+<p>
+	Double number arithmetric shift right, u is limited to 32
+</p>
+	<pre> <code>
+	CODE d>>a  ( lowd1 highd2 u -- lowd2 highd2 )
+		S )+ D0 MOV
+		1 # D1 MOV
+		D0 D1 LSL
+		( bits of interest.)
+		1 # D1 SUB
+		S )+ D6 MOV
+		D6 D2 MOV
+		( low bits in high cell that have to be placed in low cell)
+		D1 D2 AND
+		#cell_bits # D3 MOV
+		D0 D3 SUB
+		D3 D2 LSL ( bits now as they have to be placed in low)
+		S )+ D7 MOV
+
+		D0 D7 LSR  ( shifted in bits are zero)
+		D2 D7 OR
+		D0 D6 ASR
+
+		D7 S -) MOV
+		D6 S -) MOV
+	NEXT
+	</code> </pre>
+<h3>More double operators</h3>
+<a name="dor"><h5>dor ( d1 d2 -- d3 )</h5></a>
+<p>
+OR the two double numbers
+</p>
+	<pre> <code>
+	CODE dor ( d1 d2 -- d3 )
+		S )+ D0 MOV \ high
+		S )+ D1 MOV \ low
+		S )+ D2 MOV \ high
+		S )+ D3 MOV \ low
+		D0 D2 OR
+		D1 D3 OR
+		D3 S -) MOV
+		D2 S -) MOV
+	NEXT
+	</code> </pre>
+<a name="dand"><h5>dand ( d1 d2 -- d3 )</h5></a>
+<p>
+AND the two double numbers
+</p>
+	<pre> <code>
+	CODE dand ( d1 d2 -- d3 )
+		S )+ D0 MOV \ high
+		S )+ D1 MOV \ low
+		S )+ D2 MOV \ high
+		S )+ D3 MOV \ low
+		D0 D2 AND
+		D1 D3 AND
+		D3 S -) MOV
+		D2 S -) MOV
+	NEXT
+	</code> </pre>
+<a name="dxor"><h5>dxor ( d1 d2 -- d3 )</h5></a>
+<p>
+XOR the two double numbers
+</p>
+	<pre> <code>
+	CODE dxor ( d1 d2 -- d3 )
+		S )+ D0 MOV \ high
+		S )+ D1 MOV \ low
+		S )+ D2 MOV \ high
+		S )+ D3 MOV \ low
+		D0 D2 EOR
+		D1 D3 EOR
+		D3 S -) MOV
+		D2 S -) MOV
+	NEXT
+	</code> </pre>
+</body>
+</html>

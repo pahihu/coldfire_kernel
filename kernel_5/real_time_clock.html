@@ -1,0 +1,117 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+   <pre> <code> 
+	( TICKS TIMER )   HEX
+	| 0   DUP CONSTANT #ticks_link        4+
+	|     DUP CONSTANT #ticks_data        4+
+	DROP
+	| 0   DUP CONSTANT #ticks_time        4+
+	|     DUP CONSTANT #ticks_vector      4+
+	|         CONSTANT #ticks_data_length
+    
+	( this routine checks the timer linked list)
+	| _create_listhead  ticks_link_head    
+    
+	\ execute words in linked list
+	| CREATE (tick_timer) assembler
+	ticks_link_head AB A0 MOV
+	BEGIN  
+		A0 D0 MOV 
+	NE WHILE  
+		A0 R -)  MOV
+    	#ticks_data 0) A0 MOV
+    	#ticks_vector 0) TST NE IF ( vector set)
+    		#ticks_time 0) D0 MOV
+    		xclock- AB D0 ADD CC IF ( timed out)
+    			A0 D0 MOV ( address available to subroutine)
+    			#ticks_vector 0) A0 MOV
+    			A0 ) JSR
+    		THEN
+    	THEN
+		R )+ A0  MOV  
+		A0 ) A0  MOV
+	REPEAT RTS
+
+	HOST
+	
+
+	DECIMAL
+	| 100 60 60 24 * * * CONSTANT #ticks_a_day
+	HEX
+
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+
+	#clock_high 7 ??=
+	interrupt: slice_clock
+		_#slt_ST _lreg_SSR0 !			\ reset interrupt.
+		1 %ticks +! 				\ update real clock
+		%ticks @ #ticks_a_day < not IF
+			[ #ticks_a_day NEGATE ]T LITERAL %ticks +!
+			1 %today +!
+		THEN
+
+		\ update ticks
+		1 xclock+ +!
+		-1 xclock- +!
+
+		\ look at multitasker. The default xbase value is 10d
+		\ this is often changed to 01 in the application.
+		XAGAIN @ xclock- @ + 0< IF
+			xclock+ @
+			xbase @ +
+			XAGAIN !
+                        \ the lowest level doesn need a flag set as it just loops around.
+			TRUE [ TSK7 _#level_head_restart_flag + ]T LITERAL W!
+			TRUE [ TSK8 _#level_head_restart_flag + ]T LITERAL W!
+			TRUE [ TSK9 _#level_head_restart_flag + ]T LITERAL W!
+			#clock_high _set_new_task_level
+		THEN
+	;interrupt
+
+
+[ELSE]
+
+	#clock_high 7 ??=
+	interrupt: real_clock
+		\ reset interrupt
+		_#ter1_REF _breg_TER1 C!
+		\ update real clock
+		1 %ticks +!
+		%ticks @ #ticks_a_day < not IF
+			[ #ticks_a_day NEGATE ]T LITERAL %ticks +!
+			1 %today +!
+		THEN
+
+		\ update ticks	
+		1 xclock+ +!
+		-1 xclock- +!
+
+		\ look at multitasker. The default xbase value is 10d
+		\ this is often changed to 01 in the application.
+		XAGAIN @ xclock- @ + 0< IF
+			xclock+ @
+			xbase @ +
+			XAGAIN !
+                        \ the lowest level doesn need a flag set as it just loops around.
+			TRUE [ TSK7 _#level_head_restart_flag + ]T LITERAL W!
+			TRUE [ TSK8 _#level_head_restart_flag + ]T LITERAL W!
+			TRUE [ TSK9 _#level_head_restart_flag + ]T LITERAL W!
+			#clock_high _set_new_task_level
+		THEN
+	;interrupt
+
+[THEN]
+
+    </code> </pre>
+ 
+</body>
+</html>

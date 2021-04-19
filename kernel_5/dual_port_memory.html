@@ -1,0 +1,151 @@
+<html>
+<head>
+<title>dual_port_memory.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+CVS have defined a dual port structure that is fixed across their
+entire range of slave cards. This file defines that structure.
+</p>
+<p>
+Tasks can have there activation area in dual port. This makes it simple
+for the master to start a task in the slave. Quite neat really.
+</p>
+	<pre> <code>
+	HOST
+	\ these must be the first dual port varaiables defined
+	'tport @ _#RTI1000_dual_port_base  ??=
+
+|	$20 CONSTANT #port_tube_max
+
+        \ <a name="%port_running"><?a>
+	port_variable %port_running         ( Set to 12345678 by slave)
+
+        \ <a name="%port_pbase"><?a>
+	port_variable %port_pbase
+
+
+        \ <a name="%port_offset"><?a>
+	port_variable %port_offset
+
+        \ <a name="%port_wake"><?a>
+	port_variable %port_wake            ( value to wake a task)
+
+	port_variable %port_table_disk
+	| port_variable %port_(file_table)   \ this is $heading in BVP,
+
+        \ <a name="%port_($version)"><?a>
+        port_variable %port_($version)
+
+        \ <a name="%port_software_version"><?a>
+	port_variable %port_software_version
+
+	$20 _#RTI1000_dual_port_base + 'tport !
+
+        \ <a name="%port_ticks"><?a>
+	port_variable %port_ticks			( supplied by master, thats not us)
+
+        \ <a name="%port_who"><?a>
+	port_variable %port_who             \ slave can ask master what slot number it is in
+
+        \ <a name="%port_init_where"><?a>
+	port_variable %port_init_where		( let others see where init up to)
+  	port_variable %port_init_error  	( error value )
+
+        \ <a name="%port_software_type"><?a>
+ \       port_wvariable %port_software_type
+
+        \ <a name="%port_interface_version"><?a>
+\	port_wvariable %port_interface_version
+
+	\ next $10 bytes are preserved for tcp/ip control area.
+	\ probable won't be needed as packet will be transfered using the big dual port buffer.
+	$30 _#RTI1000_dual_port_base + 'tport !
+
+	$40 _#RTI1000_dual_port_base + 'tport !
+	\ The varibles are set and the master interrupted.
+	port_wvariable %port_i_terminal
+	port_wvariable %port_i_disking
+	port_wvariable %port_i_^ced
+	port_wvariable %port_i_logoff
+	port_wvariable %port_???
+	port_wvariable %port_???
+	port_wvariable %port_???
+	port_wvariable %port_i_?who \ request fron slave to get slot number
+	                            \ tcp/ip will need this support.
+
+
+\ application
+	port_wvariable %port_i_data
+	port_wvariable %port_i_command
+	port_wvariable %port_i_error
+	port_wvariable %port_???
+
+	port_wvariable %port_???
+	port_wvariable %port_???
+	port_wvariable %port_???
+	port_wvariable %port_i_file
+
+	$60 _#RTI1000_dual_port_base + 'tport !
+	port_variable %port_i_unit
+
+
+
+	$80 _#RTI1000_dual_port_base + 'tport !
+	\ PC database pointers
+\	port_variable %port_I1addr
+\	port_variable %port_I1num
+\	port_variable %port_I2addr
+\	port_variable %port_I2num
+
+\       port_variable %port_I4addr
+\	port_variable %port_I4num
+\	port_variable %port_O1addr
+\	port_variable %port_O1num
+
+\	port_variable %port_O2addr
+\	port_variable %port_O2num
+\	port_variable %port_O4addr
+\	port_variable %port_O4num
+	\ $B0
+        \ $C0 to $100 this area is reserved for the application.
+
+	$100 _#RTI1000_dual_port_base + 'tport !
+
+        \ #### files are now transfered using NFS.
+	\ This descibes the data structure used to transfer file data
+	\ between the master and slave. The transfers are handled by a task
+	\ in the master. The task is started by an interrupt routine in the master.
+	\ The master will wake the slave task up by writing to it's activation area.
+	\ Once upon a time all slave tasks had there activation area in dual port,
+	\ this is no longer the case as task can be created out of free buffers.
+	\ To overcome this there is now a task in the slave that looks after disk
+	\ services for all slave taks. This taks has a activation area in dual
+	\ port memory.
+	\ All this is hidden under the rti device.
+	0
+	| DUP	CONSTANT	#flbus_link 4+     ( for master)
+	| DUP CONSTANT	#flbus_source 2+   ( for master)
+	| DUP CONSTANT	#flbus_facility 4+ ( for slave)
+	| DUP CONSTANT	#flbus_count 2+    ( for slvae)
+	| DUP CONSTANT	#flbus_buffer 4+   ( for slave)
+	|	CONSTANT	#flbus_length
+
+        port_variable %port_file_table #flbus_length 4 - port_allot
+        port_variable %port_tube_control>  #port_tube_max 4* port_allot
+
+\ The BCM522 expects this buffer to be the length of the maximum
+\ ilan packet. It does give the best performance.
+        port_create %port_buffer #ilan_packet_max port_allot
+</code> </pre>
+
+
+</body>
+</html>
+

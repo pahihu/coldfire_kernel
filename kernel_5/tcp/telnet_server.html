@@ -1,0 +1,1334 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<pre> <code>
+			
+
+tcp_client class	
+
+
+			cell% instance_variable %%show_telnet_options
+			cell% instance_variable %%naws
+			cell% instance_variable %%sent_will
+			cell% instance_variable %%linemode
+			cell% instance_variable %%use_line
+			cell% instance_variable %%echo_do
+			cell% instance_variable %%^c_state
+
+
+			\ the last task to send becomes the ^c task.
+			cell% instance_variable %%^c
+			\ set if client wants us to echo
+
+			</code> </pre>
+			<p>
+			The terminal type has to be ansi_class
+			</p>
+			<pre> <code>
+			m:
+			this [parent] :construct
+			%%terminal @ IF
+				%%terminal @ heap_object_free
+			THEN
+			ansi_class heap_object
+			%%terminal !
+			FALSE %%show_telnet_options !
+			FALSE %%naws !
+			FALSE %%linemode !
+			FALSE %%use_line !
+			TRUE  %%echo_do !
+			; overrides :construct
+
+			m:
+				this [parent] :destruct
+			; overrides :destruct
+
+
+			m:
+				%%show_telnet_options @ not %%show_telnet_options !
+			; method :show_options
+
+			</code> </pre>
+			<p>
+			The control sequence all start with IAC.
+			</p>
+			<pre>
+			example: Suppress ga
+			[255][251][003]    _#iac _#will _#opt_ga
+			</pre>
+		<h5>Options</h5>
+		<p>
+		From <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1700.html">RFC1700 TCP</a><br>
+		Also see <a HREF="http://www.iana.org/numbers.html">IANA Numbers</a><br>
+
+		http://www.iana.org/numbers.html
+		</p>
+		<pre> <code>
+\ Options         Name                                                 References
+\ -------         -----------------------                              ----------
+	#00 CONSTANT _#opt_binary     \ 00 Binary Transmission              <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0856.html">RFC856 TCP</a>
+	#01 CONSTANT _#opt_echo       \ 01 Echo                             <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0857.html">RFC857 TCP</a>
+\	#02 CONSTANT _#opt_rec        \ 02 Reconnection                     [NIC50005,JBP]
+	#03 CONSTANT _#opt_no_ga      \ 03 Suppress Go Ahead                <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0858.html">RFC858 TCP</a>
+\	#04 CONSTANT _#opt_app_mess   \ 04 Approx Message Size Negotiation  [ETHERNET,JBP]
+	#05 CONSTANT _#opt_status     \ 05 Status                           <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0859.html">RFC859 TCP</a>
+	#06 CONSTANT _#opt_tm         \ 06 Timing Mark                      <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0860.html">RFC860 TCP</a>
+\	#07 CONSTANT _#opt_rmt_echo   \ 07 Remote Controlled Trans and Echo <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0726.html">RFC726 TCP</a>
+\	#08 CONSTANT _#opt_line_width \ 08 Output Line Width                [NIC50005,JBP]
+\	#09 CONSTANT _#opt_page_size  \ 09 Output Page Size                 [NIC50005,JBP]
+\	#10 CONSTANT _#opt_cr_disp    \ 0A Output CR Disposition            <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0652.html">RFC652 TCP</a>
+\	#11 CONSTANT _#opt_horz_tab   \ 0B Output Horizontal Tab Stops      <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0653.html">RFC653 TCP</a>
+\	#12 CONSTANT _#opt_horz_dsip  \ 0C Output Horizontal Tab Disposition<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0654.html">RFC654 TCP</a>
+\	#13 CONSTANT _#opt_form_disp  \ 0D Output Formfeed Disposition      <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0655.html">RFC655 TCP</a>
+\	#14 CONSTANT _#opt_vert_tab   \ 0E Output Vertical Tabstops         <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0656.html">RFC656 TCP</a>
+\	#15 CONSTANT _#opt_vert_disp  \ 0F Output Vertical Tab Disposition  <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0657.html">RFC657 TCP</a>
+\	#16 CONSTANT _#opr_line_disp  \ 10 Output Linefeed Disposition      <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0657.html">RFC657 TCP</a>
+\	#17 CONSTANT _#opt_ext_acsii  \ 11 Extended ASCII                   <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0659.html">RFC659 TCP</a>
+\	#18 CONSTANT _#opt_logoff     \ 12 Logout                           <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0727.html">RFC727 TCP</a>
+\	#19 CONSTANT _#opt_byte_macro \ 13 Byte Macro                       <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0735.html">RFC735 TCP</a>
+\	#20 CONSTANT _#opt_date_entry \ 14 Data Entry Terminal              <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1043.html">RFC1043 TCP</a>
+\	#21 CONSTANT _#opt_supdup     \ 15 SUPDUP                           <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0736.html">RFC736 TCP</a>
+\	#22 CONSTANT _#opt_supbup_out \ 16 SUPDUP Output                    <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0749.html">RFC749 TCP</a>
+\	#23 CONSTANT _#opt_snd_loc    \ 17 Send Location                    <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0779.html">RFC779 TCP</a>
+	#24 CONSTANT _#opt_term_typ   \ 18 Terminal Type                    <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1091.html">RFC1091 TCP</a>
+	#25 CONSTANT _#opt_eor        \ 19 end of Record                    <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0885.html">RFC885 TCP</a>
+\	#26 CONSTANT _#opt_tacacs_id  \ 1A TACACS User Identification       <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0927.html">RFC927 TCP</a>
+\	#27 CONSTANT _#opt_op_mark    \ 1B Output Marking                   <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0933.html">RFC933 TCP</a>
+\	#28 CONSTANT _#opt_location   \ 1C Terminal Location Number         <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0946.html">RFC946 TCP</a>
+\	#29 CONSTANT _#opt_3270       \ 1D Telnet 3270 Regime               <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1041.html">RFC1041 TCP</a>
+\	#30 CONSTANT _#opt_x.3        \ 1E X.3 PAD                          <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1053.html">RFC1053 TCP</a>
+	#31 CONSTANT _#opt_win_size   \ 1F Negotiate About Window Size      <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1073.html">RFC1073 TCP</a>
+\	#32 CONSTANT _#opt_term_speed \ 20 Terminal Speed                   <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1079.html">RFC1079 TCP</a>
+\	#33 CONSTANT _#opt_flow_cnt   \ 21 Remote Flow Control              <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1373.html">RFC1373 TCP</a>
+	#34 CONSTANT _#opt_linemode   \ 22 Linemode                         <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1184.html">RFC1184 TCP</a>
+\	#35 CONSTANT _#opt_x_loc      \ 23 X Display Location               <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1096.html">RFC1096 TCP</a>
+\	#36 CONSTANT _#opt_env_opt    \ 24 Environment Option               <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1408.html">RFC1408 TCP</a>
+\	#37 CONSTANT _#opt_auth       \ 25 Authentication Option            <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1409.html">RFC1409 TCP</a>
+\	#38 CONSTANT _#opt_enc1       \ 26 Encryption Option                [DB14]
+\	#39 CONSTANT _#opt_enc2       \ 27 New Environment Option           <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1572.html">RFC1572 TCP</a>
+			</code> </pre>
+			<p>
+			<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0854.html">RFC854 telnet</a><br>
+			<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1116.html">RFC1116 telnet line mode</a><br>
+			</p>
+			<pre> <code>
+		#255 CONSTANT _#iac       \ FF
+		#254 CONSTANT _#don't     \ FE
+		#253 CONSTANT _#do        \ FD
+		#252 CONSTANT _#won't     \ FC
+		#251 CONSTANT _#will      \ FB
+		#250 CONSTANT _#sb        \
+\		#249 CONSTANT _#ga
+\		#248 CONSTANT _#el
+\		#247 CONSTANT _#ec
+\		#246 CONSTANT _#ayt
+\		#245 CONSTANT _#ao
+\		#244 CONSTANT _#ip
+\		#243 CONSTANT _#brk
+\		#242 CONSTANT _#dmark
+\		#241 CONSTANT _#nop
+		#240 CONSTANT _#se
+\		#239 CONSTANT _#eor
+\		#238 CONSTANT _#abort
+		#237 CONSTANT _#end
+		#236 CONSTANT _#table_start_char
+
+			</code> </pre>
+			<h5>null operation [255][0->238]</h5>
+			<pre> <code>
+		| : _null_operation ( -- false)
+			FALSE
+		;
+		</code> </pre>
+		<p>
+		This is what linux sends
+		</p>
+		<pre> <code>
+		| : _end ( -- _#end_eof terminator_flag data_flag )
+			#end_eof TRUE TRUE
+		;
+			</code> </pre>
+			<h5>EOR [255][239]</h5>
+			<p>
+			You will find a reference right at the end of
+			<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc8885.html">RFC885 TCP</a><br>
+			Note that if you have not negotiated it's use you should treat the EOR record as a not.
+			Pray tell, why. Why would you send it it it is not a EOR, are the people writing the
+			standard stupid eough to give EOR another meaning.
+			<pre> <code>
+		| : _eor ( -- _#cr terminator_flag data_flag)
+			#cr TRUE TRUE
+		;
+			</code> </pre>
+			<h5>SE [255][240]</h5>
+			<p>
+			This code should not see this, if we do input is not correctly
+			structureed. Damages is done and no purpose is gained by complaining.
+			</p>
+			<pre> <code>
+		| : _se ( --false)
+			\ we get here damage has been done
+			FALSE
+		;
+			</code> </pre>
+			<h5>NOP [255][241]</h5>
+			<p>
+			No operation
+			</p>
+			<pre> <code>
+		| : _nop ( -- false)
+			FALSE
+		;
+			</code> </pre>
+			<h5>DMARK [255][242]</h5>
+			<p>
+			Mark the urgent data end. We should not see this as it is
+			the problem of others to read the urgent data up to the mark.
+			</p>
+			<pre> <code>
+		| : _dmark ( --false)
+			this :clear
+			FALSE
+		;
+			</code> </pre>
+			<h5>BRK [255][243]</h5>
+			<p>
+			The "break" signal.
+			</p>
+			<pre> <code>
+		| : _brk ( -- false)
+			FALSE
+
+		;
+			</code> </pre>
+			<h5>BRK [255][244]</h5>
+			<p>
+			Interrupt process.
+			</p>
+			<pre> <code>
+		| : _ip ( -- false )
+			FALSE
+		;
+			</code> </pre>
+			<h5>AO [255][243]</h5>
+			<p>
+			Abort output is not supported
+			</p>
+			<pre> <code>
+		| : _ao ( -- false)
+			FALSE
+		;
+			</code> </pre>
+			<h5>AYT [255][246]</h5>
+			<p>
+			Are you there
+			</p>
+			<pre> <code>
+		| CREATE $patience ," Yes I am"
+		| : _ayt ( -- false)
+			$patience COUNT this :write
+			this :flush_file
+			FALSE
+		;
+			</code> </pre>
+			<h5>EC [255][247]</h5>
+			<p>
+			erase character
+			</p>
+			<pre> <code>
+		| : _ec ( --false )
+			FALSE
+		;
+			</code> </pre>
+			<h5>EL [255][248]</h5>
+			<p>
+			erase line
+			</p>
+			<pre> <code>
+		| : _el ( --false)
+			FALSE
+		;
+			</code> </pre>
+			<h5>GA [255][249]</h5>
+			<p>
+			Go ahead
+			</p>
+			<pre> <code>
+		| : _ga ( --false)
+			FALSE
+		;
+			</code> </pre>
+			<h5>SB [255][250]</h5>
+			<p>
+			Start options sub negotiations; read in the data stream
+			until we see [255] [240]
+			</p>
+			<pre> <code>
+
+		| : _sub_not_used ( options-- false|data flag true)
+			DROP
+			BEGIN
+				_get_data IF
+					\ reached end of stream never going to get an answer
+					TRUE TRUE
+					EXIT
+				THEN
+				_#iac = IF
+					_get_data IF
+						\ reached end of stream never going to get an answer
+						TRUE TRUE
+						EXIT
+					THEN
+					_#se = IF
+						FALSE
+						EXIT
+					THEN
+				THEN
+			AGAIN
+		;
+		\ IAC|SB|NAWS|char_hb|char_lb|line_hb|line_lb|IAC|SE
+		\ If the data is IAC it has to be escaped with IAC
+		| : _sub_naws ( options-- false|data flag true)
+			DROP
+			\ two bytes of data, we still have to deal with #iac
+			zero
+			2 0 DO
+				8 LSHIFT
+				_get_data IF
+					\ reached end of stream never going to get an answer
+					DROP UNLOOP
+					TRUE TRUE
+					EXIT
+				THEN
+				DUP _#iac = IF
+					DROP
+					_get_data IF
+						\ reached end of stream never going to get an answer
+						DROP UNLOOP
+						TRUE TRUE
+						EXIT
+					THEN
+					DUP _#se = IF
+						\ value character(--
+						2DROP
+						UNLOOP
+						FALSE
+						EXIT
+					THEN
+				THEN
+				\ value data(--
+				+
+			LOOP
+			?DUP IF
+				1- \ if is the maximum value tab can take so it is zero based
+				this :character_max !
+			THEN
+			zero
+			2 0 DO
+				8 LSHIFT
+				_get_data IF
+					\ reached end of stream never going to get an answer
+					DROP UNLOOP
+					TRUE TRUE
+					EXIT
+				THEN
+				DUP _#iac = IF
+					DROP
+					_get_data IF
+						\ reached end of stream never going to get an answer
+						DROP UNLOOP
+						TRUE TRUE
+						EXIT
+					THEN
+					DUP _#se = IF
+						2DROP
+						UNLOOP
+						FALSE
+						EXIT
+					THEN
+				THEN
+				\ data
+				+
+			LOOP
+			?DUP IF
+				1 - \ max value tab can take so it is zero based
+				this :line_max !
+			THEN
+			\ eat rest of sub option string
+			zero _sub_not_used
+		;
+
+		\ We request; the server confirms.
+		\ IAC|SB|LINEMODE|MODE|mask|IAC|SE
+		\ MODE =1
+		\	EDIT      bit 0
+		\   TRAPSIG   bit 1
+		\   MODE_ACK  bit 2 ( acking the mode)
+		\   SOFT_TAB  bit 3 ( expend tabs as desired)
+		\   LIT_ECHO  bit 4 ( echo control as typed)
+		\ If the data is IAC it has to be escaped with IAC
+		\ : _sub_linemode ( options-- false|data flag true)
+		\	." in sub linemode"
+		\	DROP
+		\	BEGIN
+		\		_get_data IF
+		\			\ reached end of stream never going to get an answer
+		\			TRUE TRUE
+		\			EXIT
+		\		THEN
+		\		DUP . SPACE
+		\		_#iac = IF
+		\			_get_data IF
+		\				\ reached end of stream never going to get an answer
+		\				TRUE TRUE
+		\				EXIT
+		\			THEN
+		\			_#se = IF
+		\				FALSE
+		\				EXIT
+		\			THEN
+		\		THEN
+		\	AGAIN
+		\ ;
+
+		| CREATE _sub_vector
+			#41 tw,
+			' _sub_not_used          t,  \ 00
+			' _sub_not_used          t,  \ 01
+			' _sub_not_used          t,  \ 02
+			' _sub_not_used          t,  \ 03
+			' _sub_not_used          t,  \ 04
+			' _sub_not_used          t,  \ 05
+			' _sub_not_used          t,  \ 06
+			' _sub_not_used          t,  \ 07
+			' _sub_not_used          t,  \ 08
+			' _sub_not_used          t,  \ 09
+
+			' _sub_not_used          t,  \ 10
+			' _sub_not_used          t,  \ 11
+			' _sub_not_used          t,  \ 12
+			' _sub_not_used          t,  \ 13
+			' _sub_not_used          t,  \ 14
+			' _sub_not_used          t,  \ 15
+			' _sub_not_used          t,  \ 16
+			' _sub_not_used          t,  \ 17
+			' _sub_not_used          t,  \ 18
+			' _sub_not_used          t,  \ 19
+
+			' _sub_not_used          t,  \ 20
+			' _sub_not_used          t,  \ 21
+			' _sub_not_used          t,  \ 22
+			' _sub_not_used          t,  \ 23
+			' _sub_not_used          t,  \ 24
+			' _sub_not_used          t,  \ 25
+			' _sub_not_used          t,  \ 26
+			' _sub_not_used          t,  \ 27
+			' _sub_not_used          t,  \ 28
+			' _sub_not_used          t,  \ 29
+
+			' _sub_not_used          t,  \ 30
+			' _sub_naws              t,  \ 31
+			' _sub_not_used          t,  \ 32
+			' _sub_not_used          t,  \ 33
+			' _sub_not_used          t,  \ 34
+			' _sub_not_used          t,  \ 35
+			' _sub_not_used          t,  \ 36
+			' _sub_not_used          t,  \ 37
+			' _sub_not_used          t,  \ 38
+			' _sub_not_used          t,  \ 39
+
+			' _sub_not_used          t,  \ 40
+
+		| : _sb ( -- false| data flag flag)
+				_get_data IF
+					\ reached end of stream never going to get an answer
+					TRUE TRUE
+					EXIT
+				THEN
+				\ char
+				%%show_telnet_options @ IF
+					." server rcvd sub option " DUP . CR
+				THEN
+				DUP _sub_vector vector
+		;
+			</code> </pre>
+			<h5>WILL [255][251]</h5>
+			<p>
+			Receiving a WILL, we have to reply with DO or DON'T
+			</p>
+			<pre> <code>
+		| : _send_do { ( option --) }{
+			variable %buffer }
+			_#iac  %buffer char!
+			_#do   %buffer 1 CHARS + char!
+			%buffer 2 CHARS + char!
+			%buffer 3 this :write
+		;
+
+
+		| : _send_don't { ( option --) }{
+				variable %buffer }
+			_#iac     %buffer char!
+			_#don't   %buffer 1 CHARS + char!
+			          %buffer 2 CHARS + char!
+			%buffer 3 this :write
+		;
+
+		| : _send_will { ( option --) }{
+				variable %buffer }
+			_#iac     %buffer char!
+			_#will   %buffer 1 CHARS + char!
+			          %buffer 2 CHARS + char!
+			%buffer 3 this :write
+		;
+
+		| : _will_don't ( option -- false)
+			_send_don't
+			FALSE
+		;
+
+
+		\ told it to do so this is my reply
+		| : _will_suppress_ga ( option -- false)
+			DROP
+			FALSE
+		;
+
+		| : _will_naws ( option -- false)
+			%%naws @ not IF
+				TRUE %%naws !
+				DUP _send_do
+			THEN
+			DROP
+			FALSE
+		;
+
+		| : _send_will { ( option --) }{
+				variable %buffer }
+			_#iac     %buffer char!
+			_#will   %buffer 1 CHARS + char!
+			          %buffer 2 CHARS + char!
+			%buffer 3 this :write
+		;
+
+		\ Never ask the other end so what is this about
+		| : _will_echo ( opt -- false)
+			DROP
+			FALSE
+		;
+
+
+
+		\ Described in rfc1184 non implemented in linux
+		\ |IAC|SB|LINEMODE|DO|FORWARD_MASK|mask0->8|IEC|SE
+		\ FF|FA|22|02|FD|XX|XX|XX|XX|XX|XX|XX|XX|FF|F0
+		\ CREATE _eot_start
+		\	$FFFA2202 t, $FD00 tw,
+		\ CREATE _eot_end
+		\ 	$FFF0 tw,
+		\ : _send_eot_bitmap { }{
+		\	8 CONSTANT _#eot_buffer_length
+		\	8 bytes %eot_buffer }
+		\	\ fixed data at start of message
+		\	_eot_start 5 this :write
+		\	%eot_buffer _#eot_buffer_length ERASE
+		\	%%eot C@ zero DO
+		\		%%eot 1+ I + C@ 8 /MOD  \ rem quot(--
+		\		1 ROT 2**               \ quot bit(--
+		\		OVER %eot_buffer + C@ OR OVER %eot_buffer + C!
+		\	LOOP
+		\	%eot_buffer _#eot_buffer_length this :write
+		\	_eot_end 2 this :write
+		\ ;
+
+
+
+
+
+	    \ |IAC|SB|LINEMODE|MODE|mask|IAC|SE|
+	    \ 01 = edit = send complete line
+	    \ 02 = trapsig = convert contol to NVT caracters; this is most robust.
+	    \ 08 = softtab = convert tab to some number of spaces.
+	    \ 10 =
+		\ mask = 01 + 02 + 08
+		\ FF|FA|22|01|0A|FF|F0
+		\ CREATE _linemode_sub
+		\ $FFFA2201 t, 0BFFF000 t,
+		\ : _will_linemode  ( option -- flag)
+		\	%%linemode @ not IF
+		\		TRUE %%linemode !
+		\		_linemode_sub 7 this :write
+		\		\ _send_eot_bitmap
+		\	THEN
+		\	DROP FALSE
+		\ ;
+
+
+
+		| CREATE _will_vector
+			#41 tw,
+			' _will_don't          t,  \ 00
+			' _will_echo           t,  \ 01
+			' _will_don't          t,  \ 02
+			' _will_suppress_ga    t,  \ 03
+			' _will_don't          t,  \ 04
+			' _will_don't          t,  \ 05
+			' _will_don't          t,  \ 06
+			' _will_don't          t,  \ 07
+			' _will_don't          t,  \ 08
+			' _will_don't          t,  \ 09
+
+			' _will_don't          t,  \ 10
+			' _will_don't          t,  \ 11
+			' _will_don't          t,  \ 12
+			' _will_don't          t,  \ 13
+			' _will_don't          t,  \ 14
+			' _will_don't          t,  \ 15
+			' _will_don't          t,  \ 16
+			' _will_don't          t,  \ 17
+			' _will_don't          t,  \ 18
+			' _will_don't          t,  \ 19
+
+			' _will_don't          t,  \ 20
+			' _will_don't          t,  \ 21
+			' _will_don't          t,  \ 22
+			' _will_don't          t,  \ 23
+			' _will_don't          t,  \ 24
+			' _will_don't          t,  \ 25
+			' _will_don't          t,  \ 26
+			' _will_don't          t,  \ 27
+			' _will_don't          t,  \ 28
+			' _will_don't          t,  \ 29
+
+			' _will_don't          t,  \ 30
+			' _will_naws           t,  \ 31
+			' _will_don't          t,  \ 32
+			' _will_don't          t,  \ 33
+			' _will_don't          t,  \ 34  linemode
+			' _will_don't          t,  \ 35
+			' _will_don't          t,  \ 36
+			' _will_don't          t,  \ 37
+			' _will_don't          t,  \ 38
+			' _will_don't          t,  \ 39
+
+			' _will_don't          t,  \ 40
+
+		| : _will ( -- false| data flag flag )
+			\ get the option
+			_get_data IF
+				\ terminator
+				TRUE TRUE
+				EXIT
+			THEN
+			%%show_telnet_options @ IF
+				." server rcvd WILL " DUP . CR
+			THEN
+			DUP _will_vector vector
+		;
+			</code> </pre>
+			<h5>WON'T [255][252]</h5>
+			<p>
+			In a responce to a will we send a won't, if we won't
+			</p>
+			<pre> <code>
+		\ I didn't issue a do so I have no idea.
+		| : _won't_?? ( option -- false)
+			DROP
+			FALSE
+		;
+
+		\ I never ask the client to echo my stuff so I should never get this
+		| : _won't_echo  ( option --false)
+			DROP
+			FALSE
+		;
+
+		| CREATE _won't_vector
+			#41 tw,
+			' _won't_??          t,  \ 00
+			' _won't_echo        t,  \ 01
+			' _won't_??          t,  \ 02
+			' _won't_??          t,  \ 03
+			' _won't_??          t,  \ 04
+			' _won't_??          t,  \ 05
+			' _won't_??          t,  \ 06
+			' _won't_??          t,  \ 07
+			' _won't_??          t,  \ 08
+			' _won't_??          t,  \ 09
+
+			' _won't_??          t,  \ 10
+			' _won't_??          t,  \ 11
+			' _won't_??          t,  \ 12
+			' _won't_??          t,  \ 13
+			' _won't_??          t,  \ 14
+			' _won't_??          t,  \ 15
+			' _won't_??          t,  \ 16
+			' _won't_??          t,  \ 17
+			' _won't_??          t,  \ 18
+			' _won't_??          t,  \ 19
+
+			' _won't_??          t,  \ 20
+			' _won't_??          t,  \ 21
+			' _won't_??          t,  \ 22
+			' _won't_??          t,  \ 23
+			' _won't_??          t,  \ 24
+			' _won't_??          t,  \ 25
+			' _won't_??          t,  \ 26
+			' _won't_??          t,  \ 27
+			' _won't_??          t,  \ 28
+			' _won't_??          t,  \ 29
+
+			' _won't_??          t,  \ 30
+			' _won't_??          t,  \ 31
+			' _won't_??          t,  \ 32
+			' _won't_??          t,  \ 33
+			' _won't_??          t,  \ 34
+			' _won't_??          t,  \ 35
+			' _won't_??          t,  \ 36
+			' _won't_??          t,  \ 37
+			' _won't_??          t,  \ 38
+			' _won't_??          t,  \ 39
+
+			' _won't_??          t,  \ 40
+
+		\ we have issued a do and got a won't
+		| : _won't ( --)
+			_get_data IF
+				\ terminator
+				TRUE TRUE EXIT
+			THEN
+			%%show_telnet_options @ IF
+				." server received WON'T " DUP . CR
+			THEN
+			DUP _won't_vector vector
+		;
+			</code> </pre>
+			<h5>DO [255][253]</h5>
+			<p>
+			In a responce to a will send a do, if we want and don't if not.
+			</p>
+			<p>
+			We are receiving. Request by other party to use option ABC. If we
+			set the option we have to respond with will or won't
+			</p>
+			<pre> <code>
+		| : _send_won't { ( option --) }{
+				variable %buffer }
+			_#iac     %buffer char!
+			_#won't   %buffer 1 CHARS + char!
+			          %buffer 2 CHARS + char!
+			%buffer 3 this :write
+		;
+
+
+
+		| : _do_won't ( option --false)
+			_send_won't
+			FALSE
+		;
+
+		| : _do_will ( option -- false)
+			_send_will
+			FALSE
+		;
+
+
+		\ it would seem the meaning has changed; won't puts things into line mode.
+		\ I want the system in line mode.
+		| : _do_no_ga ( option -- false)
+			DROP
+			FALSE
+		;
+
+		\ I sent a will he sent a do;
+		\ In line mode I did it to stop the local echo. If not in line mode I did it so I would echo locally.
+		\ characters printed ha ha.
+		| : _do_echo ( option -- false)
+			DROP
+			FALSE
+		;
+
+		| CREATE _do_vector
+			#41 tw,
+			' _do_won't          t,  \ 00
+			' _do_echo           t,  \ 01 echo
+			' _do_won't          t,  \ 02
+			' _do_no_ga          t,  \ 03 If I answer don't linux will go to line mode.
+			' _do_won't          t,  \ 04
+			' _do_won't          t,  \ 05
+			' _do_won't          t,  \ 06
+			' _do_won't          t,  \ 07
+			' _do_won't          t,  \ 08
+			' _do_won't          t,  \ 09
+
+			' _do_won't          t,  \ 10
+			' _do_won't          t,  \ 11
+			' _do_won't          t,  \ 12
+			' _do_won't          t,  \ 13
+			' _do_won't          t,  \ 14
+			' _do_won't          t,  \ 15
+			' _do_won't          t,  \ 16
+			' _do_won't          t,  \ 17
+			' _do_won't          t,  \ 18
+			' _do_won't          t,  \ 19
+
+			' _do_won't          t,  \ 20
+			' _do_won't          t,  \ 21
+			' _do_won't          t,  \ 22
+			' _do_won't          t,  \ 23
+			' _do_won't          t,  \ 24
+			' _do_won't          t,  \ 25
+			' _do_won't          t,  \ 26
+			' _do_won't          t,  \ 27
+			' _do_won't          t,  \ 28
+			' _do_won't          t,  \ 29
+
+			' _do_won't          t,  \ 30
+			' _do_won't          t,  \ 31 not a server function, we need to send a do.
+			' _do_won't          t,  \ 32
+			' _do_won't          t,  \ 33
+			' _do_won't          t,  \ 34
+			' _do_won't          t,  \ 35
+			' _do_won't          t,  \ 36
+			' _do_won't          t,  \ 37
+			' _do_won't          t,  \ 38
+			' _do_won't          t,  \ 39
+
+			' _do_won't          t,  \ 40
+
+
+		| : _do ( -- false| data flag flag )
+			_get_data IF
+				\ terminator
+				TRUE TRUE
+				EXIT
+			THEN
+			%%show_telnet_options @ IF
+				." server rcvd DO " DUP . CR
+			THEN
+			DUP _do_vector vector
+		;
+
+			</code> </pre>
+			<h5>DON'T [255][254]</h5>
+			<p>
+			In a responce to a will send a do, if we want and don't if not.
+			</p>
+			<pre> <code>
+		| : _don't_??  ( option -- flag)
+			DROP
+			FALSE
+		;
+
+		\ this is the other end telling me not to echo
+		\ after I send a won't
+		| : _don't_echo ( option --flag)
+			DROP
+			FALSE
+		;
+
+		| CREATE _don't_vector
+			#41 tw,
+			' _don't_??          t,  \ 00
+			' _don't_echo        t,  \ 01
+			' _don't_??          t,  \ 02
+			' _don't_??          t,  \ 03
+			' _don't_??          t,  \ 04
+			' _don't_??          t,  \ 05
+			' _don't_??          t,  \ 06
+			' _don't_??          t,  \ 07
+			' _don't_??          t,  \ 08
+			' _don't_??          t,  \ 09
+
+			' _don't_??          t,  \ 10
+			' _don't_??          t,  \ 11
+			' _don't_??          t,  \ 12
+			' _don't_??          t,  \ 13
+			' _don't_??          t,  \ 14
+			' _don't_??          t,  \ 15
+			' _don't_??          t,  \ 16
+			' _don't_??          t,  \ 17
+			' _don't_??          t,  \ 18
+			' _don't_??          t,  \ 19
+
+			' _don't_??          t,  \ 20
+			' _don't_??          t,  \ 21
+			' _don't_??          t,  \ 22
+			' _don't_??          t,  \ 23
+			' _don't_??          t,  \ 24
+			' _don't_??          t,  \ 25
+			' _don't_??          t,  \ 26
+			' _don't_??          t,  \ 27
+			' _don't_??          t,  \ 28
+			' _don't_??          t,  \ 29
+
+			' _don't_??          t,  \ 30
+			' _don't_??          t,  \ 31
+			' _don't_??          t,  \ 32
+			' _don't_??          t,  \ 33
+			' _don't_??          t,  \ 34
+			' _don't_??          t,  \ 35
+			' _don't_??          t,  \ 36
+			' _don't_??          t,  \ 37
+			' _don't_??          t,  \ 38
+			' _don't_??          t,  \ 39
+
+			' _don't_??          t,  \ 40
+
+
+
+		\ we have issued a do and got a won't
+		| : _don't ( --)
+			_get_data IF
+				\ terminator
+				TRUE TRUE EXIT
+			THEN
+			DUP _don't_vector vector
+		;
+			</code> </pre>
+			<h5>IAC [255][255]</h5>
+			<p>
+			Dedcode as character 255
+			</p>
+			<pre> <code>
+
+		\ #iac #iac --> #iac
+		| : _iac ( -- char terminator_flag data_flag | false )
+			_#iac FALSE TRUE
+		;
+
+
+
+		| CREATE _char_vector_table
+			$12 tw, \ number of entries
+			' _null_operation t,              \ 0 ->236
+			' _end t,                         \ 237
+			' _null_operation t,              \ 238
+			' _eor t,                         \ 239
+			' _se t, ( should never be used)  \ 240  F0
+			' _nop t,                         \ 241  F1
+			' _dmark t,                       \ 242  F2
+			' _brk t,                         \ 243  F3
+			' _ip t,                          \ 244  F4
+			' _ao t,                          \ 245  F5
+			' _ayt t,                         \ 246  F6
+			' _ec t,                          \ 247  F7
+			' _el t,                          \ 248  F8
+			' _ga t,                          \ 249  F9
+			' _sb t,                          \ 250  FA
+			' _will t,                        \ 251  FB
+			' _won't t,                       \ 252  FC
+			' _do    t,                       \ 253  FD
+			' _don't t,                       \ 254  FE
+			' _iac t,                         \ 255  FF
+
+		| : _telnet_control ( char -- char terminator_flag data_flag | false )
+			DUP _#iac <> IF
+				FALSE \ it is not a terminator as we using data already received
+				TRUE
+				EXIT
+			THEN
+			\ well we have a iac;
+			\ a control character follows drop iac and get control code
+			DROP
+			\ if we a told it is a terminator the
+			\ input stream has finished
+			_get_data IF
+				\ it was a terminator and it was data
+				TRUE TRUE
+				EXIT
+			THEN
+			\ char(--
+			_#table_start_char -
+			zero MAX
+			_char_vector_table vector
+		;
+
+		| : _store_a_char&echo  { ( addr num char ) variable %len ( --addr num) }
+			DUP #lf = IF
+				DROP
+				EXIT
+			THEN
+			\ cr-null is sent if user types CR
+			DUP not IF
+				DROP
+				EXIT
+			THEN
+			\ if not in linemode editing is our problem.
+			\ and we have to send the character back
+			%%use_line @ not IF
+				DUP #back_space = IF
+					DROP
+					DUP %len @ <  IF \ > still data to remove
+						SWAP 1 CHARS -
+						SWAP 1 +
+						%%echo_do @ IF
+							#back_space EMIT send
+						THEN
+					THEN
+					EXIT
+				THEN
+				%%echo_do @ IF
+					DUP BL < not IF  \ >
+						DUP EMIT send
+					THEN
+				THEN
+			THEN
+			jump char!
+			SWAP
+			1 CHARS +
+			SWAP
+			1 -
+		;
+
+		\ as we have to be able to delete characters from the inout stream we have
+		\ to know the length of the input buffer/
+		| : _read_telnet_stream { ( addr1 num1 ) variable %len ( -- addr2 num2 ) }
+			\ if count is one we are in serious trouble and can't store
+			\ terminator but don't complain
+			BEGIN
+				\ addr1 num(--
+				\ if the count is one off the termination count
+				\ we cannot use it, we have to leave room for the
+				\ terminator that indicates we ran out of room.
+				\ addr char(--
+				_get_data IF
+					\ a terminator
+					_store_a_char
+					EXIT
+				THEN
+				\ addr num char(--
+				DUP eot?
+
+				IF
+					\ addr num char(--
+					_store_a_char
+					\ addr num (--
+					EXIT
+				THEN
+				\ addr num char(--
+				\ if it was control then there is nothing to store
+				\ in output stream.
+				_telnet_control
+				\ addr num char terminator_flag data_flag | addr num false
+				IF \ we have data
+					IF \ it is a terminator
+						_store_a_char
+						EXIT
+					THEN
+					\ leave room for terminator
+					\ addr num char(--
+					%len @ _store_a_char&echo
+					DUP 2 < IF    \ >
+						\ addr num (--
+						DUP IF
+							\ if we don't have room don't store
+							#end_count _store_a_char
+						THEN
+						EXIT
+					THEN
+				THEN
+			AGAIN
+		;
+
+		\ at this stage we are aiming to do the echo; user types linemode if this
+		\ is a pain as it will be for a remote logon
+		| : _inital_options
+				\ I want you to send naws
+				_#opt_win_size _send_do
+				\ I am willing to echo
+				\ there is a kluge in the unix telnet client; it decides on the bugs you
+				\ have based on the server sending this option. Things seem to go better if
+				\ you send something about echo early
+				_#opt_echo _send_will
+				\ I want you to stop sending the ga
+				_#opt_no_ga _send_do
+				TRUE %%sent_will !
+
+		;
+
+		m:  ( addr len -- len)
+			%%sent_will @ not IF
+				_inital_options
+			THEN
+
+			_read_tcp DUP not IF
+				['] end_task 'abort ! ABORT
+			THEN
+		; overrides :read
+
+		\ flag is false if all is finished
+		\ This read_line is for telnet.
+		m:  { ( addr len -- len flag) }{
+				variable %len
+				variable %addr }
+			\ zero is a problem as we need room to store the terminator
+			DUP not IF
+				2DROP zero TRUE
+			THEN
+			%%sent_will @ not IF
+				_inital_options
+			THEN
+
+			DUP %len !
+			OVER %addr !
+
+			\ addr len(--
+			%len @ _read_telnet_stream
+			\ addr1 len1(--
+			NIP %addr @ SWAP
+			\ addr len1(--
+			%len @ SWAP -
+			\ addr len3(--
+			this :termination>code
+			\ len4 flag(--
+			\ close, but even worse destroy task.
+			DUP not IF
+				['] end_task 'abort ! ABORT
+			THEN
+		; overrides :read_line
+
+		| : _echo_on ( --)
+			%%use_line @ IF
+				\ we tell remote we won't so it will
+				_#opt_echo _send_won't
+			THEN
+			TRUE %%echo_do !
+
+		;
+
+		| : _echo_off ( --)
+			\ we tell remote we will and then we don't
+			\ lying buggers arn't we.
+			\ If in character mode the _send_will is not needed.
+			_#opt_echo _send_will
+			FALSE %%echo_do !
+		;
+
+		| : _null_control
+		;
+
+		| CREATE control_vectors
+			03 tw,
+			' _null_control t,
+			' _echo_on  t,
+			' _echo_off t,
+
+		 m: ( code --)
+			control_vectors vector
+		; overrides :!control
+
+		\ default is server echo; a logged on user can change his session to line mode.
+		\ only makes sence if the the cleint supports it; linux does; nt doesn't.
+
+		m: ( --)
+			TRUE %%use_line !
+			\ this puts us into kludge linemode
+			\ kludge is well supported.
+			_#opt_no_ga _send_won't
+			\ and we tell the other end we are no longer echoing
+			_#opt_echo _send_won't
+		; overrides :linemode
+
+
+		\ look for the control ^C
+		\ Slow I know; but on the good side someone has to type the stuff in
+		\ and humans are not going to give us an extreme load.
+		\ This code is why the proto task is now responsibe for gettting the input
+		\ sequence sorted out.
+
+		0
+		| DUP CONSTANT _#nothing_state 1+
+		| DUP CONSTANT _#iac_state    1+
+		| DUP CONSTANT _#do_state     1+
+		| DUP CONSTANT _#sub_state    1+
+		| DUP CONSTANT _#sub_iac      1+
+		DROP
+
+	| : _ti_other ( flag --flag)
+	;
+
+	| : _ti_abort ( flag -- true)
+		DROP TRUE
+	;
+	| : _ti_sub ( flag -- flag)
+		_#sub_state %%^c_state !
+	;
+
+	| : _ti_do ( flag -- flag)
+		_#do_state %%^c_state !
+	;
+
+	| CREATE _iac_table
+		$14 tw,
+		' _ti_other t,     \ other
+		' _ti_other t,     \ end
+		' _ti_abort t,     \ abort
+		' _ti_other t,     \ end of record
+		' _ti_other t,     \ sub end
+		' _ti_other t,     \ nop
+		' _ti_other t,     \ datamark
+		' _ti_abort t,     \ break
+		' _ti_abort t,     \ interrupt process
+		' _ti_abort t,     \ abort output
+		' _ti_other t,     \ are you there
+		' _ti_other t,     \ erase character
+		' _ti_other t,     \ erase line
+		' _ti_other t,     \ go ahead
+		' _ti_sub   t,     \ sub negotiation
+		' _ti_do    t,     \ will
+		' _ti_do    t,     \ won'T
+		' _ti_do    t,     \ do
+		' _ti_do    t,     \ don't
+		' _ti_other t,     \ iac
+
+
+ 		\ flag is true if ^C detected
+		| : _nothing_state ( flag char -- flag )
+			DUP _#iac = IF
+				_#iac_state %%^c_state !
+				DROP
+				EXIT
+			THEN
+			#^c = IF
+				DROP TRUE
+			THEN
+			\ flag(--
+		;
+
+		\ first character after an #iac
+		| : _iac_state ( flag char -- flag )
+	 		_#table_start_char - zero MAX _iac_table vector
+	 	;
+
+		\ third charcter in a #iac;#action;code sequence.
+	 	| : _do_state ( flag char -- flag)
+	 		_#nothing_state %%^c_state !
+	 		DROP
+	 	;
+
+	 	| : _sub_state ( flag char --flag)
+	 		_#iac = IF
+	 			_#sub_iac %%^c_state !
+	 		THEN
+	 	;
+
+		\ look for sub end otherwise be happy
+	 	| : _sub_iac  ( flag char --flag)
+	 		_#se = IF
+	 			_#nothing_state %%^c_state !
+	 		THEN
+	 	;
+
+		| CREATE _^c_states
+			5 tw,
+			' _nothing_state t,
+			' _iac_state  t,
+			' _do_state  t,
+			' _sub_state t,
+			' _sub_iac   t,
+
+		\ The idea is this.
+		\ The input stream has in effect the main states; normal data and in this
+		\ state ^C is ^C; in iac state, in this state other characters have the
+		\ same meaning as ^C and ^C can mean something else. And in sub negotiation
+		\ in this state ^C means something else. I know this is all a pain but it is needed
+		\ if the proto routine is going to set the ^C variable of the telnet task.
+
+		| : _find^C  ( addr num --flag)
+			\ num can be zero on a fin
+			FALSE -rot
+			OVER + SWAP ?DO
+					I char@ %%^c_state @ _^c_states vector
+			LOOP
+		;
+
+		m: ( pep --)
+			DUP ep_protodata + @ SWAP ep_protocount + @
+			_find^C IF
+				%%^c @ IF
+					TRUE %%^c @ W!
+				THEN
+			THEN
+		; overrides :urgent_data
+
+		m: ( addr num--)
+			\ the task that has it's ^c variable set it the last one to
+			\ output data.
+			user_base activation_^c_set  %%^c !
+			DUP IF  \ There is some data
+					BEGIN
+						_tcp_data>type_buffer IF \ return true if all ok
+							EXIT
+						THEN
+						\ sent the data to the device to clear the buffer
+						this :flush_file
+					AGAIN
+			ELSE
+				2DROP
+			THEN
+		; overrides :write
+
+
+
+target_also
+&drivers
+target_definitions
+
+
+end_class tcp_telnet
+
+target_previous_definitions
+target_previous
+
+: telnet_action  ( handle -- )
+	DUP 'output_file !
+	DUP 'input_file !
+	'abort_file !
+	\ advetise
+	CR
+	.version ."  Telnet server"
+	CR
+	\ tell the user about linemode
+	." If remote type 'linemode' after logon to convert connection to linemode."
+	prompt
+;
+
+: linemode ( --) 'input_file @ :linemode ;
+
+| CREATE $telnet_child ," telnet"
+</code></pre>
+<p>
+This really is neat, the one gives the number of stack items transfered to
+the child, this is followed by the word to be executed. A lot better than
+a UNIX fork.
+</p>
+<pre><code>
+| : start_task  ( client --)
+	one ['] telnet_action #clock_low $telnet_child child_task
+;
+
+\ server object address stored here
+\ This is only done for debugging
+ram_variable %tcp_telnet_server
+
+#clock_low task: telnet_server
+	$" tcp_server/#23" 0 $open
+	\ change the generated client to a telnet client
+	[ tcp_telnet ]T LITERAL OVER :client!
+	%tcp_telnet_server !
+	BEGIN
+		%tcp_telnet_server @ :listen
+		start_task
+	AGAIN
+	;task
+
+</code> </pre>
+</body>
+</html>

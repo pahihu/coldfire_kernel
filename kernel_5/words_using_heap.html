@@ -1,0 +1,49 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<a name="PAD"></a>
+<h5>ANS 6.2.2000 PAD</h5> 
+<p>( -- c-addr )</p>
+<p>
+c-addr is the address of a transient region that can be used to hold data for 
+intermediate processing. 
+</p>
+<p>
+PAD has been available as scratch storage for strings since the earliest Forth 
+implementations. It was brought to our attention that many programmers are
+reluctant to use PAD, fearing incompatibilities with system uses. 
+PAD is specifically intended as a programmer convenience, however, 
+which is why we documented the fact that no standard words use it. 
+</p>
+<p>
+<strong>COLDFORTH</strong>
+To keep with the intent, the kernel does't use PAD. But then with $buffer
+and kill_buffer available why would an application use it anyway.
+</p>
+	<pre> <code>
+	#$buffer ubuffer PAD
+	</code> </pre>
+<p>
+The buffer containing the current token. #### This really should be written 
+out, there us no need to transfer data from the input buffer.
+</p>
+<p>
+Set buffer size so it can be met with a 100hex data block.
+</p>
+	<pre> <code>
+	 $100 _#sys_buffer_user - CONSTANT _#token_max
+
+	\ Create the token buffer
+
+	_#token_max ubuffer _token   
+	</code> </pre>
+
+</body>
+</html>

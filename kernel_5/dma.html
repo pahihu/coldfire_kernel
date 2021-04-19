@@ -1,0 +1,122 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+<table>
+<tr><th>Channel</th> <th>Use</th>      <td>Vector</td></tr>
+<tr><td>0</td>       <td>Ethernet</td> <td>62</td></tr> 
+<tr><td>1</td>       <td>Memory</td>   <td>63</td></tr> 
+<tr><td>2</td>       <td>Uart0</td>    <td>64</td></tr>
+<tr><td>3</td>       <td>Uart1</td>    <td>65</td></tr>
+</table>
+
+<p>
+As written the exception words do not raise the task priority level. This
+limits DMA use to tasks that are on the clock levels.
+</p>
+	<pre> <code>
+#BVP6551 #BVP6552 +  #ECM160 + [IF]
+
+	: _dma_init
+        ;
+
+[ELSE]
+	ram_create _dma0_facility  #facility_length  ram_allot
+	ram_create _dma1_facility  #facility_length  ram_allot
+	ram_create _dma2_facility  #facility_length  ram_allot
+	ram_create _dma3_facility  #facility_length  ram_allot
+
+	ram_variable _%dma0_termination
+	ram_variable _%dma1_termination
+	ram_variable _%dma2_termination
+	ram_variable _%dma3_termination
+
+	\ flag is true if operation was successfull
+	: dma1 ( from to number --flag)
+		_dma1_facility grab
+		xsleep
+		_wreg_BCR1 W!
+		_lreg_DAR1 !
+		_lreg_SAR1 !
+		_wreg_DCR1 W@
+		_#dcrx_START OR
+		_wreg_DCR1 W!
+		xnext
+		_%dma1_termination @
+		_dma1_facility release
+		$FFFFFFFE AND 0=
+	;
+
+
+	: _dma_init
+		_#dma0_vector _breg_DIVR0 C!
+		_#dma1_vector _breg_DIVR1 C!
+		_#dma2_vector _breg_DIVR2 C!
+		_#dma3_vector _breg_DIVR3 C!
+		
+		[ _#dcrx_INT    \ enable interrupt on termination
+		  _#dcrx_SINC +  \ source increment
+		  _#dcrx_DINC +  \ destination inc
+		  _#dcr1_SSZE +
+		  _#dcr1_DSZE +
+		]T LITERAL _wreg_DCR1 W! 
+
+	;
+
+	interrupt: _dma0_exception
+		\ read the termination details 
+		_breg_DSR0 C@ _%dma0_termination !
+		\ reset the interrupt
+		01 _breg_DSR0 C!
+		\ wake the task
+		_dma0_facility _#facility + @ ?DUP IF
+			wake SWAP  W!
+		THEN
+	;interrupt
+
+	interrupt: _dma1_exception
+		\ read the termination details 
+		_breg_DSR1 C@ _%dma1_termination !
+		\ reset the interrupt
+		01 _breg_DSR1 C!
+		\ restart the op
+		\ wake the task
+		_dma1_facility _#facility + @ ?DUP IF
+			wake SWAP  W!
+		THEN
+	;interrupt
+
+	interrupt: _dma2_exception
+		\ read the termination details 
+		_breg_DSR2 C@ _%dma1_termination !
+		\ reset the interrupt
+		01 _breg_DSR2 C!
+		\ wake the task
+		_dma2_facility _#facility + @ ?DUP IF
+			wake SWAP  W!
+		THEN
+	;interrupt
+
+	interrupt: _dma3_exception
+		\ read the termination details 
+		_breg_DSR3 C@ _%dma3_termination !
+		\ reset the interrupt
+		01 _breg_DSR3 C!
+		\ wake the task
+		_dma3_facility _#facility + @ ?DUP IF
+			wake SWAP W!
+		THEN
+	;interrupt
+
+[THEN]
+	</code> </pre>
+</body>
+</html>

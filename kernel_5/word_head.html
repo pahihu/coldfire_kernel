@@ -1,0 +1,101 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Words to describe a words head.
+</p>
+	<pre> <code>
+	$20 CONSTANT _#smudge_bit
+		\ set true if code can be copied to a new
+		\ : word 
+	$40 CONSTANT _#pure_bit
+		\ set true if word is to be executed when compiling
+	$80 CONSTANT _#immediate_bit
+		\ Bits used to set the name count
+	$1F CONSTANT _#name_count_bits
+
+	zero
+	DUP CONSTANT _#head_count 1+
+	DUP CONSTANT _#head_link CELL+
+	DUP CONSTANT _#head_hash CELL+
+	DUP CONSTANT _#head_cfa  
+	DUP CONSTANT _#head_xt   6 + \ room for a JSR
+	DUP CONSTANT _#head_pfa  CELL+
+	DROP
+
+	
+
+	: lfa>hash  ( lfa --hash) [ _#head_hash _#head_link - ]T LITERAL + ; inline
+
+	: lfa>nfa ( lfa -- nfa) [ _#head_count _#head_link - ]T LITERAL + ; inline
+	
+	: cfa>pfa ( cfa -- pfa) [ _#head_pfa _#head_cfa - ]T LITERAL + ; inline
+	
+	: lfa>cfa ( lfa -- cfa ) [ _#head_cfa _#head_link - ]T LITERAL + ; inline
+
+	: lfa>pfa ( lfa -- pfa ) [ _#head_pfa _#head_link - ]T LITERAL + ; inline
+
+\     : nfa>lfa  ( nfa -- lfa)[ _#head_link _#head_count - ]T LITERAL + ; inline
+
+	: cfa>nfa ( cfa -- nfa) [ _#head_count _#head_cfa - ]T LITERAL + ; inline
+
+    : pfa>cfa ( pfa -- cfa ) [ _#head_cfa _#head_pfa - ]T LITERAL + ; inline
+
+	: xt>pfa ( xt -- pfa ) [ _#head_pfa _#head_xt - ]T LITERAL + ; inline
+
+    : xt>cfa ( xt -- cfa ) ( [ _#head_cfa _#head_xt - ]T LITERAL + ) ; inline
+
+	: xt>nfa ( xt -- xfa ) [ _#head_count _#head_xt - ]T LITERAL + ;  inline
+
+	: lfa>xt [ _#head_xt _#head_link - ]T LITERAL +  ;  inline
+
+
+</code> </pre>
+<a name=">BODY"></a>
+<h5>ANS 6.1.0550 >BODY</h5>
+<p>CORE</p>
+<p>( xt -- a-addr )</p>
+<p>
+a-addr is the data-field address corresponding to xt. An ambiguous condition 
+exists if xt is not for a word defined via CREATE. 
+</p>
+<p>
+a-addr is the address that HERE would have returned had it been executed 
+immediately after the execution of the CREATE that defined xt. 
+</p>
+
+
+	<pre> <code>
+	: >BODY  ( xt -- pfa)
+		xt>pfa ; inline
+	</code> </pre>
+
+
+<a name="name_count"></a>
+<h5>name+count</h5> 
+<p>( c-addr1 -- c-addr2 u )</p>
+<p>
+The name count is stored with the count high in memory and the characters below
+it. This word turns this arangement into stack values as required by a S type string.
+<b>Take care, the flag bits are still present and must be removed to output
+the string.</b> 
+</p>
+	<pre> <code>
+	: name_count ( nfa -- c-addr2 n+flags )
+		DUP C@   \ addr n+flags (--simple bit the coun
+		TUCK     \ n+flags addr n+flags(--
+		_#name_count_bits AND  \ n+flags addr n(--
+		-        \ n+flags addr2(--
+		SWAP     \ addr3 n+flags(--
+	;
+	</code> </pre>
+
+</body>
+</html>

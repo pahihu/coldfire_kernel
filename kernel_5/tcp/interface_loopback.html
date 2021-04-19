@@ -1,0 +1,80 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>local interface</h3>
+<a HREF="./license.html">license</a>
+<p>
+	<pre> <code>
+
+ram_variable %loopback_object
+interface_common class
+
+
+	m: ( --)
+		%loopback_object @ ABORT" define loopback object only once"
+		this [parent] :construct
+		this %loopback_object !
+	; overrides :construct
+
+		
+	m: ( --)
+		this [parent] :destruct
+	; overrides :destruct
+
+	\ this word is used by routed, it has no other use.
+	\ do those things that are done by an interface to finish the
+	\ datagram and pass the datagram onto local
+	m: ( pep -- )
+		\ the source address is set in the interface if not set.
+		DUP [ ep_data ip_src + ]T LITERAL + @ not IF
+			127.000.000.000 OVER [ ep_data ip_src + ]T LITERAL + !
+		THEN
+		\ the receiving interface is set.
+		this OVER ep_nif_received + !
+		\ the protocol is checksumed but does not need to be done
+		\ as interface also checks the checksum
+
+		\ Have to do protocol checksum as it is checked in proto_demux, and
+		\ we don't want to be dealing with loopback exceptions there.
+		\ udp provides the option of not checksuming the packet. But 
+		\ we make no use of it as we don't want protocol specific code here.
+		DUP DUP ep_proto_obj + @ ?DUP IF
+			\ pep pep object(--
+			:proto_checksum
+			\ pep(--
+			DUP
+		THEN
+		\ pep pep(--
+		DROP
+		queue_proto
+	; overrides :consume_interface						 
+
+	\ the local :broadcast address is called for -1. The local interface will
+	\ only do this if the local device does not know it's ip address. 
+	\ #### we really should step through all interface and call :connect_ip.
+	\ This would require the duplication of the datagram. At the moment generate an
+	\ error
+	ram_variable %local_general_broadcast
+	m: ( pep -- )
+		1 %local_general_broadcast +!
+		kill_free_buffer
+	; overrides :broadcast
+
+	m: ( indent --)
+			CR DUP SPACES ." interface_loopback | " ." Object: " this .h  
+			DROP send
+	; overrides :print
+
+end_class interface_loopback
+
+
+	</code> </pre>
+</body>
+</html>
+

@@ -1,0 +1,33 @@
+<html>
+<head>
+<title>Interrupt Trap Routines</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre><code>
+	ram_variable %rti_int
+
+	: rti_serve
+		zero _#reset_rti1000_interrupt C!
+		1 %rti_int +!
+	;
+
+
+	interrupt: rti_interrupt ( --)
+		rti_serve
+	;interrupt
+
+: set_processor_fault ( ---)
+;
+</code></pre>
+
+
+</body>
+</html>
+
+

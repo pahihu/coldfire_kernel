@@ -1,0 +1,456 @@
+<html>
+
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h5>terminal</h5>
+<p>
+This set of words are called with the I/O object on the stack. The I/O object
+has another set that calls these words.
+</p>
+<p>
+The device specific behaviour of terminals and printers 
+is hidden behind this set of words.
+</p>
+<p>
+In other words, this object is terminal/printer specific, it does
+not care how the terminal is connected. The device shouldn't care what
+terminal is connected.
+</p> 
+<p>
+The io_common class referecnes this class, so this class isn't allowed 
+to reference the io_common class ( we don't have forward references).
+</p>
+<pre> <code>
+
+CREATE ':write 0 t,
+	
+base_class class
+
+</code> </pre>
+<p>
+Do these belong in the <i>terminal</i> class or in <i>io_common</i>?
+They belong here and I can even give you a reason why.
+They should not be updated by WRITE-FILE etc. only by TYPE etc.
+That is by words that should be vectored through the <i>terminal</i>
+class.
+</p>
+<p>
+So <i>TYPE</i> is not only a file write to <i>'output_file</i>
+it is also a file write that keeps the current character
+position correct. While WRITE-FILE is a low level word that
+only looks after the file possition.
+</p>
+<pre> <code>
+
+		cell% instance_variable %%character
+		cell% instance_variable %%line
+		cell% instance_variable %%page
+		cell% instance_variable %%character_max
+		cell% instance_variable %%line_max
+		cell% instance_variable %%?page
+
+		m: ( --)
+			zero %%?page !
+			zero %%page !
+			zero %%character !
+			zero %%line !
+			#23 %%line_max !
+			#79 %%character_max ! 
+		; overrides :construct
+		</code> </pre>
+<p>
+If your using a terminal it is nice if the system waits for input 
+before moving to the next page. Typing in <i>page_hold</i> has 
+that effect. 
+</p>
+		<pre> <code>
+		uvariable keybuffer    
+		m: ( --)
+		; method ::?page
+
+		m: ( flag --)
+			%%?page !
+		; method ::!?page
+		</code> </pre>
+<p>
+<i>TYPE</i> should both go through terminal. At
+the very least %%character etc will be updated by TYPE 
+before going back to the device.
+<p>
+		<pre> <code>
+		m: ( addr num object --)
+			OVER %%character +!
+			':write @execute
+		; method ::type
+		</code> </pre>
+<p>
+Application access to current character line and page and maximum values
+</p>
+		<pre> <code>
+		m: ( -- num)
+			%%character @
+		; method ::character#
+
+		m: ( --num)
+			%%line @
+		; method ::line#
+
+		m: ( --num)
+			%%page @
+		; method ::page#
+
+
+		m: ( num--)
+			%%page !
+		; method ::page!
+
+		m: ( --addr)
+			%%line_max
+		; method ::line_max
+
+		m: ( --addr
+			%%character_max
+		; method ::character_max
+		</code> </pre>
+<p>
+terminal attributes.
+</p>
+		<pre> <code>
+		\ normal character presentation
+		m: ( object --)
+			DROP
+		; method ::normal
+
+		\ reverse character presentation
+		m: ( object --)
+			DROP
+		; method ::rev
+
+
+		\ blink character presentation
+		m: ( object --)
+			DROP
+		; method ::blink
+
+		\ dim character presentation
+		m: ( object --)
+			DROP
+		; method ::dim
+
+
+		\ underline character presentation
+		m: ( object --)
+			DROP
+		; method ::udl
+
+		m: ( object --)
+			DROP
+		; method ::dim&blink
+
+		m: ( object --)
+			DROP
+		; method ::rev&blink
+
+		m: ( object --)
+			DROP
+		; method ::rev&dim
+		
+		m: ( object --)
+			DROP
+		; method ::rev&udl
+
+
+		m: ( object --)
+			DROP
+		; method ::rev&dim&blink
+
+
+		m: ( object --)
+			DROP
+		; method ::rev&dim&udl
+
+		CREATE _terminator  #cr 8 LSHIFT tw,  
+		m: { variable  %object -- }
+			0 %%character !
+			1 %%line +!
+			_terminator 1 %object @ ':write @execute
+		; method ::cr
+                </code></pre>
+                <a name="tab"></a>
+                <pre><code>
+
+		CREATE _blank  BL 8 RSHIFT tw,
+		m: { ( line char ) variable %object -- }
+			%%character_max @ MIN
+			SWAP %%line_max @ MIN
+			%%line @ MIN DUP
+			%%line @ ?DO
+				%object @ this ::cr
+			LOOP
+			SWAP
+			%%character @ MIN DUP
+			%%character @ ?DO
+				_blank 1 %object @ ':write @execute
+			LOOP
+			%%character !
+			%%line !
+		; method ::tab
+
+
+			
+		m: ( object--)
+			%%line_max @ %%line @ %%line_max @ MIN ?DO
+				DUP this ::cr
+			LOOP 
+			DROP
+			0 %%line !
+			1 %%page +!
+		; method ::page
+		
+
+		
+		\ to graphics
+		m: ( object --)
+			DROP
+		; method ::>|
+
+		\ from graphics
+		m: ( object --)
+			DROP
+		; method ::|>
+
+		\ pc element input
+		m: ( object --)
+			DROP
+		; method ::|i
+
+		\ pc element output
+		m: ( object --)
+			DROP
+		; method ::|o
+
+		\ pc element vertical line
+		m: ( object --)
+			DROP
+		; method ::|v
+
+		\ pc element horizontal line
+		m: ( object --)
+			DROP
+		; method ::|h
+
+		\ pc element not
+		m: ( object --)
+			DROP
+		; method ::|n
+
+		\ pc element top left
+		m: ( object --)
+			DROP
+		; method ::|tl
+
+		\ pc element top right
+		m: ( object --)
+			DROP
+		; method ::|tr
+
+		\ pc element bottom left
+		m: ( object --)
+			DROP
+		; method ::|bl
+
+		\ pc element bottom left
+		m: ( object --)
+			DROP
+		; method ::|br
+
+
+		\ manipulate the input data to produce a termination code
+		\ flag is false for EOF
+		\ Word is only used if the device calls :termination>code 
+		\ from :read_line. For an example see tyx.html
+		\ manipulate the input data to produce a termination code
+		\ addr is the start of the buffer
+		\ num is the numbr of characters including the terminator
+		\ num1 excludes the terminator code; which is now one byte only.
+		\ flag is true if more data
+
+		m: ( addr num  handle --num flag)
+			DROP
+			NIP TRUE
+		; method ::termination>code
+		</code> </pre>
+	<p>
+	PC elements have been supported by CVS. Following four words are all that is required
+	to print them out. These version are derived from the 
+	graphic characters defined previously. Some terminals have a special
+	graphic mode thus the >| and |> words. 
+	</p>
+	<p>
+	From the code it looks as if the box is brawn from the cirrent possition 
+	to line and character.
+	</p>
+		<pre> <code>
+		\ draw a box, good object lesson in how to use the above methods.
+		m: { ( line character ) variable %object -- }{
+			variable %line 
+			variable %character
+		}
+			%%line @ %line ! 
+			%%character @ %character ! 
+			( top left corner) %object @ this ::>|
+			%object @ this ::|tl 
+			DUP %character @ - 2- zero MAX zero ?DO  
+				 %object @ this ::|h 
+			LOOP
+
+			%object @ this ::|tr
+
+			OVER 1- %character @ %object @ this ::tab
+
+			%object @ this ::|bl
+			 
+			DUP %character @ - 2- zero MAX zero ?DO  
+				%object @ this ::|h
+			LOOP 
+			%object @ this ::|br
+			OVER %line @ - 2- zero MAX zero ?DO
+				%line @ I + 1+ %character @ %object @ this ::tab
+				%object @ this ::|v  
+				%line @ I + 1+ OVER 1- %object @ this ::tab 
+				%object @ this ::|v
+			LOOP 
+			2DROP 
+			%object @ this ::|> 
+			%character @  %%character !  
+			%line @ %%line ! 
+		; method ::box
+
+
+		m:  { ( line character depth width )
+			variable %num_in 
+			variable %num_out 
+			variable %object -- }{
+			variable %character
+			variable %line
+			}
+			%%line @ %line !
+			%%character @ %line ! 
+			2OVER %object @ this ::tab
+			2OVER 2OVER ROT + 1+ -rot + SWAP %object @ this ::box
+			\ To graphics
+			%object @ this ::>|
+
+			NIP ( rid of depth) -rot 
+			%num_in @ zero ?DO  ( The inputs)
+				OVER I + 1+ OVER %object @ this ::tab 
+				%object @ this ::|i
+			LOOP
+			ROT + 
+			%num_out @  zero ?DO ( The outputs)
+				OVER I + 1+ OVER 
+				%object @ this ::tab
+				%object @ this ::|o
+			LOOP 
+			%object @ this ::|> 
+			2DROP
+			%character @ %%character !
+			%line @ %%line ! 
+		; method ::element
+    
+    
+		m: { ( line character number) variable %object -- }
+			0 MAX -rot %object @ this ::tab 
+			%object @ this ::>| zero ?DO 
+				%object @ this ::|h 
+			LOOP 
+			%object @ this ::|> 
+		; method ::line
+    
+     
+		m: { ( line character line) variable %object -- }
+			jump -  -rot
+			2DUP %object @ this ::tab 
+			%object @ this ::>| 
+			%object @ this ::|tr 
+			jump 1- zero MAX zero ?DO
+    			OVER I + 1+ OVER %object @ this ::tab
+				%object @ this ::|v
+			LOOP 
+			-rot + SWAP 
+			%object @ this ::tab 
+			%object @ this ::|bl
+			%object @ this ::|> 
+		; method ::zed
+
+
+		m: ( table_addr object --)
+			2DROP
+		; method ::labels
+
+		m: ( table_addr object --)
+			2DROP
+		; method ::shift_labels
+
+		m: ( object --)
+			DROP
+		; method ::cursor
+
+		m: ( object --)
+			DROP
+		; method ::no_cursor
+
+		m: ( addr num object --)
+			2DROP DROP
+		; method ::message
+
+		m: ( object --)
+			DROP
+		; method ::no_message
+
+
+		m: ( colour object --)
+			2DROP
+		; method ::foreground  ( forground colour)
+    
+		m: ( colour object --)
+			2DROP
+		; method ::background ( backgroung colour)
+    
+		m: ( colour object --)
+			2DROP
+		; method ::border     ( Bourder colour)
+    
+		m: ( object --)
+			DROP
+		; method ::a4          ( paper size)
+
+		m: ( object --)
+			DROP
+		; method ::quarto      ( paper size)
+
+		m: ( object --)
+			DROP
+		; method ::eoj      ( end of print job)
+
+		m: ( indent --)
+			CR DUP SPACES ." terminal_class | " ." Object: " this .h  
+			DROP send
+		; overrides :print
+
+
+	end_class terminal_class
+
+
+
+</code> </pre>
+
+</body>
+</html>

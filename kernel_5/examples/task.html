@@ -1,0 +1,99 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+	<pre> <code>
+	 
+	ram_variable %counter
+    #clock_low task: example
+		BEGIN
+			1 %counter +!
+			xtest #10 xwait
+		AGAIN
+	;task
+
+	</code> </pre>
+	<p>
+	Start the task
+	</p>
+	<pre> <code>
+	
+	\ all tasks are installed in the vocabulary &tasks
+	ALSO &tasks 
+	example taskin
+	PREVIOUS
+	</code> </pre>
+	A task providing an interpeter
+	<pre> <code>
+	: test_print ( --)
+		." a print" send
+	;
+
+
+	ram_variable %etube
+	ram_variable %2depth
+	#clock_low task: example2
+		S" tube" R/W Sopen 
+		DEPTH %2depth !
+		DUP 'output_file !
+	    DUP 'input_file !
+	    DUP 'abort_file !
+		%etube !
+		['] prompt
+		'abort !
+		ABORT
+	;task
+	</code> </pre>
+		</code> </pre>
+	<p>
+	Start the task
+	</p>
+	<pre> <code>
+	.( start task 2)
+	\ all tasks are installed in the vocabulary &tasks
+	ALSO &tasks 
+	example2 taskin
+	PREVIOUS
+	</code> </pre>
+	A task providing an interpeter DUAL PORT
+	<pre> <code>
+	ram_variable %ptube
+	ram_variable xx
+	#clock_low port_task: example3
+
+		S" port_tube/$1F" R/W Sopen
+  		
+
+		DUP 'output_file !
+	    DUP 'input_file !
+	    DUP 'abort_file !
+		%ptube !
+		['] prompt
+		'abort !
+		ABORT
+	;task
+	</code> </pre>
+		</code> </pre>
+	<p>
+	
+	</p>
+	<pre> <code>
+	.( open the port_tube)
+	R/W open port_tube/$1F
+	close
+	.( start taks 3)
+	\ all tasks are installed in the vocabulary &tasks
+	ALSO &tasks 
+	example3 taskin
+	PREVIOUS
+	</code> </pre>
+
+
+</body>
+</html>

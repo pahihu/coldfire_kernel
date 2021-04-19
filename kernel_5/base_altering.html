@@ -1,0 +1,68 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Words to alter base</h3>
+<a HREF="./license.html">license</a>
+<p>
+The base is used for number to conversion.
+</p>
+<a name="DECIMAL"></a>
+<h5>ANS 6.1.1170 DECIMAL ( --)</h5>
+<p>CORE</p> 
+<p>( -- )</p>
+<p>
+Set the numeric conversion radix to ten (decimal). 
+</p>
+	<pre> <code>
+	: DECIMAL ( --)   
+		$0A BASE ! 
+	;
+	</code> </pre>
+
+<a name = "HEX"></a>
+<h5>ANS 6.2.1660 HEX ( --)</h5>
+<p>( -- )</p>
+<p>CORE EXT</p>
+<p>
+Set contents of BASE to sixteen. 
+</p>
+
+	<pre> <code>
+	: HEX ( --)
+		$10 BASE !
+	;
+	</code> </pre>
+
+<a name="binary"></a>
+<h5>binary (--)</h5>
+<p>
+Set the contents of BASE to two.
+</p>
+	
+	<pre> <code>
+	: binary  ( --)   
+		#02 BASE ! 
+	;
+	</code> </pre>
+
+<a name="octal"></a>
+<h5>octal (--)</h5>
+<p>
+Set the contents of BASE to eight.
+</p>
+	
+	<pre> <code>
+	: octal   ( --)   
+		#08 BASE ! 
+	;
+	</code> </pre>
+
+</body>
+</html>

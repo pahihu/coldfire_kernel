@@ -1,0 +1,805 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a><br>
+<h1>vga driver for bvp600</h1>
+<p>
+You can open a window of any size write to it and close it. If the window is opened with a transparent 
+colour no border is added so text can be written on pictures by opening a window displaying the picture
+and then opening others on top and using them to write the text.
+</p>
+
+<h3>.psf file format</h2>
+
+<pre>
+#define PSF2_MAGIC0     0x72
+#define PSF2_MAGIC1     0xb5
+#define PSF2_MAGIC2     0x4a
+#define PSF2_MAGIC3     0x86
+
+/* bits used in flags */
+#define PSF2_HAS_UNICODE_TABLE 0x01
+
+/* max version recognized so far */
+#define PSF2_MAXVERSION 0
+
+/* UTF8 separators */
+#define PSF2_SEPARATOR  0xFF
+#define PSF2_STARTSEQ   0xFE
+
+struct psf2_header {
+        unsigned char magic[4];
+        unsigned int version;
+        unsigned int headersize;    /* offset of bitmaps in file */
+        unsigned int flags;
+        unsigned int length;        /* number of glyphs */
+        unsigned int charsize;      /* number of bytes for each character */
+        unsigned int height, width; /* max dimensions of glyphs */
+        /* charsize = height * ((width + 7) / 8) */
+};
+</pre>
+<p>
+The meaning is fairly clear from the field names. The fonts here are bitmap fonts 
+(not, for example, vector fonts), and each glyph has a height and a width. 
+The bitmap for a glyph is stored as height consecutive pixel rows, where 
+each pixel row consists of width bits followed by some filler bits in order 
+to fill an integral number of (8-bit) bytes. Altogether the bitmap of a glyph 
+takes charsize bytes. 
+</p>
+<p>
+The font is followed by a table associating Unicode values if the 
+PSF2_HAS_UNICODE_TABLE bit is set in the flags field. 
+</p>
+<p>
+The starting offset of the bitmaps in the font file is given by headersize. 
+(This allows the header to grow, probably depending on version, without changes in the code.) 
+</p>
+<p>
+The integers in the psf2 header struct are little endian 4-byte integers. 
+</p>
+<p>
+This program doesn't support uncode mapping.
+</p>
+<pre>
+<code>
+
+\ describe the monitor
+2    CONSTANT #vga_pixel_width \ addres units to move to next pixel 
+$400 CONSTANT #vga_pixels_line \ pixels in a line, not all are displayed.
+$60F00000 CONSTANT #vga_base   \ base address of vga memory area
+$200 CONSTANT #vga_lines
+
+
+\ magic number 
+$72b54a86 CONSTANT #psf_magic
+
+\ describe header
+zero
+DUP CONSTANT #psf_hdr_magic        4+           
+DUP CONSTANT #psf_hdr_version      4+
+DUP CONSTANT #psf_hdr_size         4+
+DUP CONSTANT #psf_hdr_flags        4+
+
+DUP CONSTANT #psf_hdr_glyphs       4+
+DUP CONSTANT #psf_hdr_bytes_glyphs 4+
+DUP CONSTANT #psf_hdr_height       4+
+DUP CONSTANT #psf_hdr_width        4+ 
+DUP CONSTANT #psf_data
+DROP
+
+\ some predefined vga colurs.
+$7FFF CONSTANT #vga_white
+0     CONSTANT #vga_black
+$07   CONSTANT #vga_dark_blue
+$1F   CONSTANT #vga_blue
+$8000 CONSTANT #vga_trans
+$3FF  CONSTANT #vga_error_red
+
+\ describe the window data
+zero
+DUP CONSTANT #wnd_global_base CELL+  \ the only globel reference, it is the window base pixel address
+DUP CONSTANT #wnd_width       CELL+  \ the width of the window in pixels
+DUP CONSTANT #wnd_height      CELL+  \ the height of the window in pixels
+DUP CONSTANT #wnd_cursor      CELL+  \ left hand corner pixel reference
+DUP CONSTANT #wnd_colour      CELL+  \ forground colour
+DUP CONSTANT #wnd_background  CELL+  \ background colour
+DUP CONSTANT #wnd_font        CELL+  \ points to s .psf font file
+DUP CONSTANT #wnd_length
+DROP
+
+\ Data will be cached this is best
+\ le = little endian
+CODE le@ ( addr -- value)
+	S ) A0 MOV
+	A0 ) 3 S) B. MOV
+	1 0) 2 S) B. MOV
+	2 0) 1 S) B. MOV
+	3 0) 0 S) B. MOV
+NEXT
+
+: header_update { variable %addr -- ( $ ) }
+	\ check the magic number
+	\ the magic number is defined in big edian form
+	%addr @ #psf_hdr_magic + @ #psf_magic <> IF
+		$" Magic number not valid."
+		EXIT
+	THEN
+	\ change the header offset from litte endian to a big edian pointer
+	%addr @ #psf_hdr_size +  DUP le@ SWAP !
+
+	\ change to big endian
+	%addr @ #psf_hdr_version + DUP le@ SWAP !
+	%addr @ #psf_hdr_bytes_glyphs + DUP le@ SWAP !
+ 	%addr @ #psf_hdr_height + DUP le@ SWAP !
+	%addr @ #psf_hdr_width + DUP le@ SWAP !
+	zero 
+;
+
+
+\ Data will be cached this is best
+\ le = little endian
+forth : le@ { ( addr -- value) }{
+	variable buffer }
+	DUP C@ buffer 3 + C!
+	DUP 1 + C@ buffer 2 + C!
+	DUP 2 + C@ buffer 1 + C!
+	3 + C@ buffer C!
+	buffer @
+; 
+
+\ if the host has different definition of the #psf table in the forth
+\ vocabulary then we are in trouble in the following word.
+forth : header_update { variable %addr -- ( $ ) }
+	.S ." into header update" send
+	\ check the magic number
+	\ the magic number is defined in big edian form
+	%addr @ #psf_hdr_magic +
+	.S ." addr (--" send
+ 	@ #psf_magic <> IF
+		$" Magic number not valid."
+		EXIT
+	THEN
+	\ change the header offset from litte endian to a big edian pointer
+	%addr @ #psf_hdr_size +  DUP le@ SWAP !
+
+	\ change to big endian
+	%addr @ #psf_hdr_version + DUP le@ SWAP !
+	%addr @ #psf_hdr_bytes_glyphs + DUP le@ SWAP !
+ 	%addr @ #psf_hdr_height + DUP le@ SWAP !
+	%addr @ #psf_hdr_width + DUP le@ SWAP !
+	zero 
+	.S ." out of header update" send
+;
+
+host
+
+\ the file format is retained we simple load into free buffer
+\ the font pointer is non zero if the font is active
+
+\ There is a real risk we will end up with multiple 
+\ windows  and will want the option of loading a different
+\ font in each window so don't assume a globel font table
+: load_font { ( <file> -- font_addr font_size ) }{
+	variable %handle
+	variable %temp_font_pointer
+	variable %font_size
+	\ we are going to load the entire file into memeory. Limit
+	\ the load to something reasonable.
+	$4000 CONSTANT #max_font_data
+
+	 }
+
+	\ FILE-SIZE doesn't work for all drivers so have to use other means.
+
+	BL (word) R/O Sopen %handle !
+	#max_font_data ALLOCATE $ABORT
+	\ addr (--
+	\ from now on we have to be carefull to return buffer if something goes wrong.
+	DUP %temp_font_pointer !		
+ 	#max_font_data %handle @ READ-FILE ?DUP IF
+		\ read failed
+		%temp_font_pointer @ FREE
+		$ABORT
+	THEN
+	\ n_read(--
+	.S ." read size" send
+	DUP %font_size !
+	DUP #max_font_data = IF
+		%temp_font_pointer @ FREE
+		TRUE ABORT" Font file tooooo long"
+	THEN
+	%temp_font_pointer @ SWAP RESIZE $ABORT 
+	
+	%temp_font_pointer !
+
+	%temp_font_pointer @ header_update ?DUP IF
+		%temp_font_pointer @ FREE
+		$ABORT
+	THEN
+ 	%handle @ CLOSE-FILE
+	\ if error we have a valid handle but a failed to 
+	\ close file. Tough we give up anyway.
+	?DUP IF
+		%temp_font_pointer @ FREE
+		$ABORT
+	THEN
+
+	%temp_font_pointer @
+	%font_size @
+
+;
+
+\ There is a real risk we will end up with multiple 
+\ windows  and will want the option of loading a different
+\ font in each window so don't assume a globel font table
+forth : load_font { ( <file> -- font_addr font_size ) }{
+	variable %handle
+	variable %font_size
+	\ we are going to load the entire file into memeory. Limit
+	\ the load to something reasonable.
+	$4000 CONSTANT #max_font_data
+
+	 }
+
+	\ FILE-SIZE doesn't work for all drivers so have to use other means.
+
+	BL (word) R/O Sopen %handle !
+	#max_font_data get_buffer
+	\ addr (--
+	.S ." addr" send
+	\ from now on we have to be carefull to return buffer if something goes wrong.		
+ 	buffer #max_font_data %handle @ READ-FILE ?DUP IF
+		\ read failed
+		kill_buffer
+		$ABORT
+	THEN
+	\ n_read(--
+
+	.S ." n" send
+
+	DUP %font_size !
+	#max_font_data = IF
+		kill_buffer
+		TRUE ABORT" Font file tooooo long"
+	THEN
+	buffer header_update ?DUP IF
+		kill_buffer
+		$ABORT
+	THEN
+
+	.S ." (--"
+ 	%handle @ CLOSE-FILE
+	\ if error we have a valid handle but a failed to
+	\ close file. Tough we give up anyway.
+	?DUP IF
+		kill_buffer
+		$ABORT
+	THEN
+
+	buffer %font_size @
+	3+ -4 AND
+	zero DO
+		DUP I + @ t,
+	4 +LOOP
+	DROP
+	kill_buffer
+;
+
+
+
+host
+CREATE default_font
+	forth load_font ./font/default.psf
+host
+
+\ The glyph table is a bit pattern descibing the character.
+\ If unicode is to be support this is the word that should
+\ scan the table to work out which glyph to use.
+\ Once again we write so local fonts can be used
+: get_glyph_table ( char font_buffer -- addr)
+	DUP #psf_hdr_size + @ OVER +
+	SWAP #psf_hdr_bytes_glyphs + @
+	ROT * +
+;
+
+
+
+\ to keep things tidy the local ref is a single value
+\ This word splits it into line and pixel
+: to_line&pixel ( value -- line pixel )
+	DUP >w< $FFFF AND
+	SWAP $FFFF AND
+;
+
+\ Limits and encodes.
+: from_line&pixel ( line pixel -- value)
+	DUP $FFFF > IF
+		DROP $FFFF
+	THEN
+	SWAP DUP $FFFF > IF
+		DROP $FFFF
+	THEN
+	>w< OR
+;
+
+\ the local ref is a window pixel the line and pixel is encoded as one value
+: local_to_global { ( local_ref ) variable %window -- ( globel_ref) }
+	to_line&pixel \ line pixel
+	#vga_pixel_width * SWAP [ #vga_pixels_line #vga_pixel_width * ]T LITERAL * +
+	%window @ #wnd_global_base + @ +
+;
+
+
+\ pixels are written using globel reference we need to know if the
+\ global reference is in a window.
+: global_in_window? { ( globel_ref ) variable %window -- ( flag ) }
+	%window @ #wnd_global_base + @ -
+	#vga_pixel_width /
+	#vga_pixels_line /MOD SWAP \ line pixel
+	%window @ #wnd_width + @ < SWAP %window @ #wnd_height + @ < AND
+;
+
+$8000 CONSTANT #not_colour_bit
+: a_colour ( data --flag)
+	#not_colour_bit AND not
+;
+
+\ the last data written is in a buffer we need to open a new
+\ buffer to get the data on the monitor. The first line is not
+\ displayed so we write to that line.
+: vga_flush ( --)
+	0 #vga_base W!
+;
+
+
+: print_char { ( char ) variable %window -- }{
+
+	variable %glyph_addr
+	variable %colour
+	variable %background
+	variable %font
+	variable %base_addr
+
+	8 CONSTANT #bits_byte       \ number of bits in an address unit
+
+	}
+
+	\ extract required data out of window data
+	%window @ #wnd_colour + @ %colour !
+	%window @ #wnd_background + @ %background !
+	%window @ #wnd_font + @ %font !
+	%window @ #wnd_cursor + @ %window @ local_to_global %base_addr !
+
+	\ char (--
+	\ get the base address of the glype table for this char.
+	%font @ get_glyph_table
+	%glyph_addr !
+	\ (--
+	\ once around for each scan line
+	%font @ #psf_hdr_height + @ zero DO
+		zero
+		\ once around for each pixel in the scan line
+		%font @ #psf_hdr_width + @ zero DO
+			\ ever eight bits read another byte
+			I #bits_byte MOD not IF
+				DROP
+				%glyph_addr @ C@
+				1 %glyph_addr +!
+			THEN
+			\ code(--
+			\ only store it in range
+			%base_addr @ %window @ global_in_window? IF
+				DUP $80 AND IF
+					%colour @ a_colour IF
+						%colour @ %base_addr @ W!
+					THEN
+				ELSE
+					%background @ a_colour IF
+						 %background @ %base_addr @ W!
+					THEN
+				THEN
+			THEN
+			\ next bit in code
+			2*
+			#vga_pixel_width %base_addr +!
+		LOOP
+		DROP
+		\ undo the base address move to added to write sca line
+		%font @ #psf_hdr_width + @ #vga_pixel_width * NEGATE %base_addr +!
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL %base_addr +!
+	LOOP
+;
+
+\ note this is character position not pixel position.
+\ It is used to implement the FORTH TAB word.
+: vga_tab { ( line char)  variable %window  -- }
+	%window @ #wnd_font + @
+	\ line pixel font(--
+	#psf_hdr_width + @ *
+	SWAP
+	%window @ #wnd_font + @
+	\ pixel line font(--
+	#psf_hdr_height + @ *
+	SWAP
+	\ line_pixel pixel
+	from_line&pixel %window @ #wnd_cursor + !
+;
+
+: vga_scroll { variable %window }{
+	variable %back_lines
+	variable %back_offset
+	}
+
+	%window @ #wnd_width + @ #vga_pixel_width * get_buffer
+
+	%window @ #wnd_font + @
+	#psf_hdr_height + @  %back_lines !
+	%back_lines @ [ #vga_pixels_line #vga_pixel_width * ]T LITERAL * %back_offset !
+
+	%window @ #wnd_global_base + @ %back_offset @ +
+
+	\ pnce for each pixel line
+	%window @ #wnd_height + @ %back_lines @ - zero DO
+		\ to give the monitor access time we have to move image into memory and
+		\ then write out otherwise we are swapping buffer data on pixel instead of buffer size.
+		\ Think about the order the data is accessed.
+		DUP buffer %window @ #wnd_width + @ #vga_pixel_width * MOVE
+		buffer OVER  %back_offset @ - %window @ #wnd_width + @ #vga_pixel_width * MOVE
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL  +
+	LOOP
+	DROP
+	\ fill the buffer with background colour
+	buffer
+	%window @ #wnd_width + @ zero DO
+		%window @ #wnd_background + @ OVER W!
+		#vga_pixel_width +
+	LOOP
+	DROP
+	\ write the buffer out to appropiate lines in image, we have to worry about
+	\ character line boundary here
+	%window @ #wnd_global_base + @
+	%back_offset @                             \ a full character line address offset
+ 	%window @ #wnd_height + @ %back_lines @ /  \ number of full character lines in window
+	1 -                                        \ less one character line.
+	* +                                        \
+	%back_lines @ zero DO
+		buffer OVER  %window @ #wnd_width + @ #vga_pixel_width * MOVE
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL  +
+	LOOP
+	DROP
+	kill_buffer
+;
+
+
+
+: vga_max { variable %window -- ( line_max char_max ) }
+
+	%window @ #wnd_height + @
+	%window @ #wnd_font + @
+	#psf_hdr_height + @ 1 MAX / 1-
+
+	%window @ #wnd_width + @
+	%window @ #wnd_font + @
+	#psf_hdr_width + @ 1 MAX / 1-
+;
+
+\ move on one character, does not move down lines
+\ the encoding will limit the character position to something that can
+\ be excoded.
+: next_char { variable %window -- }
+	%window @ #wnd_cursor + @ to_line&pixel
+	%window @ #wnd_font + @
+	\ line pixel font(--
+	#psf_hdr_width + @ +
+	from_line&pixel %window @ #wnd_cursor + !
+;
+
+
+
+: vga_type { ( addr ) variable %n variable %window -- }
+	%n @ zero ?DO
+		DUP C@ %window @ print_char
+		%window @ next_char
+		1 CHARS +
+	LOOP
+	DROP					
+;
+
+
+\ %data points to abuffer containing the image stored one line after the other.
+\ This word simple moves the data to the vga monitor.
+\ Used to write pictures.
+: vga_block_write { variable %data variable %window }
+	%window @ #wnd_global_base + @
+	%window @ #wnd_height + @ zero DO
+		DUP
+		%window @ #wnd_width + @ zero DO
+			%data @ W@ OVER W!
+			#vga_pixel_width +
+			#vga_pixel_width %data +!
+		LOOP
+		DROP
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL  +
+	LOOP
+	DROP
+;
+
+
+
+: vga_background { variable %window }
+	%window @ #wnd_global_base + @
+	%window @ #wnd_height + @ zero DO
+		DUP
+		%window @ #wnd_width + @ zero DO
+			%window @ #wnd_background + @ OVER W!
+			#vga_pixel_width +
+		LOOP
+		DROP
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL  +
+	LOOP
+	DROP
+;
+
+\ The window height and width are in pixels.
+\ This word also reduces the window size.
+\ So user code is limited to the area inside.
+\ The window size is only reduced if the relevent colour is 
+\ printable.
+\
+: vga_draw_window { variable %window }{
+	variable %width_offset }
+
+	\ make sure window large enough for operation
+	%window @ #wnd_height + @ 4 < IF
+		EXIT
+	THEN
+	%window @ #wnd_width + @ 4 < IF
+		EXIT
+	THEN
+	
+
+	%window @ #wnd_colour + @ a_colour IF
+		\ draw top
+		%window @ #wnd_global_base + @
+		%window @ #wnd_width + @ zero ?DO
+			%window @ #wnd_colour + @ OVER W!
+			#vga_pixel_width + 
+		LOOP
+		DROP
+	
+		\ the sides
+		\ the countis one base the address zero baseed
+		%window @ #wnd_width + @ 1- #vga_pixel_width * %width_offset !
+		%window @ #wnd_global_base + @ 
+		\ the first line has been done
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL +
+		\ we don't do the first and last line
+		%window @ #wnd_height + @ 2 - zero DO
+			%window @ #wnd_colour + @ OVER W!
+			%window @ #wnd_colour + @ OVER %width_offset @ + W!
+			[ #vga_pixels_line #vga_pixel_width * ]T LITERAL +
+		LOOP
+		DROP
+
+		\ the bottom
+		\ the count is one based the address zero based.
+		%window @ #wnd_height + @ 1 - [ #vga_pixels_line #vga_pixel_width * ]T LITERAL
+ 		* %window @ #wnd_global_base + @ +
+		%window @ #wnd_width + @ zero DO
+			%window @ #wnd_colour + @ OVER W!
+			#vga_pixel_width + 
+		LOOP
+		DROP
+		\ reduce screen size and place base inside border.
+		[ #vga_pixel_width  #vga_pixels_line #vga_pixel_width * + ]T LITERAL %window @ #wnd_global_base + +!
+		-2 %window @ #wnd_height + +!
+		-2 %window @ #wnd_width + +!
+	THEN
+	\ paint the back ground
+	%window @ #wnd_background + @ a_colour IF
+		%window @ vga_background
+		\ reduce screen size and place base inside background border
+		[ #vga_pixel_width  #vga_pixels_line #vga_pixel_width * + ]T LITERAL %window @ #wnd_global_base + +!
+		-2 %window @ #wnd_height + +!
+		-2 %window @ #wnd_width + +!
+
+	THEN
+;
+
+\ needed in init
+: vga_clear
+	#vga_base [ #vga_lines #vga_pixels_line * #vga_pixel_width * ]T LITERAL + #vga_base DO
+		zero I W!
+	2 +LOOP
+;
+
+
+</code>
+</pre>
+<h2>terminal class</h2>
+<pre>
+<code>
+terminal_class class
+
+		m: ( window --)
+			this [parent] :construct
+			vga_max %%character_max ! %%line_max !
+		; overrides :construct
+
+		\ driver looks after the output we simple look after our own data
+		m: { variable  %object -- }
+			0 %%character !
+			%%line_max @ %%line @ 1+ MIN %%line !
+		; overrides ::cr
+
+		m: { ( line char ) variable %object -- }
+			%%character_max @ MIN
+			SWAP %%line_max @ MIN
+
+			SWAP
+
+			%%character !
+			%%line !
+		; overrides ::tab
+			
+		m: ( object--)
+			0 %%line !
+			1 %%page +!
+			DROP
+		; overrides ::page
+		
+end_class vga_terminal_class
+
+
+
+</code>
+</pre>
+<h2>VGA driver</h2>
+<p>
+Coldforth uses classes and objects for all I/O. If we define a driver within the coldforth system
+any application can write to the device using standard words.
+</p>
+<p>
+When ypou open a vga device you open an area, that area is yours. No effort is taken to prevent
+two applications from opening the same area. The last application to write wins.
+</p>
+<p>
+No message queue, no window manager, but a solution that allows multiple taks to write to the
+same screen. They just have to agree which area belongs to who.
+</p>
+<pre>
+<code>
+io_common class
+	\ the %win block structure is defined using constants
+	\ we allocate that many bytes to the class
+	#wnd_length bytes% instance_variable %%window
+
+	\ Sopen
+	\ If there is no file return ourselves as the instance
+	m: ( background forground base_pixel_line base_pixel_character height width addr n mode -- instance )
+  
+		this :terminal_mode!
+		\ the string length n must be zero
+		ABORT" This device doesn't support file"
+		DROP
+		\ the values provided on the stack must now be stored off
+		%%window #wnd_width + !
+		%%window #wnd_height + !
+		#vga_pixel_width * SWAP
+		[ #vga_pixels_line #vga_pixel_width * ]T LITERAL * +
+		#vga_base +
+		%%window #wnd_global_base + !
+		%%window #wnd_colour + !	
+		%%window #wnd_background + !
+		default_font %%window #wnd_font + !
+		\ the default terminal driver is wrong, it must be a vga_terminal.
+		\ Tis can'r be open until the font is set.
+		%%terminal @ ?DUP IF
+			0 %%terminal !
+			heap_object_free
+		THEN
+		\ height and windth must be supplied to determine tab limits.
+		%%window vga_terminal_class heap_object
+		%%terminal !		
+		\ and the window drawn
+		%%window vga_draw_window
+		this
+	; overrides :file_open
+
+	m: ( --) 
+		vga_flush
+	; overrides :flush_file
+
+	\ last 8 pixel write
+	m: ( --)
+		this :flush_file
+		this [parent] :destruct
+	; overrides :destruct
+
+	m: ( class --)
+		TRUE ABORT" Not allowed to change the terminal driver"
+	; overrides :!terminal
+
+
+	\ If in terminal mode we treat the data as a character string.
+	\ If in binary mode we treat the the data as a block of pixels to 
+	\ be written to the window.
+	\ 
+	\ If your going to write pixels to a window note that the open command
+	\ reduces the window size if the forground and background colours are
+	\ not transparent. 
+	m: ( addr n --)
+		this :terminal_mode@ IF
+			%%window vga_type
+		ELSE
+			%%window vga_block_write
+		THEN
+	; overrides :write
+	
+	m: ( --)
+		%%window vga_clear 
+	; overrides :clear	
+
+	m: ( -- )		
+		%%terminal @ ::line# >R
+		this %%terminal @ ::cr
+		R> %%terminal @ ::line# = IF
+			%%window vga_scroll
+		THEN
+		%%terminal @ ::line# %%terminal @ ::character# %%window vga_tab
+	; overrides :cr
+
+	\ to keep thinks in sync the terminal driver goes first and we then
+	\ use the result to organise vga
+	m: ( line char -- )
+		this %%terminal @ ::tab
+		%%terminal @ ::line# %%terminal @ ::character# %%window vga_tab
+	; overrides :tab
+
+	m: ( --)
+		this %%terminal @ ::page
+		%%window vga_background
+	; overrides :page
+
+
+	m: ( colour --)
+		%%window #wnd_colour + !
+	; overrides :foreground  ( forground colour)
+
+	m: ( colour --)
+		%%window #wnd_background + !
+	; overrides :background ( backgroung colour)
+
+
+
+	m: ( indent --)
+		CR DUP SPACES ." vga | " ." Object: " this .h
+		CR DUP SPACES ." window: " %%window .h
+		\ indent(--
+		DROP
+		send
+	; overrides :print
+
+
+target_also
+&drivers
+target_definitions
+
+
+end_class vga
+
+target_previous_definitions
+target_previous
+
+
+
+</code>
+</pre>
+</body>
+</html>

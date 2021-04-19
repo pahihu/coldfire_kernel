@@ -1,0 +1,642 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h4>Fragmentation constants</h4>
+<a HREF="../license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc791.html">RFC791</a> IP specification<br>
+	<pre> <code>
+	#06       CONSTANT NI_MAXHWA     \  max size of any hardware address
+	#30       CONSTANT NI_INQSZ      \ interface input queue size
+	#30       CONSTANT NETNLEN       \ length of network name
+	</code> </pre>
+
+<p>
+Used to checksum the header, and the ICMP message.
+ The length is in bytes. The byte order of
+the machine doing the calculation is not important as the data read will
+use the machines byte order. And the checksum write will use the machines
+byte order. This is why the calculated checksum is stored without 
+changing it to network byte order. However before the checksum is
+calculated the header has to be saved in network order, if you want the
+calculated checksum to be in network order.
+</p>
+
+	<pre> <code>
+	: cksum { variable %buffer variable %length ( --checksum) }
+		zero
+		%buffer @ %length @ + %buffer @ DO
+			I W@ +
+		2 +LOOP
+		DUP $10 RSHIFT SWAP $0FFFF AND +
+		DUP $10 RSHIFT + 
+		-1 XOR
+		$0FFFF AND
+	;
+	</code> </pre>
+<p>
+When the local interface object is created the object adddress is placed 
+here. It is used by :broadcast to redirect messages to the local interface
+</p>
+	<pre> <code>
+
+
+link_class class
+
+	ram_variable %interface_objects 
+
+	zero bytes%       instance_variable %%interface_common_start
+	NETNLEN bytes%    instance_variable %%ni_name      \ domain name of interface
+	cell%             instance_variable %%ni_ip        \ IP address for this interface
+	cell%             instance_variable %%ni_mask      \ IP subnet mask for interface
+	cell%             instance_variable %%ni_mtu       \ max transfer unit (octet)
+	NI_MAXHWA bytes%  instance_variable %%ni_hwa       \ hardware address of interface
+	NI_MAXHWA bytes%  instance_variable %%ni_hwb       \ hardware broadcast address
+	cell%             instance_variable %%authoritative_subnet  \ don't give subnet address unless set
+
+
+	\ general errors
+	cell%             instance_variable %%ip_fragment_discards
+	cell%             instance_variable %%ip_checksum_errors
+
+
+	\ fragmentation can be exploited in several ways. These counts
+	\ will increase if someone is playing bad.
+	cell%             instance_variable %%ip_fragment_stupidity0
+	cell%             instance_variable %%ip_fragment_stupidity1
+	cell%             instance_variable %%ip_fragment_stupidity2
+	cell%             instance_variable %%ip_fragment_stupidity3
+
+	cell%             instance_variable %%proto_queue_discards
+	zero bytes%       instance_variable %%interface_common_end
+
+	\ whats going on
+	cell%             instance_variable %%ip_frag_create
+.( after instance variables)
+	m: ( --)
+		this [parent] :construct
+		%%interface_common_start %%interface_common_end %%interface_common_start - ERASE 
+	; overrides :construct
+
+		
+	m: ( --)
+		this [parent] :destruct
+	; overrides :destruct
+
+	m: ( --addr)
+		%interface_objects
+	; overrides :list_head
+
+
+	: is_broadcast? ( addr --flag)
+		\ all 0 is a broadcast
+		DUP 0= IF
+			DROP TRUE EXIT
+		THEN
+		\ all 1 is a broadcast
+		DUP -1 = IF
+			DROP TRUE EXIT
+		THEN
+		DUP %%ni_mask @  OR -1 = IF
+			DROP TRUE EXIT
+		THEN
+		DROP	 
+		FALSE
+	;
+
+	</code> </pre>
+<h3>Packet Movement</h3>
+<h5>:write_pep</h5>
+<ul>
+<li>harware address is resolved</li>
+<li>if fragmentation is required it has been done</li>
+<li>header has been put into network order if required</li>
+<li>header has been checksummed if required</li>
+<li>write_pep has no idea what the payload is</li>
+</ul>
+<p>
+Basically all we have left is, send the packet
+</p>
+<p>
+Whatever happens :write_pep must consume the buffer.
+</p>
+	<pre> <code>
+	m: ( pep --)
+		kill_free_buffer
+	; method :write_pep
+	</code> </pre>
+<h5>:write_ip</h5>
+<ul>
+<li>harware address is resolved</li>
+<li>if fragmentation is required it has been done</li>
+</ul>
+We still have to.		
+<ul>
+<li>Convert header into network order</li>
+<li>Checksum ip header</li>
+</ul>
+<p>
+If sending the packet agross the back plane or internally nothing has to
+be done at this stage.
+</p>
+<p>
+Whatever hapeens :write_ip must consume the buffer.
+</p>
+	<pre> <code> 
+	m: ( pep --)
+		this :write_pep
+	; method :write_ip
+
+
+	</code> </pre>
+
+<h4>Fragment creation</h4>
+<h5>ip fragmentation header copy</h5>
+<p>
+Copy the header. All the header is copied into the first fragment. Fragments
+thereafter only have copied options copied.
+</p>
+	<pre> <code>
+
+	\ Some options have to be copied some don't
+	: _ip_fragment_header { variable %pep_from variable %pep_to  variable %offset -- }{
+		variable %max_addr     \ max addr
+		variable %otype        \ option type
+		variable %olen         \ option length
+		}
+		\ if offset is zero it is the first header, move the lot
+		%offset @ 0 = IF
+			%pep_from @ %pep_to @ 
+			ep_data %pep_from @ _pep>ip_hlen + MOVE
+			EXIT
+		THEN
+
+		\ move the fixed part
+		%pep_from @ %pep_to @ [ ep_data ip_options + ]T LITERAL  MOVE
+
+		\ maximum offset that can be moved is the whole header received
+		%pep_from @ DUP _pep>ip_hlen ep_data + + %max_addr !
+		\ start of to from options is from where we copied too
+		[ ep_data ip_options + ]T LITERAL %pep_from @ +
+		[ ep_data ip_options + ]T LITERAL %pep_to @ +
+		\ from_addr to_addr&lt;--
+		BEGIN
+			OVER %max_addr @ U<  \ >
+		WHILE
+			OVER + B@ %otype !
+			OVER 1+ B@ %olen !
+			%otype @ IPO_COPY AND IF
+				\ the option length includes the byte and the length byte in it's count
+				2DUP  %olen @ MOVE
+				\ update the to
+				%olen @ +
+			ELSE
+			%otype @ IPO_NOP = IF
+				%otype @ OVER B!
+				1 %olen !
+				1+
+			ELSE %otype @ IPO_EOOP = IF
+				%otype @ OVER B!
+				1 %olen !
+				1+
+				\ terminate copy
+				SWAP DROP %max_addr @ SWAP
+			THEN THEN THEN
+			\ update the  fron address
+			SWAP
+			%olen @ +
+			SWAP
+		REPEAT
+		\ from_addr to_addr&lt;--
+		NIP
+		\ to_addr&lt;--
+		\ pad to multiple of 4
+		BEGIN 
+			DUP 3 AND
+		WHILE
+			IPO_NOP OVER B!
+			1+
+		REPEAT
+		ep_data %pep_to @ + -
+		\ h_length&lt;--
+		2 RSHIFT \ convert to long words
+		\ update the hlen to the new value
+		%pep_to @ [ ep_data ip_verlen + ]T LITERAL + B@ $F0 AND 
+		OR %pep_to @ [ ep_data ip_verlen + ]T LITERAL + B!
+	;
+
+	</code> </pre>
+<h5>_ip_fragment_send</h5>
+<p>
+Copy a fragment out of the incoming packet and put on the wire.
+</p>
+<p>
+This code should not return %pep, it is only dealing with a fraction
+of the job.
+</p>
+<pre> <code>
+
+	: _ip_fragment_send { 
+				variable %last 
+	            variable %pep
+	            variable %offset
+	            variable %send_data_length
+	            variable %offset_fragment -- ( $ ) }{
+	            variable %new_pep
+	            }
+		%pep @ _pep>ip_hlen ep_data + %send_data_length @ +
+                \ lenth(--
+                ['] get_free_buffer CATCH
+		?DUP IF
+			\ length $(;--
+			NIP
+			EXIT
+		THEN
+		\ new_buffer(--
+                [ last_definition ]T LITERAL OVER buffer_save_ip
+		%new_pep !
+
+		\ copy options etc from inital header.
+		\ if %offset_fragment is zero all options get copied, if not some.
+		%pep @ %new_pep @ %offset_fragment @  _ip_fragment_header
+		\ set fragment offset
+		%last @ IF
+			\ have to use MF value from initial header
+			%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ 
+			IP_MF AND 
+			%offset_fragment @ 3 RSHIFT OR 
+			%new_pep @ [ ep_data ip_fragoff + ]T LITERAL + W!
+		ELSE
+			\ not the last so we have to set the more fragment bit
+			%offset_fragment @ 3 RSHIFT
+			IP_MF OR 
+			%new_pep @ [ ep_data ip_fragoff + ]T LITERAL + W!
+		THEN
+		
+		\ The header length of the new datagram can be different to the old
+		\ not all options need to be copied
+		%new_pep @ _pep>ip_hlen %send_data_length @ + 
+		DUP %new_pep @ [ ep_data ip_len + ]T LITERAL + W!
+		\ add in ep_data length and we have the ep_len, seems like a good 
+		\ time to set it
+		ep_data + %new_pep @ ep_len + !
+
+		\ better add the data
+		%pep @ DUP [ ep_data ]T LITERAL +
+		SWAP _pep>ip_hlen + %offset @ +
+		\ from &lt;--
+		%new_pep @ DUP  [ ep_data ]T LITERAL +
+		SWAP _pep>ip_hlen + %send_data_length @ MOVE
+
+		\ :write_ip looks after converting header to network order ( if required)
+		\ and calculating header checksum ( if required)
+		%new_pep @ this :write_ip
+		zero
+		\ $&lt;--
+	;
+	</code> </pre>
+<p>
+This code is common to all interfaces, the need for fragmentation is determined
+by <i>%%ni_mtu</i>. The local interface does not use this code, the 
+<i>:consume_interface</i> method in the local interface puts fragments back together 
+and sends them onto the protocol task. remember the routing routine calls 
+<i>:consume_interface</i> to get rid of the datagram after it has routed it. The fact that 
+the local interface takes it and delivers it, while remote interfaces take it 
+break it up and send it on the wire is of no interest to the routing routine.
+</p>
+<p>
+At this stage 
+</p>
+<ul>
+<li>the packet is as long as it was when received.</li>
+<li>the ip header is still in host byte order .</li>
+<li>the ip checksum is not calculated.</li>
+<li>The protocol checksum has not been calculated</li>
+<li>the ttl has not been decremented.</li>
+<li>We have the source address.</li>
+<li>The hardware address has been determined.</li>
+</ul>
+	<pre> <code>
+	ram_variable %decrement_ttl
+	ram_variable %initial_ttl 
+	CREATE $too_old ," packet ttl expired"
+	\ put a ip datagram on the wire breaking it into fragments if required.
+	: ip>wire { variable %pep -- ( $ ) }{
+			variable %max_data
+			variable %send_data_len
+			variable %to_send
+			variable %offset
+			variable %offset_in_datagram }
+		
+		\ decrement the time to live here; it makes no sence to do it after
+		\ fragmentation as we want all fragments to have equal change of 
+		\ getting to destination. The ttl is hops or seconds. We recorded the
+		\ time we placed tha packet in the ip_queue. We are now taking it out.
+		\ In this sytem the chance of a packet remaining in the system for more
+		\ than a second is about zero; but it takes little effort to 
+		\ do it properly.
+		%pep @ ep_xclock+ + @ xclock- @ + #1sec / -1 MIN
+		DUP %decrement_ttl !
+		%pep @  [ ep_data ip_ttl + ]T LITERAL + B@
+		DUP %initial_ttl !
+		+ DUP 0< IF \ >
+			\ the packet has lived too long; time to zap it
+			DROP
+			%pep @ kill_free_buffer
+			$too_old
+			EXIT
+		ELSE
+			%pep @ [ ep_data ip_ttl + ]T LITERAL + B!
+		THEN 				
+		%pep @ _pep>ip_plen %%ni_mtu @ 
+		> not IF
+			\ datagram can go without fragmentation
+			%pep @ this :write_ip
+			zero
+			EXIT
+		THEN
+		\ there is a flag to say don't fragment, if
+		\ set well we are in deep shit
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_DF AND IF
+			\ make sure icmp consumes packet
+			\ ##### 
+			\ ICT_DESTUR ICC_FNADF %pep @ [ ep_data ip_scr + ]T LITERAL + @ %pep @ icmp
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+		\ offset into current packet
+		0 %offset !
+		\ fragment offset, remember we may be fragmenting a fragment
+		\ fragment offset is in the low bits LSHIFT to get them out, RSHIFT to put them in
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_FRAGOFF AND 3 LSHIFT %offset_in_datagram !
+
+
+		\ For discussion on fragmentaton see
+		\ <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1812.html">RFC1812</a> Section 4.2.2.7
+		\ I think minimum_size, minimum_fragments looks like the best option. 
+		\ Best chance of not having to fragment again and gives minimum number of fragments.
+		\
+		\ This code may still generate a short fragment at the end, but at least one fragment
+		\ will have had to be as big as the size selected.
+
+		\ maximum fragment_units that will fit in a fragment.
+		\ The remainder has to be droped as can't be used because fragment offset can only
+		\ be set in fragment units.
+		%%ni_mtu @ %pep @ _pep>ip_hlen - DUP %max_data ! 
+		8 /MOD \ remainder f_units&lt;--
+		\ ep_ipcount is only set if datagram is consumed locally
+		\ This code has to deal with network packets as well so
+		\  we have to use _pep>ip_data_length
+		%pep @ _pep>ip_data_length DUP %to_send !
+		\ rem f_units data_size&lt;--
+		\ this allows for the remainder that can fit in last fragment
+		\ because the mtu size may not be a fragment multiple. And allows
+		\ for the extra fragment unit that may be required because the data_size
+		\ may not be a multiple of fragment units.
+		7 + ROT -
+		3 RSHIFT \ max_f_units f_units_needed&lt;--
+		DUP ROT  \ f_unit_needed f_unit_needed max_f_units&lt;--
+		/MOD     \ f_units_needed rem quot&lt;--
+		SWAP IF
+			\ a remainder of fragment unit need a part packet
+			1+ \ send one more packet
+			\ number of fragment units in packet
+			/MOD SWAP IF  
+				\ if we use quotent fragment units we will have a remainder, not good.
+				\ add one more f_unit per packet to allow for remainder of last division
+				\ the additional fragment will definitly fit as one whole packet has been
+				\ added. Adding 1 will definitly see all fragment_units sent.
+				1+
+			THEN
+		ELSE
+			\ f units will fill up packets with no remainder
+			/
+		THEN
+		3 LSHIFT 
+		%send_data_len !
+		BEGIN
+			\ &lt;--
+			\ true if last
+			%to_send @ %max_data @ > not
+			%pep @
+			%offset @
+			jump IF
+				\ last send what is remaining
+				%to_send @ 
+			ELSE
+				\ not last fragment, send what we concluded was correct
+				\ fragment size.
+				%send_data_len @
+			THEN
+			%offset_in_datagram @
+
+			OVER %offset +!
+			OVER %offset_in_datagram +!
+			OVER NEGATE %to_send +!
+			_ip_fragment_send 
+			?DUP IF
+				\ $ &lt;--
+				\ failed to send a fragment
+				\ absolutly no use continuing
+				1 %%ip_fragment_discards +!
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			1 %%ip_frag_create +!
+			%to_send @ not
+		UNTIL
+		\ finished with this one, all broken up
+		%pep @ 	
+		kill_free_buffer
+		zero
+
+	;
+	</code> </pre>
+<h5>consume_interface</h5> 
+<p>
+This word consumes the ip packet supplied by the routed task.
+</p>
+<p>
+Whatever happens this word must consume the packet. If must not wait to queue a packet.
+If the interface can't take it drop it.
+</p>
+	<pre> <code>
+	m: { variable %pep  -- }
+		%pep @ kill_free_buffer
+	; method :consume_interface
+	</code> </pre>
+<p>
+A broadcast to the local net will come in, 
+go through the routing table and come back here. We place 
+the packet in the wire by calling :consume_interface
+</p>
+<p>
+A broadcast from the local net will come in, 
+go through the routing table and come back here. We can detect this by looking at 
+ep_nif_received, if it is equal to this then the packet should be sent to the local interface.
+</p>
+	<pre> <code>
+	m: ( pep --)
+		kill_free_buffer
+	; method :broadcast
+	</code> </pre>
+<h3>words to access interface local data</h3>
+	<pre> <code>
+	m: ( -- netmask)
+		%%ni_mask  @
+	; method :@netmask
+
+	\ #### not good enough the routing table may have to be altered.
+	m: ( netmask --)
+		%%ni_mask !
+	; method :!netmask
+
+
+	\ ##### this is not good enough; the nice address has to be altered and
+	\ the routing table has to be altered.
+	m: ( --ip)
+		%%ni_ip !
+	; method :!ip
+
+	m: ( --mtu)
+		%%ni_mtu @
+	; method :@mtu
+
+	</code> </pre>
+<h3>Arptime</h3>
+<p>
+The artimer routine calls this method from each interface.
+The ethernet interface is an example of one that overrides this word.
+</p>
+	<pre> <code>
+	m: ( --)
+	; method :arptimer
+	</code> </pre>
+<p>
+.arp runs doen the interface list and calls .arp for all; those interface tables that
+don't use an arp should do nothing.
+</p>
+	<pre> <code>
+	m: ( --)
+	; method :.arp
+
+
+\ access words
+
+\ hardware address
+	m: ( -- addr )
+		%%ni_hwa
+	; method :hwa
+
+	m: ( --addr)
+		%%ni_hwb
+	; method :hwb
+
+	m: ( --ip)
+		%%ni_ip 
+	; method :ip
+
+
+	: set_ip ( addr object --)
+		:ip !
+	;
+
+
+	: set_mask ( mask object --)
+		:!netmask
+	;
+
+| : .interface_errors ( offset --)
+		CR DUP SPACES
+		              ." frag discard : " %%ip_fragment_discards @ .h
+                              ." checksum err : " %%ip_checksum_errors @ .h
+ 		              ." frag attack0 : " %%ip_fragment_stupidity0 @ .h
+                CR DUP SPACES
+		              ." frag attack1 : " %%ip_fragment_stupidity1 @ .h
+		              ." frag attack2 : " %%ip_fragment_stupidity2 @ .h
+		              ." frag attack3 : " %%ip_fragment_stupidity3 @ .h
+                CR DUP SPACES
+		              ." proto discard: " %%proto_queue_discards @ .h
+                DROP
+;
+
+	m: ( offset --)
+		CR DUP SPACES ." interface_common | " ." Object: " this .h
+		CR DUP SPACES
+		              ." ip_address   : " %%ni_ip @ .h
+					  \ I encourage the use of hardware addresses that print
+					  \ well in ascii. Remember the only have to be unique within the
+					  \ current ethernet seqment. 803.2 never got off the ground.
+		              ." hardware_addr: " %%ni_hwa 6 ~TYPE
+                DUP .interface_errors
+                DROP send
+	; overrides :print
+
+
+
+
+end_class interface_common
+
+
+: .arp ( --)
+	%interface_objects BEGIN
+		@ ?DUP
+	WHILE
+		DUP link>object :.arp
+	REPEAT
+;
+
+
+: _arptimer ( --)
+	%interface_objects BEGIN
+		@ ?DUP
+	WHILE
+		DUP link>object :arptimer
+		xpause
+	REPEAT
+;
+
+\ has to remain valid
+ram_variable %localhost
+: Slocalhost ( addr n --)
+        \ add n addr_buffer(--
+        %localhost @ >R
+        string_class heap_object
+        %localhost !
+        R> ?DUP IF
+                heap_object_free
+        THEN
+;
+
+: localhost" ( "string" --)
+	[CHAR] " PARSE  \ addr count(--
+        Slocalhost
+;  IMMEDIATE
+
+: $localhost ( addr --)
+        COUNT Slocalhost
+;
+
+: localhost ( "word" --)
+        BL (word)
+        Slocalhost
+;
+
+
+: .localhost  ( --)
+	%localhost @ IF
+                %localhost @ :string@  TYPE
+        ELSE
+                ." Not defoned"
+        THEN
+;
+
+	</code> </pre>
+</body>
+</html>
+

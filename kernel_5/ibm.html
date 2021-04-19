@@ -1,0 +1,236 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre> <code>
+target_also
+&drivers
+target_definitions
+	io_common class
+
+		 
+		protected
+
+		
+		\ all openings are liked into here, this includes openings
+		\ of devises and files on the device.
+
+		ram_variable _%opened_files
+			
+		ram_create _%device_facility  #facility_length  ram_allot
+
+
+		\ all opened inodes are liked into here
+		ram_variable _%opened_inodes
+
+		cell% instance_variable %inode
+
+		public
+
+
+
+		\ ibm
+		\
+		m:  ( parent_ihandle -- )
+			\ If you want to change the root directory you open it, claim it and
+			\ see that no one else has it. For this to work the open has to
+			\ claim the device also.
+			this :facility grab
+				this [parent] :construct
+\			%%parent_instance !
+\			zero %%name> !
+
+\			%%object_link _%opened_files link_double
+\			\ default mode is read onlt
+\			0 this :!mode 
+			this :facility release
+		; overrides :construct
+
+		\ on object descruct get rid of file name.
+		\ The closing of the ibm file is done by the inode
+		m: ( --)
+			%%name> @ 
+			?DUP IF
+				kill_free_buffer
+			THEN
+			%%object_link unlink_double
+		; overrides :destruct
+
+
+		
+
+		\ After the device is opened by Sopen, the device open method is used
+		\ to consume the reset of the open string.
+		\ As a result the only structure that is fixed is the requirment that
+		\ the open command starts with the driver name.
+		\ On entry this is a device object, here we store the file name
+		\ We make a inode object, this opens the file on the ibm
+		\ with the device locked.
+		\ We then make a file object which we return
+
+		m: ( addr num mode-- handle )
+			this :!mode DUP not IF
+				2DROP
+				this
+				EXIT
+			THEN
+			[CHAR] / remove_leading
+			this :!name
+			get_filecode
+			this :open_inode
+			\ inode_handle(-- 
+			this file_class heap_object  \ file_handle(--
+			DUP %%file_instance !
+		; overrides :Sopen
+
+
+		m: ( --addr)
+			_%opened_files
+		; overrides :list_head
+
+
+		\ device_common
+		m: ( --addr)
+			_%device_facility 
+		; overrides :facility
+	
+
+		\ ibm
+		\ ----------------------------------------------------------------------
+		\ functions to be overriden to have format work on different sized files
+		\ number of inodes		
+		\ total bytes in file system
+
+		\ this has to be exported for file as file has to know how many bytes in a block
+		\ when deblocking the data. We deal in 8k blocks		
+		m: 
+			$2000
+		; overrides :bytes_a_zone
+
+
+		\ ----------------------------------------------------------------------
+
+		\ The file offset and disk offset are one the same
+		m:  { ( file_offset ) variable _%inode -- ( disk_offset) }
+		; overrides :file_offset>device_offset
+
+		m: ( addr n -- n)
+			\ need to supply file_code this is supplied from the inode_handle
+			\ the pointer
+			\ addr and n
+			this :inode \ convert inode_handle to file_code
+			%%seek_pointer @
+			SWAP
+			\ addr n seek_pointer file_code(--
+			\ This is the device, when doing a read the device must be claimed 
+			\ You are allowed only one active read
+			this :facility grab
+			read_ibm
+			this :facility release
+			DUP %%seek_pointer +!
+		; overrides :read
+
+		m: ( addr n --)
+			this :inode
+			%%seek_pointer @ 2DUP + >R
+			SWAP
+			\ addr n seek_pointer file_code(--
+			this :facility grab
+			write_ibm
+			this :facility release
+			R> %%seek_pointer !
+		; overrides :write
+		
+		\ opening a file makes it, just let this go by
+		m: ( addr n --)
+			2DROP
+		; overrides :make_file
+
+		\ head for the device	
+		m: ( --addr)
+			_%opened_inodes
+		; overrides :inode_head
+			
+		m: { variable _%inode ( -- ihandle) }
+			this :facility grab			
+			\ returns the head of the list
+			this :inode_head   
+			BEGIN
+				@
+			DUP WHILE
+				\ link(--
+				\ Following only words because all objects are children
+				\ of linked_objects so method is the same
+				DUP link>object \ object
+				\ link object(--
+				DUP :inode _%inode @ = IF
+					\ link object(--
+					\ This will increment the open count
+					DUP :open
+					this :facility release
+					NIP
+					\ object(--
+					EXIT
+				THEN
+				DROP
+			REPEAT
+			DROP
+			this :@name this :@mode  _%inode @ 
+			\ addr num mode code(--
+			['] open_ibm CATCH
+			?DUP IF
+				this :facility release
+				$ABORT
+			THEN 
+			\ (--
+			_%inode @ this inode_class heap_object
+			this :facility release		
+		; overrides :open_inode
+
+		\ ibm
+
+		m: ( inode_instance --)
+			\ claim the device 
+			this :facility grab
+			DUP :close IF
+				\ :close returns true if the node can be closed
+				DUP :inode  
+				\ inode_instance file_code(--
+				['] close_ibm CATCH
+				?DUP IF
+					this :facility release
+				THEN
+				\ inode_instance
+				DUP heap_object_free
+			THEN
+			DROP
+			this :facility release	
+		; overrides :close_inode 
+
+
+		m: ( indent --)
+			CR DUP SPACES ." ibm | " ." Object: " this .h  
+				SPACE ." file: " this :@name TYPE
+			CR DUP SPACES ." seek_value: " %%seek_pointer @ .h 
+				SPACE ." timeout: " %%timeout @ .h
+				." linked_objects: " this :number_of_links .h 
+			\ indent(--
+			DROP
+			send
+		; overrides :print
+	end_class ibm
+
+target_previous_definitions
+target_previous
+
+</code> </pre>
+
+</body>
+</html>

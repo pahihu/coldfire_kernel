@@ -1,0 +1,978 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre>
+14 sept 2001 All tasks are now dismantled by the kill_task task. This
+greatly simplifies task lokcking.
+</pre>
+	<pre> <code>
+
+	: .system_name ( --) $heading $type ;
+
+	zero
+	|	DUP   CONSTANT _#task_table_level      2+
+	|       DUP   CONSTANT _#task_table_name       CELL+
+	|       DUP   CONSTANT _#task_table_activation CELL+
+	|             CONSTANT _#task_table_length
+
+	HOST
+
+	-1 CONSTANT _#activate_in_user
+
+	\  task_table variables, this table can be prommed
+	??HEX
+	forth : _task_table_entry
+			HOST
+			CREATE tw,
+		DOES>
+			W@ _%task_table @ +
+		;
+
+	HOST
+
+	|   _#task_table_level       _task_table_entry _task_table_level
+	|   _#task_table_name        _task_table_entry _task_table_name
+	|   _#task_table_activation  _task_table_entry _task_table_activation
+
+
+	: task_abort user_base  xoff  ; RECOVER
+
+	| : task_underrun ( --)
+		TRUE ABORT" R stack underrun." ;
+
+	' task_underrun  (return_error) t!
+
+
+	\ default task resources.
+	$400 _#sys_buffer_user -             CONSTANT Smax
+	$400 _#sys_buffer_user -             CONSTANT Rmax
+	$400 _#sys_buffer_user -             CONSTANT Umax
+
+	??HEX
+
+	\ Given the user area of another task ( that is not running)
+	\ push a value onto the new tasks stack.
+        \ This is the only time (nit_data) is used.
+	: push_other_task ( value user_area --)
+		TUCK                   \ user_area value user_area(--
+		(Sinit) SWAP other_task  @ \ user_area value addr(--
+		cell-   TUCK      \ user_area addr- value addr-(--
+		!                 \ user_area addr-(--
+		SWAP              \ addr- user_area(--
+		(Sinit) SWAP other_task !  \ (--
+	;
+	</code> </pre>
+
+<p>
+Given a few stack parameters make a task out of thin air
+well from free buffers anyway.
+This version is used on startup, the task loops isn't claimed.
+And the task created is owned by no one.
+</p>
+		<pre> <code>
+	: make_new_task  {	variable _%user_size
+						variable _%return_size
+						variable _%data_size
+						variable _%new_task_name>
+						variable _%new_task_name_count
+						variable _%new_task_level
+						variable _%activation_area
+						-- variable _%new_user }
+
+		\ Get a buffer to use as the User area
+		_%user_size @  get_free_buffer  _%new_user !
+		\ Indicate that the buffer belongs to us
+		_%new_user @ _%new_user @  buffer_save_task
+
+		\ Clear the user area
+		_%new_user @ _%user_size @  ERASE                             \ (--
+
+		\ Set the activate pointers.
+		\ after this is set the activation words such as activation_base
+		\ could be used.
+		_%activation_area @ _#activate_in_user = IF
+			\ start of the user area
+			_%new_user @ DUP #activation_task> + !
+			_%new_user @ _activation> _%new_user @ other_task !
+			_%new_user @ _%activation_area !
+		ELSE
+			\ address provided
+			_%activation_area @ _activation> _%new_user @ other_task !
+			_%new_user @ _%activation_area @ #activation_task> + !
+		THEN
+
+
+		\ Set the trap instruction of the new task
+		4E42     \ ##code 2 # TRAP
+		_%activation_area @ #activation_trap + W!
+
+                \ we have just written code to memory; the 5407 has a harvard cache so we must
+                \ flush the cache.
+		cache_flush
+
+		\ Set the tasks status to sleep
+		sleep _%activation_area @ #activation_status + W!
+
+		\ set the task level in the tasks user area
+		_%new_task_level @  _%task_level _%new_user @ other_task !
+
+
+		\ set up stack memory areas
+		\ The end address only is set if the stacks were not
+		\ created from free buffers
+
+		\ Set up data stack
+		_%data_size @ get_free_buffer
+                \ Indicate that the buffer belongs to us
+		_%new_user @  OVER buffer_save_task
+                \ beginning(--
+                \ buffer_size takes the buffer address and returns it's size
+                DUP DUP buffer_size +    \ beginning end (--
+		DUP _%data_stack_end _%new_user @ other_task !
+                (Sinit) _%new_user @ other_task !
+                \ beginning(--
+                \ can now push onto new tasks stack
+		zero _%new_user @ push_other_task
+		$BACEBACE _%new_user @ push_other_task
+
+		\ save the base so buffer can be returned if task decides to use
+		\ faster memory.
+		_%data_stack_base _%new_user @ other_task !
+                \ (--
+		\ Set up return stack
+		_%return_size @ get_free_buffer
+                _%new_user @ OVER buffer_save_task
+                DUP DUP buffer_size +    \ beginning end (--
+		_%return_stack_end _%new_user @ other_task !
+		\ save the base so buffer can be returned if task decides to use
+		\ faster memory.
+		_%return_stack_base _%new_user @ other_task !
+		\ change set to task to the new task
+                \ (--
+                \ Vectored functions
+		['] task_abort   'abort     _%new_user @ other_task !
+		['] .system_name 'HEADING   _%new_user @ other_task !
+		['] ?CREATE      'create    _%new_user @ other_task !
+
+		\ the task name to the user area
+		_%new_task_name> @ _%task_name> _%new_user @ other_task !
+		_%new_task_name_count @ _%task_name_count _%new_user @ other_task !
+
+		0A  BASE _%new_user @ other_task !
+
+		_#initial_q_digits
+		%fractional_digits _%new_user @ other_task !
+
+                \ The root wordlist for this task
+		~root _task_root_wordlist _%new_user @ other_task !
+
+
+                \ the head of the source files list
+                %input_files @ %input_files _%new_user @ other_task !
+
+                \ the word
+                'word @ 'word _%new_user @ other_task !
+
+		\ link into the task loop; with sleep as the activation vector
+                _lock_word
+                        \ Put the first task in the task loop into the link of the new task
+		        _%new_task_level @ CELLS _xheads + @                      \ level_base(--
+		        #activation_task_link +                            \ link(--
+		        DUP
+                        @  ( following task)                             \ link (link)(--
+		        _%activation_area  @  #activation_task_link + !      \ link(--
+		        \ the address was determined new the beginning of the word.
+		        _%activation_area @ SWAP ! ( In task loop asleep)          \ (--
+                _unlock_word
+
+        ;
+
+
+
+	| CREATE $not_in_loop ," Task not in loop."
+        | CREATE $level_not_in_range ," Level not in range."
+	\ Flag is a string if failure.
+	: remove_task_from_loop  { variable _%user_addr ( --$ ) }{
+                variable _%head_loop }
+
+        	_%task_level _%user_addr @ other_task @ DUP
+		\ level level(--
+		\ check that we are within defined priority levels.
+		0 [ #clock_low 1+ ]T LITERAL WITHIN not IF
+                        $level_not_in_range
+                        EXIT
+                THEN
+		\ level(--
+		CELLS _xheads + @ _%head_loop !
+                 _lock_word
+                _%head_loop @
+		BEGIN
+                        \ the end of the loop points to the beginning that is how
+                        \ we know we are at the end.
+			DUP #activation_task_link +  @ \  link (link)(--
+			DUP _%head_loop @ <>
+		WHILE
+			\ link (link)
+			#activation_task> + @
+			_%user_addr @   \ link (user_addr) user_addr(--
+			= IF   \ we have the link address to deal with the problem
+				DUP #activation_task_link +  @
+				DUP #activation_task_link +  @
+				\ link (link) ((link))
+				NIP SWAP #activation_task_link + !
+                                _unlock_word
+                                FALSE
+				EXIT
+			THEN
+			\ link(--
+			#activation_task_link +  @
+		REPEAT
+                _unlock_word
+		\ If we get to here user_addr was not in loop
+		\ link (link)(--
+		2DROP
+		$not_in_loop
+	;
+
+
+	</code> </pre>
+<p>
+Tasks are always destoyed be the kill task. We remove the task from the execution loop
+and put it in the _kill_task_queue. Doing it this ways means the task data structures
+remain valid untill low priority execution
+</p>
+	<pre> <code>
+	\ we force the queuing so the queue depth is not relevent
+	\ we destroy in queue order so only one priority.
+ 	$7FFFFFFF 1 net_queue _kill_task_queue
+
+	: destroy_task { variable _%user_addr -- }{
+			variable _%task_loop
+			variable %facility }
+
+		\ (--
+                _%user_addr @ remove_task_from_loop
+                \ addr(--
+                $ABORT
+                \ it is left to the kill task to return resources.
+                _%task_link _%user_addr @ other_task
+		_kill_task_queue zero enqueue_force
+        ;
+
+	: _finish_off_task { variable _%user_addr -- }
+		\ Return buffers
+		\ These values will be zero if the data stack and return stack
+		\ are not free buffers.
+		\ If the values are zero kill_free_buffer will return without action.
+		_%data_stack_base _%user_addr @ other_task @ kill_free_buffer
+		_%return_stack_base _%user_addr @ other_task @ kill_free_buffer
+		\ destroy free buffers
+		_%user_addr @ _return_ufree_buffers
+		_%user_addr @ kill_free_buffer
+		\ and that is about it gone.
+	;
+
+        \ if the task isn't in the loop
+        \ or the task level is out of range.
+	| : abort_oh_dear
+		panic_cr panic" ABORT within end_task"
+		panic_cr panic" Data stack"
+		@s $20 panic_dump
+		panic_cr panic" return stack"
+		@r $40 panic_dump
+		\ just give up with this task.
+		xoff
+	;
+
+
+	: end_task ( --)
+                ['] abort_oh_dear 'abort !
+		@u destroy_task
+		xnext
+	;
+
+
+        CODE task_start
+                R )+ S MOV
+                R )+ OP MOV
+                R )+ LP MOV
+        NEXT
+
+	: _start_new_task { variable %action variable %user_base -- }{
+		variable %activation_area
+		variable %stack
+		variable %return_stack }
+
+		\ get and save base address of the activation area
+		[ _activation> user_base - ]T LITERAL %user_base @ + @
+		%activation_area !
+		\ get the top of the return stack from the user area
+		\ and save as %stack
+		[ _%return_stack_end user_base - ]T LITERAL %user_base @ + @
+		%return_stack !
+
+                \ Get the inital data stack pointer and save
+		\ as %stack, the stack already has inital values pushed on it.
+		[ (Sinit) user_base - ]T LITERAL %user_base @ + @
+		%stack !
+
+                \ It is hoped this word will get executed on return stack
+		\ underflow.
+		[ cell NEGATE ]T LITERAL %return_stack +!
+		['] (return_error) %return_stack @ !
+
+		\ save action in user area for future reference.
+		\ and push onto return stack
+		%action @ [ _'task_initial_action user_base - ]T LITERAL %user_base @ + !
+
+                [ cell NEGATE ]T LITERAL  %return_stack +!
+		%action @ %return_stack @ !
+
+                \ Done this way so a suspeneded task stak frame is the same.
+                \ LP onto data stack
+		[ cell NEGATE ]T LITERAL  %return_stack +!
+		0 %return_stack @ !
+
+                \ OP onto the data staxk
+		[ cell NEGATE ]T LITERAL %return_stack +!
+		0 %return_stack @ !
+
+                \ push the current value of the data stack onto the return stack
+		[ cell NEGATE ]T LITERAL %return_stack +!
+		%stack @ %return_stack @ !
+
+                \ the RTE address
+                [ cell NEGATE ]T LITERAL %return_stack +!
+                ['] task_start %return_stack @ !
+
+                \ the RTE format code
+                [ cell NEGATE ]T LITERAL %return_stack +!
+                $40000000 %return_stack @ !
+
+                \ save current value of return stack into user area.
+		%return_stack @ [ (R) user_base - ]T LITERAL %user_base @ + !
+
+		\ set the current time.
+		xclock+ @ [ _task_restart_time user_base - ]T LITERAL
+		%user_base @ + !
+		\ wake up the task
+		wake #activation_status %activation_area @ + W!
+	;
+
+    </code> </pre>
+<p>
+Describe the task head.
+The table pointer has to be first so the code "task_name @" will
+return the task table.
+</p>
+	<pre> <code>
+
+	zero
+	DUP	CONSTANT _#task_head_table> CELL+
+	DUP CONSTANT _#task_head_prom>  CELL+
+	DUP CONSTANT _#task_head_action
+		CONSTANT _#task_head_length
+
+	</code> </pre>
+<p>
+This work is used to start a task that has a task table.
+There is no use looking to see if a varsion of a task is running.
+If the code is re-enterent running multiple copies is a valid thing to do.
+</p>
+	<pre> <code>
+	: taskin { ( task_base_address--) }{
+				variable _%new_task_table }
+		DUP _#task_head_table> + @  _%new_task_table !
+
+		Umax Rmax Smax
+		_%new_task_table @ _#task_table_name  + @ name_count  \ Umax Rmax Smax addr n+flags (--
+		_#name_count_bits AND
+		_%new_task_table @ _#task_table_level + W@
+		_%new_task_table @ _#task_table_activation + @
+		make_new_task
+                \ task_base_addr user_addr(--
+		\ point back to task table
+		_%new_task_table @   _%task_table jump other_task !
+               \ task_Base_address user_addr(--
+		SWAP _#task_head_action + SWAP
+		_start_new_task
+	;
+
+	: tskin ( "name" --)
+		BL (word) ~tasks SEARCH-WORDLIST not IF
+			TRUE ABORT" Not a task"
+		THEN
+		\ xt(--
+		EXECUTE
+		taskin
+	;
+
+
+	: task>user  ( task_base_address -- user_address )
+		_#task_head_table> + @
+		_#task_table_activation + @
+		#activation_task> + @
+	;
+
+	: taskout ( task_base_address -- )
+		\ pfa(--
+		task>user remove_task_from_loop
+                \ $(--
+                $ABORT
+	;
+
+	: tskout ( "name" --)
+		BL (word) ~tasks SEARCH-WORDLIST not IF
+			TRUE ABORT" Not a task"
+		THEN
+		\ xt(--
+		EXECUTE
+		taskout
+	;
+	</code> </pre>
+<p>
+Creates a child task the task will execute action with ?? values
+on the stack on initiation; the number pushed onto the childs stack
+will be given by values_to_push.
+It is expected child task will destroy themselves. the task kill_task
+does the job.
+</p>
+<p>
+You will find child tasks used in TCP servers. You can create a child that has
+a higher priority.
+</p>
+	<pre> <code>
+	: child_task { ( ?? values_to_push action ) variable %level variable $name -- }{
+			variable %new_user
+			}
+		Umax Smax Rmax
+		$name @ COUNT
+		%level @
+		_#activate_in_user
+		make_new_task %new_user !
+		\ ?? values_to_push action(--
+		>R
+		zero ?DO
+			%new_user @ push_other_task
+		LOOP
+		R> %new_user @
+		_start_new_task
+	;
+
+
+
+	: task: ( level -- activation_area level code )
+		ALSO &tasks
+		DEFINITIONS
+		CREATE
+		previous_definitions
+		PREVIOUS
+		_#task_head_length ALLOT
+		\ life is a lot easier for .task if
+		\ all named task have a known activation area.
+		\ It makes the finding of a tasks user area a lot simpler.
+		ram_here SWAP #activation_length ram_allot \ activation_area level code(--
+		_#comp_code_task   \ activation_area level code(--
+		TRUE STATE !
+	;
+
+#BCM550h #BCM550j + #BVP5552 + #BVP5551 + #BVP6552 + [IF]
+	\ task with it's activation area in dual port memory
+	: port_task: ( level -- activation_area level code )
+		ALSO &tasks
+		DEFINITIONS
+		CREATE
+		previous_definitions
+		PREVIOUS
+		_#task_head_length ALLOT
+		port_here SWAP #activation_length port_allot \ activation_area level code(--
+		_#comp_code_task   \ activation level code(--
+		TRUE STATE !
+	;
+[THEN]
+
+	( Task creation word)  HEX
+	: ;task   ( activation_area level code --)
+		_#comp_code_task ?pair				\ activation_area level(--
+		last @ @ lfa>pfa                    \
+		COMPILE xtest
+		2D3C W, \ ##code # S -) MOV
+		0A ,
+		COMPILE xwait
+		6000 W,  \ ##code BRA
+		DUP                                        \ activation_area level pfa pfa (--
+		_#task_head_action +                      \ activation_area level pfa code (--
+		!back                                      \ activation_area level pfa(--
+		HERE SWAP _#task_head_table> +  !          \ activation_area level (--
+		HERE _#task_table_length  ALLOT ( Allocate ram area)  \ activation_area level tt(--
+		last @ @ lfa>nfa OVER _#task_table_name + !             \ activation_area level tt(--Point to the tasks name
+		SWAP 0 MAX
+		#clock_low MIN OVER _#task_table_level + W!           \ activation_area tt(--
+		_#task_table_activation + !
+
+		[COMPILE] [
+	; IMMEDIATE
+
+
+forth : task:  \ compile time  ( level -- activation_area level )
+               \ runtime       ( -- addr )
+	HOST CREATE
+	_#task_head_length ALLOT
+	ram_here FORTH SWAP HOST #activation_length ram_allot \ activation_area level code(--
+	]T DOES>  ( task head address)  ;
+
+
+
+\ task with activation area in dual port memeory
+#BCM550h #BCM550j + #BVP5552 + #BVP5551 + #BVP6552 + #BVP6551 + [IF]
+forth : port_task:  \ compile time  ( level -- activation_area level )
+                    \ runtime       ( -- addr )
+	HOST CREATE
+	_#task_head_length ALLOT
+	port_here FORTH SWAP HOST #activation_length port_allot \ activation_area level code(--
+	]T DOES>  ( task head address)  
+;
+[ELSE]
+
+forth : port_task: 
+	HOST task: 
+	;
+
+[THEN]
+
+HEX  forth : ;task   ( activation_area level --)
+		target_last @ @ _t_lfa>pfa            \ activation_area level pfa(--
+
+		\ prom pointer to dictonary_data
+		HOST dictionary_here                       \ activation_area level table dthere(--
+		forth OVER                                 \ activation_area level table dthere table(--
+		HOST _#task_head_table> forth + HOST t!    \ activation_area level table(--
+
+		\ pointer to prom table, will go
+		forth zero
+		forth SWAP HOST _#task_head_prom> forth +  \ activation_area level zero table+(--
+		HOST t! ( prom table)                      \ activation_area level (--
+		\ level
+		forth zero MAX HOST #clock_low forth MIN  HOST dtw,
+
+		\ get address of last target words name
+		target_last   \ in host
+		forth
+		@             \ the address of the head, at this stage this is in host
+
+		@
+		HOST
+		_t_lfa>nfa  dt,
+
+		\ activation_area
+		dt,
+
+		forth FALSE tstate !
+	; TARGET
+
+HOST
+
+	( Start user tasks)  HEX
+	: start_tasks ( --)
+		ALSO &tasks
+		context @
+		[ _#voc_head> _#voc_wid - ]T LITERAL +
+		@ DUP
+		[ _#voc_heads_count _#voc_heads_base - ]T LITERAL + @  \ base count (--
+		SWAP
+		[ _#voc_heads_data _#voc_heads_base - ]T LITERAL +
+		SWAP                                                   \ threads count (--
+		zero DO
+			DUP                                                \ threads list (--
+			BEGIN
+				@
+				DUP
+				\ the &tasks vocabulary is created in the kernel
+				\ and contains the kernel tasks as well as the
+				\ application tasks. This word only deals with
+				\ the application tasks. The ternal tasks
+				\ where start much earlier. The kernal task links will
+				\ be in the prom range.
+				[ _prom_kernel_start ]T LITERAL [ _prom_kernel_end ]T LITERAL WITHIN not
+				\ list end with zero, the prom doesn't have to include address zero
+				OVER 0<> AND
+			WHILE ( threads list (--)
+                                 DUP lfa>pfa taskin
+			REPEAT
+			DROP                                              \ threads(--
+		4+ LOOP
+		DROP                                                  \ (--
+		PREVIOUS
+	;
+
+
+	</code> </pre>
+	<p>
+	Provide a forth interpreter
+	</p>
+	<pre> <code>
+	: prompt  ( --)
+		DECIMAL
+		zero SET-ORDER
+		ALSO &COMMANDS
+
+		TRUE _error_pos? W! ( enable full abort function)
+		TRUE seal W!
+		\ so forms wait for a key input before next page
+		\ type page_free to undo this.
+		page_hold
+		CR
+
+		$" flash"
+		$swd
+
+		['] QUIT 'abort !
+		ABORT
+	; RECOVER
+
+	</code> </pre>
+	<h5>new_data_stack ( base length --)</h5>
+	<p>The coldfire offers high speed memory. In FORTH the data stack is
+	an obvious canidate for high speed memory use.
+	</p>
+	<p>
+	This word copies the current stack contents onto the new stack, returns
+	the stack buffer. And sets up the task to use the new stack.
+	</p>
+	<p>
+	Obviously you are in trouble if you have referenced the stack anywhere,
+	but then your a good FORTH programmer and never do such nonsence as the code
+	will not work on a stack based processor.
+	</p>
+	<pre> <code>
+
+	\ flag is false if we fail.
+	\ We will fail if the supplied stack is way too small
+	\ Has to be in code as we don't have a data stack for a small while.
+	CODE _flip_data_stacks  ( end_old end_new new_count --flag)
+		S )+ D0 MOV   \ new_count
+		S )+ D1 MOV   \ end_new
+		S )+ D2 MOV   \ end_old
+
+		\ result, and at least one value on stack removing the
+		\ need to test for zero stack items.
+		FALSE # S -) MOV
+
+
+		D2 D4 MOV     \ old stack end
+		S D4 SUB      \ bytes on old stack
+		D4 D5 MOV
+		\ insist that there is a little extra room
+		$10 # D5 ADD
+		D5 D0 CMP LT IF  \ new stack is too small
+			TRUE # S ) MOV
+		ELSE
+			D4 D1 SUB
+			D1 A1 MOV
+			BEGIN
+				S )+ A1 )+ MOV
+				4 # D4 SUB
+			EQ UNTIL
+			\ This is a serious operation
+			\ The data stack is now changed.
+			D1 S MOV
+		THEN
+	NEXT
+
+	\ This word can be used to alter stack size as well as change the type of memory
+	: new_data_stack ( base size --)
+		2DUP +       \ base size end_new(--
+		_%data_stack_end @ \ base size end_new end_old(--
+		SWAP               \ base size end_old end_new(--
+		jump               \ base size end_new end_old size(--
+		_flip_data_stacks    \ base size flag(--now working on new stack
+		ABORT" Supplied stack a little small"
+		_%data_stack_base @  ?buffer IF
+			_%data_stack_base @ kill_free_buffer
+		THEN
+		OVER _%data_stack_base !
+		\ This value is used by abort.
+		+ _%data_stack_end !
+	;
+
+
+
+    </code> </pre>
+<h5>new_return_stack ( base length --)</h5>
+<p>The coldfire offers high speed memory. In FORTH the return stack is
+an obvious canidate for high speed memory use.
+</p>
+<p>
+This word copies the current return stack contents onto the new return stack, returns
+the stack stack buffer. And sets up the task to use the new stack.
+</p>
+	<pre> <code>
+	\ flag is false if we fail.
+	\ We will fail if the supplied stack is way too small
+	\ Has to be in code as we don't have a return stack for a small while.
+	CODE _flip_return_stacks  ( end_old end_new new_count --flag)
+		S )+ D0 MOV   \ new_count
+		S )+ D1 MOV   \ end_new
+		S )+ D2 MOV   \ end_old
+
+		D2 D4 MOV     \ old stack end
+		R D4 SUB      \ bytes on old stack
+		D4 D5 MOV
+		\ insist that there is a little extra room
+		$10 # D5 ADD
+		D5 D0 CMP LT IF  \ new stack is too small
+			TRUE # S -) MOV
+		ELSE
+			FALSE # S -) MOV
+			\ There will always be a value on the return stack ( our return address)
+			D4 D1 SUB \ from where data starts on new stack
+			D1 A1 MOV
+			BEGIN
+				R )+ A1 )+ MOV
+				4 # D4 SUB
+			EQ UNTIL
+			\ This is a serious operation
+			\ The return stack is now changed.
+			D1 R MOV
+		THEN
+	NEXT
+
+	\ This words can also be used to alter the size of stacks in real time
+	\ as well as change the type of memory.
+	: new_return_stack ( base size --)
+		2DUP +       \ base size end_new(--
+		_%return_stack_end @ \ base size end_new end_old(--
+		SWAP               \ base size end_old end_new(--
+		jump               \ base size end_new end_old size(--
+		_flip_return_stacks    \ base size flag(--now working on new stack
+		ABORT" Supplied stack a little small"
+		_%return_stack_base @ ?buffer IF
+			_%return_stack_base @ kill_free_buffer
+		THEN
+		OVER _%return_stack_base !
+		\ This value is used by abort.
+		+ _%return_stack_end !
+	;
+
+        ram_create %task_loop_facility #facility_length ram_allot
+
+	: _.task { variable %user_base variable %offset -- }{
+		0
+                DUP CONSTANT _#suspend_format CELL+   \ RTE format
+                DUP CONSTANT _#suspend_pc     CELL+   \ RTE pc
+		DUP CONSTANT _#suspend_s      CELL+   \ data stack
+		DUP CONSTANT _#suspend_o      CELL+   \ object pointer
+		DUP CONSTANT _#suspend_l      CELL+   \ local pointer
+		DROP
+
+		}
+                        CR %offset @ SPACES
+
+			." Status  : " %user_base @ .h
+                        \ will be zero if task has not been activeted
+			(R) %user_base @ other_task @ ?DUP IF
+			        \ return_stack(--
+
+			        DUP _#suspend_o +  @
+			        ." Obj pnt : " .h
+			        DUP _#suspend_l + @
+			        ." Lcl pnt : " .h
+
+			        CR %offset @ SPACES
+
+			        _%data_stack_base %user_base @ other_task @
+			        ." Stk btm : " .h
+			        DUP _#suspend_s + @ ." Data stk: " .h
+			        _%data_stack_end %user_base @ other_task @
+			        \ return_stack(--
+			        OVER _#suspend_s @ - 4/ 1-
+			        ." Stk dpth: " .h
+
+			        CR %offset @ SPACES
+
+			        _%return_stack_base %user_base @ other_task @
+			        ." Rtn btm : " .h
+		                DUP
+			        ." Rrn stk : " .h
+			        _%return_stack_end %user_base @ other_task @
+			        OVER  - 4/ 1-
+			        ." Rtn dpth: " .h
+			        \ return_stack(--
+			        DROP
+                        THEN
+	;
+
+
+	: .task (  task_table -- )
+		\ pfa(--
+		_#task_head_table> + @
+		_#task_table_activation + @
+		#activation_task> + @
+		zero _.task send
+	;
+
+	: .tsk (  "name" -- )
+		BL (word) ~tasks SEARCH-WORDLIST not IF
+			TRUE ABORT" Not a task"
+		THEN
+
+		\ xt(--
+		EXECUTE
+		.task
+	;
+
+
+
+
+	CREATE _$sleep ," sleep"
+	CREATE _$wake  ," wake "
+	CREATE _$test  ," test "
+        CREATE _$level_switch ," level switch"
+
+	CREATE _status_names
+		_$sleep t,
+		_$wake  t,
+		_$test  t,
+                _$level_switch t,
+
+       \ This work and the kill task share a facility variable.
+       \ We do this as we want the data areas to be resonable stable
+       \ while printing out the task details
+       : .tasks { ( --)  }{
+
+                variable _%head_loop
+		0
+                DUP CONSTANT _#suspend_format CELL+
+                DUP CONSTANT _#suspend_pc     CELL+   \ suspend pc
+		DUP CONSTANT _#suspend_s CELL+
+		DUP CONSTANT _#suspend_o CELL+
+		DUP CONSTANT _#suspend_l CELL+
+		DROP
+
+                }
+
+		CR ." List of all tasks in priority order"
+		CR ." Task name         Activate User     S ->   S Depth    R ->   R depth  State"
+		_#task_level_number zero DO
+			%task_loop_facility get
+			CR I CELLS _level_names + @ name_count _#name_count_bits AND TYPE
+
+                        I CELLS _xheads + @ _%head_loop !
+
+                        _%head_loop @ BEGIN
+                                \ the end of the loop points to the beginning that is how
+                                \ we know we are at the end.
+			        #activation_task_link +  @ \  link (link)(--
+			        DUP _%head_loop @
+                                 <>
+		        WHILE
+                                DUP #activation_task> + @
+				_%task_name> OVER other_task @   \ link task name(--
+				_%task_name_count jump other_task @ \ link task name count (--
+				CR TYPE SPACE $10 character#  - 0 MAX SPACES \ link task (--
+                                OVER .h
+				DUP .h
+
+				\ if we are displaying the running task things are different
+				DUP @u <> IF
+					(R) OVER other_task @ DUP IF
+                                                _#suspend_s + @ .h
+                                        ELSE
+                                                .h
+                                        THEN
+					\ other_user(--
+				ELSE
+					@s .h
+				THEN
+
+
+				\ if we are displaying the running task things are differnt different
+				DUP @u <> IF
+					(R) OVER other_task @ DUP IF
+                                                _#suspend_s + @
+					        \ other_user other_(S) (--
+					        _%data_stack_end jump other_task @ SWAP - 4 / 1 - .h
+					        \ other_user(--
+                                        ELSE
+                                                .h
+                                        THEN
+				ELSE
+					_%data_stack_end @ @s - 4 / 1 - .h
+				THEN
+
+				DUP @u <> IF
+					(R) OVER other_task @ .h
+				ELSE
+					@r .h
+				THEN
+
+				DUP @u <> IF
+					(R) OVER other_task @ DUP IF
+					        _%return_stack_end jump other_task @ SWAP - 4 / 1 - .h
+                                        ELSE
+                                                .h
+                                        THEN
+				ELSE
+					_%return_stack_end @ @r - 4 / 1 - .h
+				THEN
+
+				_activation> OVER other_task  @
+				#activation_status + W@ _status_names + @ $type SPACE
+                                DROP
+			REPEAT
+                        DROP
+                        %task_loop_facility release
+		LOOP
+		send
+		\ (--
+	;
+
+	\ <a HREF="./kernel_tasks.html#kill_task">the task</a>
+
+	: kill_task_action ( --)
+
+		BEGIN
+			_kill_task_queue xawait
+			_kill_task_queue dequeue
+                        %task_loop_facility get
+
+			[ user_base _%task_link - ]T LITERAL +
+			\ can't destroy ourselves even if you want to.
+			DUP @u <> IF
+				\ user _addr(--
+				['] _finish_off_task CATCH IF
+					DROP
+				THEN
+			ELSE
+				DROP
+			THEN
+
+                        %task_loop_facility release
+
+                AGAIN
+	;
+
+
+	\ belongs in tube.html but task>user isn't defined there so put it here.
+	\ This will only work if the task opens a tube and makes it the default
+	\ input output file.
+	\ see kernel_tasks.html for examples.
+	: task_logon  ( task_pfa -- )
+		'output_file SWAP task>user other_task @ ?DUP IF
+			logon
+		THEN
+	;
+
+    </code> </pre>
+
+</body>
+</html>
+

@@ -1,0 +1,146 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a><br>
+<h5>inode</h5>
+<p>
+There is only one active inode object open per inode number.
+multiple file instances can be using the one inode,
+</p>
+<p>
+All this object has to do is provide a facility so that access to 
+the inode can be controlled
+</p>
+<p>
+The parent is the device, the inode is constructed before the file
+instance is constructed. A linked list of opened files under the
+inode object is therefor not an option. 
+Further we only need to know how many are using the
+inode, not who. The who belongs to the file instances.
+</p>	
+	<pre> <code>
+	\ object 
+	\ :construct
+	\ :destruct
+	\ :print
+	\	link_class
+	\	:list_head
+	\	:number_of_links
+        \           cleanup_class
+        \	    :link_cleanup
+	\	    :unlink_cleanup
+	\		parented_object
+	\		:facility
+	\		:parent_instance
+	\		:!name
+	\		:@name
+	\		:@root
+	\		:inode_head
+	\			inode_class
+	\			:close
+	\			:open
+	\       	:inode_code
+	\           :number_of_files
+	
+	parented_object class
+
+		\ inode_interface implementation
+
+		\ The inode code is saved here
+		cell%   instance_variable %%inode_code
+		\ number of files using the inode
+		cell%   instance_variable %%count
+		\ This controls access to the inode
+		#facility_length bytes% instance_variable %%inode_facility
+
+		m:  ( inode_code parent_instance-- )
+
+			this [parent] :construct 
+			\ inode_code(--
+			%%inode_code !
+		
+			\ It is created open
+			one %%count !
+			%%inode_facility #facility_length ERASE
+
+		; overrides :construct
+
+
+		\ This needs a small explanation. The innodes have to be linked into the
+		\ device. Remember they only exist because two tasks can open the same file
+		\ the inode provides the ile facility and if the file is remote
+		\ we are kind and have all tasks call the file through a common handle.
+		\
+		\ How this works.
+		\ The linked_objecy constructor calls :list_head a method in it's class
+		\ that we can override. We have overrriden it to return the :inode_head
+		\ from the parented object. Note therefor that for this all to have
+		\ meaning the parent has to be the device object; not the file object,
+		\ The device will map the head back to a variable common to the device.
+		\ In other words a device class variable.
+		m: ( --addr )
+			this :parent_instance :inode_head
+		; overrides :list_head
+
+
+
+		\ If destruction is called, it is too late
+		\ the object will go.
+		\ Thats why close should be used.
+		\ The user is responsible for claiming the device
+
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+		
+		
+		\ flag is true if inode is not in use
+		m: ( --flag)
+			-1 %%count +!
+			%%count @ 1 < 				\ >
+		; method :use_decrement
+
+		m: ( -- )
+			1 %%count +!
+		; method :use_increment
+
+		m: ( --addr)
+			%%inode_facility 
+		; overrides :facility
+
+
+		m: ( --n)
+			%%count @
+		; method :number_of_opens
+
+
+		\ override some inode_implementation functions
+		\ --------------------------------------------
+		\ to get access to this function the program has the inode handle
+		\ this effectivly converts it to the inode number
+		m: ( --inode)
+			%%inode_code @
+		; method :inode_code
+
+		m: ( indent --)
+			CR DUP SPACES ." inode | " ." Object: " this .h 
+			CR DUP SPACES ." inode: " %%inode_code @ .h 
+			SPACE ." number_users: " %%count @ .h
+			\ indent(--
+			DROP
+			send
+		; overrides  :print
+
+	end_class inode_class
+
+	</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,59 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+	<pre> <code>
+    
+    ( if a seperate print task is compiled it's pfa is set here)
+    
+    CREATE (PRINT_TASK) 0 t,
+
+    ram_variable PRINT_JOB
+    ram_create PRINTING   #facility_length  ram_allot  \ _facility variable
+    
+    | : PRINT_QUIT
+    	-1 PRINTING ! ( block claim while sending page)
+    	EOJ			  ( end of job)
+    	send
+    	0 PRINT_JOB !
+    	0 PRINTING !
+    	xoff 
+    	PRINTING @ IF ( only execute if task claimed)
+    		PRINT_JOB @ 
+    		?DUP IF
+    			EXECUTE
+    		THEN
+    	THEN
+    	ABORT
+    ;
+    
+    | : PRINT_GO ( --)
+      wake (PRINT_TASK) @ @ @  W! ;
+    
+    | : PRINT_SEND ( --)
+ \     	(PRINT_TASK) @ @ QREG his @ ?DUP IF
+ \   		'BUFR @ >R 'BUFR ! KILLBUFF 
+ \   	THEN
+ \ #### fix up
+ \     	FILE (PRINT_TASK) @ @ FILE his CURRENT 2+ FILE - CMOVE
+ \     	0 QREG ! >IN @ #TIB ! 
+    ;
+    
+    : PRINT>IBM  ( --)
+    	(PRINT_TASK) @ IF 
+    		100 PRINTING xgrab ABORT" Print task in use"
+    		['] scan PRINT_JOB !
+    		PRINT_SEND
+    		PRINT_GO
+        THEN
+     ;
+
+	</code> </pre>
+</body>
+</html>

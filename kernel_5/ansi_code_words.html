@@ -1,0 +1,1718 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>Standard words written in assembler, support subroutines</h3>
+<a HREF="./license.html">license</a>	
+	
+		<h5>(um/mod)</h5>
+		<p>
+		Subroutines needed by standard words if processor doesn't support a divide. 
+		I think this is the best you can do. 
+		</p>
+		<dl>
+		<dt>Input</dt>	
+		<dd>D0  is numi high</dd> 
+		<dd>D1  is numi low</dd>
+		<dd>D2  domi</dd>		 	
+		<dt> Use</dt>
+		<dd>Register D3 used</dd>
+	
+		<dt>Output</dt>
+		<dd>D1 is quotent</dd>
+		<dd>D0 is remainder</dd>
+		</dl>
+		<p>
+		Funny how things change, on a processor like the coldfire it is better to loop
+		than unwind the code as memory access is slow.
+		</p>
+		<p>
+		</p>
+	<pre>
+        </code>
+	\ Algoritham supplied by FORTH inc.
+	\ leave the head on basic 64/32 divide is very useful.
+	\ pity the processor didn't provide it.
+	LABEL (um/mod)
+	   D3 R -) MOV
+		0 # A0 MOV             \ 32 bits thru the loop
+		BEGIN                  \
+			D1 D1 ADDX         \ d1 left one bit,
+			D0 D0 ADDX         \ and propagate msb of d1 when shifting d0
+			CS IF              \ d0 shifted out a one,
+				D2 D0 SUB      \ reduce d0 by d2 (divisor)
+				D3 D3 SUB      \ generate phony X bit for next d1 shift
+			ELSE               \ if no zero out of dshift
+				D2 D0 SUB      \ try to reduce d0 by divisor
+				CS IF          \ if fails,
+					D2 D0 ADD  \ add divisor back
+				THEN           \
+			THEN               \
+			                   \ Doing it this way result in a test that doesn't effect
+			                   \ the x bit. I didn't see this FORTH inc did
+			1 0) A0 LEA        \ repeat, 32 times
+			$20 # A0 CMP       \
+		EQ UNTIL               \
+		D1 D1 ADDX             \ final shift for return value
+		-1 # D1 EOR            \ and compliment, since we used inverted logic
+	   R )+ D3 MOV
+	 RTS
+        <code>
+	\
+	\ Faster version Thanks to:
+	\ Wayne Deeter wrd@logical-co.com
+	\ D2 divisor
+	\ D0 hi
+	\ D1 low
+	\ output
+	\ D1 quot
+	\ D0 rem
+	\
+	LABEL (um/mod)
+		D3 R -) MOV
+		D4 R -) MOV
+		D5 R -) MOV
+		D2 D3 MOV
+		1 # D3 LSR
+		D2 D3 SUB  \ divisor/2
+		A0 A0 SUB
+		D3 A0 SUB
+		$1F # D5 MOV
+		D2 D4 MOV
+		D5 D4 LSL
+		BEGIN
+			D4 D1 ADD
+			D3 D0 ADDX
+			D3 CC SCC
+			D1 D1 ADDX \ low
+			D0 D0 ADDX \ upp
+			D3 EXTB
+			D2 D3 AND
+			A0 D3 SUB
+			1 # D5 SUB
+		LT UNTIL
+		D3 TST
+		PL IF
+			D2 D0 ADD
+		THEN
+		R )+ D5 MOV
+		R )+ D4 MOV
+		R )+ D3 MOV
+	NEXT
+
+	\ sub so return address
+	(um/mod) CONSTANT (um/mod)
+
+		</code></pre><a name="standard_words_assembler"></a>
+		<h3>Standard words written in assembler</h3>
+		<pre><code>
+
+	??HEX
+
+		</code></pre><a name="!"></a> 
+		<h5>ANS 6.1.0010 !</h5> 
+		<p>	( x a-addr -- )</p>
+		<p>Store x at a-addr.
+		</p><pre><code>    
+
+	CODE ! ( 32b addr --)
+		S )+ A0 MOV   
+		S )+ A0 ) MOV   
+	NEXT inline
+
+		</code></pre><a name="*"></a>
+		<h5>ANS 6.1.0090 *</h5> 
+		<p>( n1|u1 n2|u2 -- n3|u3 )</p>
+		<p>Multiply n1|u1 by n2|u2 giving the product n3|u3.
+		</p><pre><code>
+		    
+	CODE * ( n n - p)
+		S )+ D1 MOV
+		S ) D1 L. MULS
+		D1 S ) MOV  
+	NEXT inline
+
+		</code></pre><a name="+"></a>
+		<h5>ANS 6.1.0120 +</h5> 
+		<p>( n1|u1 n2|u2 -- n3|u3 )</p>
+		<p>Add n2|u2 to n1|u1, giving the sum n3|u3.
+		</p><pre><code>
+		    
+	CODE + ( n n -n)   
+		S )+ D0 MOV   
+		D0 S ) ADD   
+	NEXT inline
+	
+		</code></pre><a name="+!"></a>
+		<h5>ANS 6.1.0130 +!</h5> 
+		<p>( n|u a-addr -- )</p>
+		<p>Add n|u to the single-cell number at a-addr.
+                <b>COLDFORTH</b> This operation must be indivisable for the OS to work.
+                </p><pre><code>
+
+
+	CODE +! ( n|u addr--)
+		S )+ A0 MOV   
+		S )+ D0 MOV   
+		D0 A0 ) ADD  
+	NEXT inline
+
+		</code></pre><a name="-"></a>
+		<h5>ANS 6.1.0160 - </h5>
+		<p>( u1|n1 n2|u2 -- n3|u3)</p>
+		<p>Subtract n2|u2 from n1|u1, giving the difference n3|u3.
+		</p><pre><code>    
+
+	CODE - ( u1|n1 n2|u2 -- n3|u3) 
+		S )+ D0 MOV   
+		D0 S ) SUB   
+	NEXT inline
+	
+		</code></pre><a name="/MOD"></a>
+		<h5>ANS 6.1.0240 /MOD </h5>
+		<p>CORE</p> 
+		<p>( n1 n2 -- n3 n4 )</p>
+		<p>
+		Divide n1 by n2, giving the single-cell remainder n3 and the single-cell quotient n4. 
+		An ambiguous condition exists if n2 is zero. If n1 and n2 differ in sign, the 
+		implementation-defined result returned will be the same as that returned by either the
+		phrase >R S>D R> FM/MOD or the phrase >R S>D R> SM/REM . 
+		</p><pre><code>
+
+	CODE /MOD  ( numi domi -- rem quot)
+		S )+ D0 MOV
+		S ) D1 MOV
+		D0 D2 D1 REMS 
+		D0 D1 L. DIVS
+		D2 S ) MOV
+		D1 S -) MOV 
+	NEXT
+	
+		</code></pre><a name="M+"></a>
+		<h5>8.6.1.1830 M+</h5> 
+		<p>m-plus DOUBLE</p> 
+		<p>( d1|ud1 n -- d2|ud2 )</p>
+		<p>
+		Add n to d1|ud1, giving the sum d2|ud2. 
+		</p><pre><code>
+
+	CODE M+  ( d1|ud1 n -- d2|ud2 )
+		S )+ D2 MOV \ n
+		S )+ D1 MOV \ dhigh
+		S )+ D0 MOV \ dlow
+		0 # D3 MOV
+		D2 D0 ADD
+		D3 D1 ADDX
+		D0 S -) MOV
+		D1 S -) MOV
+	NEXT
+
+		</code></pre><a name="/"></a>
+		<h5>ANS 6.1.0230 /</h5>
+		<p>CORE</p> 
+		<p>( n1 n2 -- n3 )</p>
+		<p>
+		Divide n1 by n2, giving the single-cell quotient n3. An ambiguous
+		condition exists if n2 is zero. If n1 and n2 differ in sign, the
+		implementation-defined result returned will be the same as that returned
+		by either the phrase >R S>D R> FM/MOD SWAP DROP or the phrase >R
+		S>D R> SM/REM SWAP DROP . 
+		</p><pre><code>
+
+	CODE / ( n1 n2 -- n3)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D0 D1 L. DIVS 
+		D1 S -) MOV 
+	NEXT
+
+		</code></pre><a name="FM/MOD"></a>			 
+		<h5>6.1.1561 FM/MOD</h5> 
+		<p>f-m-slash-mod CORE</p>
+		<p>( d1 n1 -- n2 n3 )</p>
+		<p>
+		Divide d1 by n1, giving the floored quotient n3 and the remainder n2. 
+		Input and output stack arguments are signed. An ambiguous
+		condition exists if n1 is zero or if the quotient lies outside the 
+		range of a single-cell signed integer. 
+		</p><pre>
+		Numi            Domi
+		Dividend        Divisor Remainder       Quotient
+		--------        ------- ---------       --------
+		10                 7       3                1
+		-10                7       4               -2
+		10                -7      -4               -2
+		-10               -7      -3                1
+		</pre><pre><code> 
+
+	CODE FM/MOD  ( numil numih domi -- rem quot )
+		S )+ D2 MOV \ domi 
+		MI IF
+			D2 NEG  \ domi is now positive
+			S )+ D0 MOV \ high numi
+			S )+ D1 MOV \ low numi
+			D0 TST
+			MI IF
+				D1 NEG  \ numi is now positive
+				D0 NEGX
+				(um/mod) BSR
+				( domi - remainder -)
+				D0 NEG
+			ELSE
+				(um/mod) BSR
+				( domi - remainder -)
+				( And if rem non zero round down for floored division)
+				D0 TST  NE IF
+					D2 D0 SUB
+					1 # D1 ADD
+				THEN
+				D1 NEG  
+			THEN
+		ELSE
+			S )+ D0 MOV  \ high numi
+			S )+ D1 MOV  \ low numi 
+			D0 TST
+			MI IF
+				D1 NEG
+				D0 NEGX
+				(um/mod) BSR
+				( If rem non zero round down for floored division)
+				( we add to D1 about to negate it)
+				D0 TST  NE IF
+					D2 D0 SUB
+					D0 NEG
+					1 # D1 ADD
+				THEN
+				( quotent is negative if numi and domi are oppersate signs)
+				D1 NEG
+			ELSE
+				(um/mod) BSR
+			THEN
+		THEN
+		D0 S -) MOV  ( remainder)
+		D1 S -) MOV  ( quotent)
+	NEXT
+	
+		</code></pre><a name="SM/REM"></a>
+		<h5> ANS 6.1.2214 SM/REM </h5>
+	
+		<p> ( d1 n1 -- n2 n3 ) </P>
+		<p>
+		Divide d1 by n1, giving the symmetric quotient n3 and the remainder n2.
+		Input and output stack arguments are signed. An ambiguous condition exists
+		if n1 is zero or if the quotient lies outside the range of a single-cell
+		signed integer.
+		</p><pre>
+		 Numi            Domi
+		 Dividend        Divisor Remainder       Quotient
+		 --------        ------- ---------       --------
+		 10                 7       3                1
+		 -10                7      -3               -1
+		 10                -7       3               -1
+		 -10               -7      -3                1
+		</pre><pre><code>
+
+	CODE SM/REM  ( numil numih domi -- rem quot )
+		S )+ D2 MOV \ domi
+		MI IF
+			D2 NEG  \ domi is now positive
+			S )+ D0 MOV \ high numi
+			S )+ D1 MOV \ low numi
+			D0 TST
+			MI IF
+				D1 NEG  \ numi is now positive
+				D0 NEGX
+				(um/mod) BSR
+				( remainder takes the sign of numi)
+				D0 NEG
+			ELSE
+				(um/mod) BSR
+				( quotent is negative if numi and domi are)
+				( opersate signs)
+				D1 NEG
+			THEN
+		ELSE
+			S )+ D0 MOV  \ high numi
+			S )+ D1 MOV  \ low numi
+			D0 TST
+			MI IF
+				D1 NEG
+				D0 NEGX
+				(um/mod) BSR
+				( remainder takes the sign of numi)
+				D0 NEG
+				( quotent is negative if numi and domi are opppersate signs)
+				D1 NEG
+			ELSE
+				(um/mod) BSR
+			THEN
+		THEN
+		D0 S -) MOV  ( remainder)
+		D1 S -) MOV  ( quotent)
+	NEXT
+
+		</code></pre><a name="0&lt;"></a>
+		<h5> ANS 6.1.0250 0< </h5>
+		<p>CORE</p>
+		<p>( n -- flag )</p>
+		<p>flag is true if and only if n is less than zero.
+		</p><pre><code>
+
+	CODE 0&lt; ( n -flag)
+		FALSE # D1 MOV
+		S ) TST   MI IF
+    		TRUE # D1 MOV
+		THEN
+		D1 S ) MOV
+	NEXT
+
+		</code></pre><a name="0&lt;&gt;"></a>
+		<h5> ANS 6.2.0260 0<> </h5>
+		<p>CORE EXT</p>
+		<p>( x -- flag )</p>
+		<p> flag is true if and only if x is not equal to zero.
+		</p><pre><code>
+
+	CODE 0&lt;&gt; ( n --flag)
+		FALSE # D1 MOV
+		S ) TST NE IF
+    		TRUE # D1 MOV
+		THEN
+		D1 S ) MOV
+	NEXT
+
+
+\	TRUE -1 ??=
+\	CODE 0&lt;&gt;  ( x -- flag)
+\		S )+ D0 MOV
+\		0 # D1 MOV
+\		-1 # D0 ADD
+\		D1 D1 SUBX
+\		D1 S -) MOV
+\	NEXT
+
+		</code></pre><a name="0="></a>
+		<h5>ANS 6.1.0270 0=</h5>
+		<p>CORE</p>
+		<p>( x -- flag )</p>
+		<p>flag is true if and only if x is equal to zero.</p>
+		<dl>
+		<dt>See:</dt>
+		<dd> <a HREF="#INVERT">INVERT ( x a-addr -- )</a></dd>
+		<dd> <a HREF="#NEGATE">NEGATE ( x a-addr -- )</a></dd>
+		</dl><pre><code>
+
+	CODE 0= ( n --flag )
+		FALSE # D1 MOV
+		S ) TST EQ IF
+    		TRUE # D1 MOV
+		THEN
+		D1 S ) MOV
+	NEXT
+
+		</code></pre><a name="2/"></a>
+		<h5>ANS 6.1.0330 2/</h5>
+		<p>CORE</p>
+		<p>( x1 -- x2 )</p>
+		<p>
+		x2 is the result of shifting x1 one bit toward the least-significant bit, leaving
+		the most-significant bit unchanged.
+		</p><pre><code>
+
+	CODE 2/ ( x1 -- x2 )
+		S )+ D0 MOV
+		1 # D0 ASR
+		D0 S -) MOV
+	NEXT
+
+		</code></pre><a name="2DROP"></a>
+		<h5>ANS 6.1.0370 2DROP</h5>
+		<p>CORE</p>
+		<p>( x1 x2 -- )</p>
+		<p>
+		Drop cell pair x1 x2 from the stack.
+		</p><pre><code>
+
+	CODE 2DROP ( a b --)
+		8 # S ADD
+	NEXT inline
+
+		</code></pre><a name="2DUP"></a>
+		<h5>ANS 6.1.0380 2DUP</h5>
+		<p>CORE</p>
+		<p>( x1 x2 -- x1 x2 x1 x2 )</p>
+		<p>
+		Duplicate cell pair x1 x2.
+		</p><pre><code>
+
+	CODE 2DUP ( a b  -- a b a b )
+		S ) \\ D0 D1 \\ MMOV
+		D1 S -) MOV
+		D0 S -) MOV
+	NEXT inline   \ It is 8 bytes, but allow for speed
+
+		</code></pre><a name="2OVER"></a>
+		<h5>ANS 6.1.0400 2OVER</h5>
+		<p>CODE</p>
+		<p>( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )</p>
+		<p>
+		Copy cell pair x1 x2 to the top of the stack.
+		</p><pre><code>
+
+	CODE 2OVER  ( a b c d -- a b c d a b)
+		0C S) S -) MOV
+		0C S) S -) MOV
+	NEXT inline
+
+		</code></pre><a name="2SWAP"></a>
+		<h5>ANS 6.1.0430 2SWAP</h5>
+		<p>CORE</p>
+		<p>( x1 x2 x3 x4 -- x3 x4 x1 x2 )</p>
+		<p>
+		Exchange the top two cell pairs.
+		</p><pre><code>
+
+	CODE 2SWAP ( a b c d  - c d a b )
+		S )+ D0 MOV
+		S )+ D1 MOV
+		S )+ D2 MOV
+		S )+ D3 MOV
+		D1 S -) MOV
+		D0 S -) MOV
+		D3 S -) MOV
+		D2 S -) MOV
+	NEXT
+
+		</code></pre><a name="&lt;"></a>
+		<h5>ANS 6.1.0480 < </h5>
+		<p>less-than CORE</p>
+		<p>( n1 n2 -- flag )</p>
+		<p>
+		flag is true if and only if n1 is less than n2.
+		</p><pre><code>
+
+	CODE &lt; ( n n - flag)
+		FALSE # D2 MOV
+		S )+ D0 MOV
+		S ) D1 MOV
+		\ destination relative to source
+		D0 D1 CMP  LT IF
+    		TRUE # D2 MOV
+		THEN
+		D2 S ) MOV
+	NEXT
+
+		</code></pre><a name="="></a>
+		<h5>ANS 6.1.0530 =</h5>
+		<p>CORE</p>
+		<p>( x1 x2 -- flag )</p>
+		<p>
+		flag is true if and only if x1 is bit-for-bit the same as x2.
+		</p><pre><code>
+
+	CODE = ( n n --flag)
+		FALSE # D2 MOV
+		S )+ D0 MOV
+		S )  D0 SUB
+		EQ IF
+    		TRUE # D2 MOV
+		THEN
+		D2 S ) MOV
+	NEXT  inline \ critical word in search_thread
+
+		</code></pre><a name="&gt;"></a>
+		<h5>ANS 6.1.0540 > </h5>
+		<p>CORE</p>
+		<p>( n1 n2 -- flag )</p>
+		<p>
+		flag is true if and only if n1 is greater than n2.
+		</p><pre><code>
+
+	CODE &gt; ( n n - flag)
+		FALSE # D2 MOV
+		S )+ D0 MOV
+		S ) D1 MOV
+		\ destination relative to source
+		D0 D1 CMP GT IF
+			TRUE # D2 MOV
+		THEN
+		D2 S ) MOV
+	NEXT
+
+		</code></pre><a name="_DUP"></a>
+		<h5>ANS 6.1.0630 ?DUP</h5>
+		<p>CORE</p>
+		<p>( x -- 0 | x x )</p>
+		<p>
+		Duplicate x if it is non-zero.
+		</p><pre><code>
+
+	CODE ?DUP ( n - 0| n n)
+		S ) TST NE  IF
+			S ) S -) MOV
+		THEN
+	NEXT inline
+
+		</code></pre><a name="@"></a>
+		<h5>ANS 6.1.0650 @</h5>
+		<p>CORE</p>
+		<p>( a-addr -- x )</p>
+		<p>
+		x is the value stored at a-addr.
+		</p><pre><code>
+
+	CODE @ ( addr -- 32b)
+		S )+ A0 MOV
+		A0 ) S -) MOV
+	NEXT inline
+
+		</code></pre><a name="ABS"></a>
+		<h5>ANS 6.1.0690 ABS</h5>
+		<p>CORE</p>
+		<p>( n -- u )</p>
+		<p>
+		u is the absolute value of n.
+		</p><pre><code>
+
+	CODE ABS ( n --u)
+		S ) D0 MOV MI IF
+			D0 NEG
+			D0 S ) MOV
+		THEN
+	NEXT inline
+
+		</code></pre><a name="AND"></a>
+		<h5>ANS 6.1.0720 AND</h5>
+		<p>CORE</p>
+		<p>( x1 x2 -- x3 )</p>
+		<p>
+		x3 is the bit-by-bit logical and of x1 with x2.
+		</p><pre><code>
+
+	CODE AND ( 32b 32b - 32b)
+		S )+ D0 MOV
+		D0 S ) AND
+	NEXT inline
+
+		</code></pre><a name="C!"></a>
+		<h5>ANS 6.1.0850 C!</h5>
+		<p>( char c-addr -- )</p>
+		<p>CORE</p>
+		<p>
+		Store char at c-addr.
+		When character size is smaller than cell size, only the number of low-order bits
+		corresponding to character size are transferred.
+		</p><pre><code>
+
+	CODE C! ( n a)
+		S )+ A0 MOV
+		S )+ D0 MOV
+		D0 A0 ) B. MOV
+	NEXT inline
+
+		</code></pre><a name="C@"></a>
+		<h5>ANS 6.1.0870 C@</h5>
+		<p>CORE</p>
+		<p>( c-addr -- char )</p>
+		<p>
+		Fetch the character stored at c-addr.
+		When the cell size is greater than character size, the unused high-order bits are all zeroes.
+		</p><pre><code>
+#5407 #5474 + [IF]
+	CODE C@ ( addr --n)
+		S )+ A0 MOV
+		A0 ) D0 B. MVZ
+		D0 S -) MOV
+	NEXT inline
+[ELSE]
+	CODE C@ ( addr --n)
+		S )+ A0 MOV
+		0 # D0 MOV
+		A0 ) D0 B. MOV
+		D0 S -) MOV   \ 8 bytes but allow for speed
+	NEXT inline
+[THEN]
+		</code></pre><a name="DROP"></a>
+		<h5>ANS 6.1.1260 DROP</h5>
+		<p>CORE</p>
+		<p>( x -- )</p>
+		<p>
+		Remove x from the stack.
+		</p><pre><code>
+
+	CODE DROP ( 32b-)
+		4 # S ADD
+	NEXT inline
+
+		</code></pre><a name="DUP"></a>
+		<h5>ANS 6.1.1290 DUP</h5>
+		<p>( x -- x x )</p>
+		<p>Duplicate x.</p>
+		<pre><code>
+
+	CODE DUP ( 32b - 32b 32b)
+		S ) S -) MOV
+	NEXT inline
+
+		</code></pre><a name="EXECUTE"></a>
+		<h5>ANS 6.1.1370 EXECUTE</h5>
+		<p>( i*x xt -- j*x )</p>
+		<p>
+		Remove xt from the stack and perform the semantics identified by it.
+		Other stack effects are due to the word EXECUTEd.
+		</p><pre><code>
+
+	CODE EXECUTE  ( addr --)
+		S )+ W MOV
+		WVECTOR
+
+		</code></pre><a name="FILL"></a>
+		<h5>ANS 6.1.1540 FILL</h5>
+		<p>( c-addr u char -- )</p>
+		<p>
+		If u is greater than zero, store char in each of u consecutive characters of memory
+		beginning at c-addr.
+		</p><pre><code>
+
+	CODE FILL ( a n c --)
+		S )+ D2 MOV       \ low 8 bits
+		S )+ D0 MOV EQ IF \ zero fill
+				4 # S ADD
+		ELSE \ data to move
+			S ) A0 MOV \ addr
+			D0 D1 MOV
+			S )+ D1 OR
+			03 # D1 AND NE IF ( have to use bytes)
+				BEGIN
+					D2 A0 )+ B. MOV
+				1 # D0 SUB
+				EQ UNTIL
+			ELSE ( long words thanks)
+				D2 D3 MOV
+				8 # D2 ASL
+				D3 D2 B. MOV
+				8 # D2 ASL
+				D3 D2 B. MOV
+				8 # D2 ASL
+				D3 D2 B. MOV
+				BEGIN
+					D2 A0 )+ MOV
+				4 # D0 SUB
+				EQ UNTIL
+			THEN
+		THEN
+	NEXT
+
+		</code></pre><a name="I"></a>
+		<h5>ANS 6.1.1680 I</h5>
+		<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+		<p>Execution: ( -- n|u ) ( R:  loop-sys -- loop-sys )</p>
+		<p>
+		n|u is a copy of the current (innermost) loop index. An ambiguous
+		condition exists if the loop control parameters are unavailable.
+		</p><pre><code>
+
+	CODE I    ( - 32b)
+		4 R) S -) MOV
+	NEXT
+
+		</code></pre><a name="INVERT"></a>
+		<h5>ANS 6.1.1720 INVERT</h5>
+		<p>( x1 -- x2 )</p>
+		<p>
+		Invert all bits of x1, giving its logical inverse x2.
+		</p>
+		<dl>
+		<dd>bit by bit invert, 1 complement</dd>
+		<dd>use NEGATE to get 2 complement</dd>
+		<dd>use 0= to convert from number to flag</dd>
+		<dd>use not to invert a flag.</dd>
+		</dl>
+		<dl>
+		<dt>See:</dt>
+		<dd><a HREF="#NEGATE">NEGATE ( x a-addr -- )</a></dd>
+		<dd><a HREF="#0=">0= ( x a-addr -- )</a></dd>
+		</dl><pre><code>
+
+	CODE INVERT  ( x1 -- x2 )
+		S )+ D0 MOV
+		-1 # D0 EOR
+		D0 S -) MOV
+	NEXT  inline
+
+		</code></pre><a name="J"></a>
+		<h5>ANS 6.1.1730 J</h5>
+		<p>
+		Interpretation: Interpretation semantics for this word are undefined.
+		</p>
+		<p>Execution: ( -- n|u ) ( R: loop-sys1 loop-sys2 -- loop-sys1 loop-sys2 )</p>
+		<p>
+		n|u is a copy of the next-outer loop index. An ambiguous condition exists
+		if the loop control parameters of the next-outer loop, loop-sys1, are
+		unavailable.
+		</p><pre><code>
+
+	CODE J    ( - 32b)
+		0C R) S -) MOV
+	NEXT
+
+		</code></pre><a name="LSHIFT"></a>
+		<h5>ANS 6.1.1805 LSHIFT</h5>
+		<p>( x1 u -- x2 )</p>
+		<p>
+		Perform a logical left shift of u bit-places on x1, giving x2.
+		Put zeroes into the least significant bits vacated by the shift.
+		An ambiguous condition exists if u is greater than or equal to the number of bits in a cell.
+		<p><pre><code>
+
+	CODE LSHIFT ( x1 shift --)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D0 D1 LSL
+		D1 S -) MOV
+	NEXT  inline  \ 8 bytes allow for speed
+
+		</code></pre><A name="M*"></a>
+		<h5>ANS 6.1.1810	M*</h5>
+		<p>( n1 n2 -- d )</p>
+		<p>
+		d is the signed product of n1 times n2.
+		This word is a useful early step in calculation, going to extra precision conveniently.
+		It has been in use since the Forth systems of the early 1970's.
+		</p>
+		<p>
+		We use 16 * 16 -> 32 as it gives a simple to follow solution.
+		</p>
+		<dl>
+		<dd>Ax + B  * Cx + D <=></dd>
+		<dd>DB + BCx + DAx + ACxx <=></dd>
+		<dd>ACxx + (DA+BC)x + DB</dd>
+		<dd>In this case x = 2**16</dd>
+		</dl><pre><code>
+
+
+
+	CODE  M* ( a b -- low high)
+			1 # D6 MOV
+			S ) D0 MOV MI IF
+				D6 NEG
+				D0 NEG
+				D0 S ) MOV
+			THEN
+			4 S) D0 MOV MI IF
+				D6 NEG
+				D0 NEG
+				D0 4 S) MOV
+			THEN
+			0 # D7 MOV
+
+			0 S) D0 W. MOV   ( A)
+			2 S) D1 W. MOV   ( B)
+			4 S) D2 W. MOV   ( C)
+			6 S) D3 W. MOV   ( D)
+
+			D3 D4 MOV        ( D)
+			D1 D4 MULU       ( BD)
+			D4 6 S) W. MOV   ( BD low bits)
+			D4 W. CLR        ( saved on stack nothing more to do with calc)
+			D4 SWP           ( BD high bits)
+			D2 D5 MOV        ( C )
+			D1 D5 MULU		 ( BC)
+			D4 D5 ADD
+			D7 D7 ADDX	     ( collect the carry)
+			D0 D3 MULU       ( AD )
+			D3 D5 ADD
+			0 # D3 MOV
+			D3 D7 ADDX       ( collect the carry)
+			D5 4 S) W. MOV   ( x bits )
+			D7 D5 W. MOV
+			D5 SWP           ( xx bits)
+			D0 D2 MULU		 ( AC)
+			D2 D5 ADD
+			D5  S ) MOV      ( xx and xxx bits)
+			D6 TST MI IF
+				4 S) D0 MOV
+				S )  D1 MOV
+				D0 NEG
+				D1 NEGX
+				D0 4 S) MOV
+				D1 S )  MOV
+			THEN
+		NEXT
+
+
+		</code></pre><a name="MAX"></a>
+		<h5>ANS 6.1.1870 MAX</h5>
+		<p>( n1 n2 -- n3 )</p>
+		<p>
+		n3 is the greater of n1 and n2.
+		</p><pre><code>
+
+	CODE MAX ( n1 n2 - n3 )
+		S )+ D0 MOV
+		S ) D0 CMP GT IF
+			D0 S ) MOV
+		THEN
+	NEXT inline \ 8 bytes allow for speed
+
+		</code></pre><a name="MIN"></a>
+		<h5>ANS 6.1.1880 MIN</h5>
+		<p>( n1 n2 -- n3 )</p>
+		<p>n3 is the lesser of n1 and n2. <p><pre><code>
+
+	CODE MIN ( n1 n2 - n3 )
+		S )+ D0 MOV
+		S ) D0 CMP LT IF
+			D0 S ) MOV
+		THEN
+	NEXT inline \ 8 bytes allow for speed
+
+		</code></pre><a name="MOVE"></a>
+		<h5>ANS 6.1.1900 MOVE</h5>
+		<p>( addr1 addr2 u -- )</p>
+		<p>
+		If u is greater than zero, copy the contents of u consecutive address units at
+		addr1 to the u consecutive address units at addr2.
+		After MOVE completes, the u consecutive address units at addr2 contain
+		exactly what the u consecutive address units at addr1 contained before the move.
+		<p><pre><code>
+
+	CODE MOVE  ( from to num --)
+		S )+ D0 MOV	NE IF 	\  ( data to move)
+			S )+ A1 MOV
+			S )+ A0 MOV
+			\ should the null case add time to the general case.
+			\ A0 A1 CMP EQ IF
+			\ 	NEXT assembler
+			\ THEN
+			\ can take out the address check here for 5307 as long word moves do not
+			\ have to be on longword boundries, however the rti1000 bus is not so
+			\ kind. But then the user should not be using rti1000
+			\ byte alligned addresses
+			D0 D1 MOV
+ 			3 # D1 AND EQ IF ( everything on a long word boundry)
+				\ destination relative to source
+				A0 A1 CMP HI IF \ move up in memory
+					D0 A0 ADD
+					D0 A1 ADD
+					BEGIN
+						A0 -) A1 -) MOV
+					4 # D0 SUB
+					EQ UNTIL
+					NEXT assembler
+				THEN \ move down in memory
+				BEGIN
+					A0 )+ A1 )+ MOV
+					4 # D0 SUB
+				EQ UNTIL
+				NEXT assembler
+			THEN
+			D0 D1 MOV
+ 			1 # D1 AND EQ IF ( everything on a word boundry)
+				\ destination relative to source
+				A0 A1 CMP HI IF \ move up in memory
+					D0 A0 ADD
+					D0 A1 ADD
+					BEGIN
+						A0 -) A1 -) W. MOV
+					2 # D0 SUB
+					EQ UNTIL
+					NEXT assembler
+				THEN \ move down in memory
+				BEGIN
+					A0 )+ A1 )+ W. MOV
+				2 # D0 SUB
+				EQ UNTIL
+				NEXT assembler
+			THEN
+			\ do it as a byte operations
+			A0 A1 CMP HI IF \ move up in memory
+				D0 A0 ADD
+				D0 A1 ADD
+				BEGIN
+					A0 -) A1 -) B. MOV
+				1 # D0 SUB
+				EQ UNTIL
+				NEXT assembler
+			THEN \ move down in memory
+			BEGIN
+				A0 )+ A1 )+ B. MOV
+				1 # D0 SUB
+			EQ UNTIL
+			NEXT assembler
+		THEN  \ nothing to move
+		8 # S ADD
+	NEXT
+
+		</code></pre><a name="NEGATE"></a>
+		<h5>ANS 6.1.1910 NEGATE</h5>
+		<p>( n1 -- n2 )</p>
+		<p>
+		Negate n1, giving its arithmetic inverse n2.
+		</p>
+		<dl>
+		<dt>See:
+		<dd> <a HREF="#INVERT">INVERT ( x a-addr -- )</a>
+		<dd> <a HREF="#0=">0= ( x a-addr -- )</a>
+		</dl><pre><code>
+
+	CODE NEGATE ( n - n)
+		S ) D0 MOV
+		D0 NEG
+		D0 S ) MOV
+	NEXT  inline
+
+		</code></pre><a name="OR"></a>
+		<h5>ANS 6.1.1980 OR</h5>
+		<p>( x1 x2 -- x3 )</p>
+		<p>
+		x3 is the bit-by-bit inclusive-or of x1 with x2.
+		</p><pre><code>
+
+	CODE OR  ( 32b 32b - 32b)
+		S )+ D0 MOV
+		D0 S ) OR
+	NEXT  inline
+
+		</code></pre><a name="OVER"></a>
+		<h5>ANS 6.1.1990 OVER</h5>
+		<p>( x1 x2 -- x1 x2 x1 )</p>
+		<p>
+		Place a copy of x1 on top of the stack.
+		</p><pre><code>
+
+	CODE OVER ( 32b1 32b2 - 32b1 32b2 32b1)
+		4 S) S -) MOV
+	NEXT  inline
+
+		</code></pre><a name="ROT"> <a/>
+		<h5>ANS 6.1.2160 ROT</h5>
+		<p>( x1 x2 x3 -- x2 x3 x1 )</p>
+		<p>
+		Rotate the top three stack entries.
+		</p><pre><code>
+
+	CODE ROT  ( 32b1 32b2 32b3 -- 32b2 32b3 32b1)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		S )+ D2 MOV
+		D1 S -) MOV
+		D0 S -) MOV
+		D2 S -) MOV
+	NEXT
+
+		</code></pre><a name="RSHIFT"></a>
+		<h5>ANS 6.1.2162 RSHIFT</h5>
+		<p>( x1 u -- x2 )</p>
+		<p>
+		Perform a logical right shift of u bit-places on x1, giving x2.
+		Put zeroes into the most significant bits vacated by the shift.
+		An ambiguous condition exists if u is greater
+		than or equal to the number of bits in a cell.
+		</p><pre><code>
+
+	CODE RSHIFT ( x1 shift --)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D0 D1 LSR
+		D1 S -) MOV
+	NEXT inline \ 8 bytes allow for speed.
+
+		</code></pre><a name="S&gt;D"></a>
+		<h5>ANS 6.1.2170 S>D</h5>
+		<p>( n -- d )</p>
+		<p>
+		Convert the number n to the double-cell number d with the same
+		numerical value.
+		</p><pre><code>
+
+	CODE S&gt;D ( n -- dl dh )
+		S ) D0 MOV MI IF
+			\ negative sign extend.
+			-1 # S -) MOV
+		ELSE
+			0 # S -) MOV
+		THEN
+	NEXT
+
+		</code></pre><a name="SWAP"></a>
+		<h5>ANS 6.1.2260 SWAP</h5>
+		<p>( x1 x2 -- x2 x1 )</p>
+		<p>
+		Exchange the top two stack items.
+		</p><pre><code>
+
+	CODE SWAP ( 32b1 32b2 - 32b2 32b1)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D0 S -) MOV
+		D1 S -) MOV
+	NEXT  inline \ 8 bytes allow for speed
+
+		</code></pre><a name="U&lt;"></a>
+		<h5>ANS 6.1.2340 U< </h5>
+		<p>( u1 u2 -- flag )</p>
+		<p>
+		flag is true if and only if u1 is less than u2.
+		</p><pre><code>
+
+	-1 TRUE ??=
+	CODE U&lt; ( u1 u2 --flag )
+		0 # D2 MOV
+		S )+ D0 MOV         \ u2
+		S )+ D1 MOV         \ u1
+		D0 D1 SUB           \ u1 u2 -
+		D2 D2 SUBX          \ carry if u2 is greater=
+							\ or u1 is less
+		D2 S -) MOV
+	NEXT
+
+		</code></pre><a name="U&gt;"></a>
+		<h5>ANS 6.2.2350 U></h5>
+		<p>u-greater-than CORE EXT</p>
+		<p>( u1 u2 -- flag )</p>
+		<p>
+		flag is true if and only if u1 is greater than u2.
+		</p><pre><code>
+
+	-1 TRUE ??=
+	CODE U&gt; ( u1 u2 --flag )
+		0 # D2 MOV
+		S )+ D0 MOV         \ u2
+		S )+ D1 MOV         \ u1
+		D1 D0 SUB           \ u1 u2 -
+		D2 D2 SUBX          \ carry if u1 is greater
+							\ or u2 is less
+		D2 S -) MOV
+	NEXT
+
+		</code></pre><a name="UM*"></a>
+		<h5>ANS 6.1.2360 UM*</h5>
+		<p>CORE</p>
+		<p>( u1 u2 -- ud )</p>
+		<p>
+		Multiply u1 by u2, giving the unsigned double-cell product ud.
+		All values and arithmetic are unsigned.
+		We use 16 * 16 -> 32 as it gives a simple to follow solution.
+		</p>
+		<dl>
+		<dd>Ax + B  * Cx + D <=>
+		<dd>DB + BCx + DAx + ACxx <=>
+		<dd>ACxx + (DA+BC)x + DB
+		<dd>In this case x = 2**16
+		</dl><pre><code>
+
+	CODE UM* ( a b -- low high)
+		0 # D7 MOV
+
+		0 S) D0 W. MOV   ( A)
+		2 S) D1 W. MOV   ( B)
+		4 S) D2 W. MOV   ( C)
+		6 S) D3 W. MOV   ( D)
+
+		D3 D4 MOV        ( D)
+		D1 D4 MULU       ( BD)
+		D4 6 S) W. MOV   ( BD low bits)
+		D4 W. CLR        ( saved on stack nothing more to do with calc)
+		D4 SWP           ( BD high bits)
+		D2 D5 MOV        ( C )
+		D1 D5 MULU		 ( BC)
+		D4 D5 ADD
+		D7 D7 ADDX	     ( collect the carry)
+		D0 D3 MULU       ( AD )
+		D3 D5 ADD
+		0 # D3 MOV
+		D3 D7 ADDX       ( collect the carry)
+		D5 4 S) W. MOV   ( x bits )
+		D7 D5 W. MOV
+		D5 SWP           ( xx bits)
+		D0 D2 MULU		 ( AC)
+		D2 D5 ADD
+		D5  S ) MOV      ( xx and xxx bits)
+	NEXT
+
+		</code></pre><a name="UM/MOD"></a>
+		<h5>ANS 6.1.2370 UM/MOD</h5>
+		<p>( ud u1 -- u2 u3 )</p>
+		<p>
+		Divide ud by u1, giving the quotient u3 and the remainder u2.
+		All values and arithmetic are unsigned. An ambiguous condition exists if
+		u1 is zero or if the quotient lies outside the range of a single-cell unsigned integer.
+		</p><pre><code>
+
+	 CODE UM/MOD ( low high domi -- rem quot )
+		S )+ D2 MOV \ domi
+		S )+ D0 MOV \ high
+		S )+ D1 MOV \ low
+		(um/mod) BSR
+		D0 S -) MOV  ( remainder)
+		D1 S -) MOV  ( quotent)
+	NEXT
+
+		</code></pre><a name="UNLOOP"></a>
+		<h5>ANS 6.1.2380 UNLOOP</h5>
+		<p>CORE</p>
+		<p>
+		Interpretation: Interpretation semantics for this word are undefined.
+		</p>
+		<p>Execution: ( -- ) ( R: loop-sys -- )</p>
+		<p>
+		Discard the loop-control parameters for the current nesting level.
+		An UNLOOP is required for each nesting level before the definition
+		may be EXITed. An ambiguous condition exists if the loop-control
+		parameters are unavailable.
+		</p><pre><samp>
+		Typical use:
+
+		: X  ...
+
+			limit first DO
+
+			   ... test IF ... UNLOOP EXIT THEN ...
+
+			LOOP
+		    ...
+		;
+		</pre></samp>
+		<p>
+		UNLOOP allows the use of EXIT within the context of DO ... LOOP and
+		related do-loop constructs. UNLOOP as a function has been called UNDO.
+		UNLOOP is more indicative of the action: nothing gets undone --
+		we simply stop doing it.
+		</p><pre><code>
+
+	CODE UNLOOP ( --)
+		R )+ W MOV
+		8 # R ADD
+		W R -) MOV
+	NEXT
+
+		</code></pre><a name="XOR"></a>
+		<h5>ANS 6.1.2490 XOR</h5>
+		<p>( x1 x2 -- x3 )</p>
+		<p>
+		x3 is the bit-by-bit exclusive-or of x1 with x2.
+		</p><pre><code>
+
+	CODE XOR ( 32b 32b - 32b)
+		S )+ D0 MOV
+		D0 S ) EOR
+	NEXT inline
+
+		</code></pre><a name="0&gt;"></a>
+		<h5>ANS 6.2.0280 0> </h5>
+		<p>CORE EXT</p>
+		<p>( n -- flag )</p>
+		<p>
+		flag is true if and only if n is greater than zero.
+		</p><pre><code>
+
+	CODE 0&gt; ( n -- flag)
+		FALSE # D1 MOV
+		S ) TST GT IF
+    		TRUE # D1 MOV
+		THEN
+		D1 S ) MOV
+	NEXT
+
+		</code></pre><a name="2R@"></a>
+		<h5>ANS 6.2.0415 2R@</h5>
+		<p>CORE EXT</p>
+		<p>
+		Interpretation: Interpretation semantics for this word are undefined.
+		</p>
+		<p>Execution: ( -- x1 x2 ) ( R:  x1 x2 -- x1 x2 )</p>
+		<p>
+		Copy cell pair x1 x2 from the return stack. Semantically equivalent to
+		R> R> 2DUP >R >R SWAP .
+		</p><pre><code>
+
+	CODE 2R@ ( -- x1 x2 )
+		R )+ W MOV
+		4 R) S -) MOV
+		R ) S -) MOV
+		W R -) MOV
+	NEXT
+
+		</code></pre><a name="&lt;&gt;"></a>
+		<h5>ANS 6.2.0500 <> </h5>
+		<p>CORE EXT</p>
+		<p>( x1 x2 -- flag )</p>
+		<p>
+		flag is true if and only if x1 is not bit-for-bit the same as x2.
+		</p><pre><code>
+
+	CODE &lt;&gt;  ( n n - flag )
+		FALSE # D2 MOV
+		S )+ D0 MOV
+		S ) D1 MOV
+		D0 D1 CMP NE IF
+			TRUE # D2 MOV
+		THEN
+		D2 S ) MOV
+	NEXT
+
+		</code></pre><a name="ERASE"></a>
+		<h5>ANS 6.2.1350 ERASE</h5>
+		<p>( addr u -- )</p>
+		<p>
+		If u is greater than zero, clear all bits in each of u consecutive address units
+		of memory beginning at addr.
+		<strong>COLDFORTH:</strong>
+		Coded for minimum branch delays on long word fill
+		This could be written using FILL, but it is an important word so it has been
+		left as code.
+		</p><pre><code>
+
+	CODE ERASE ( a n --)
+		S )+ D0 MOV NE IF
+			S )+ A0 MOV \ addr
+			D0 D1 MOV
+			03 # D1 AND EQ IF ( can use long)
+				\ D1 already contains zero after the alignment test
+				BEGIN
+					D1 A0 )+ MOV
+					4 # D0 SUB
+				EQ UNTIL
+				NEXT
+				assembler
+			THEN
+			01 # D1 AND EQ IF
+				BEGIN
+					D1 A0 )+ W. MOV
+					2 # D0 SUB
+				EQ UNTIL
+				NEXT
+				assembler
+			THEN
+       		0 # D1 MOV
+			BEGIN
+				D1 A0 )+ B. MOV
+				1 # D0 SUB
+			EQ UNTIL
+			NEXT
+			assembler
+		ELSE
+			4 # S ADD
+		THEN
+	NEXT
+
+		</code></pre><a name="NIP"></a>
+		<h5>ANS 6.2.1930 NIP</h5>
+		<p>( x1 x2 -- x2 )</p>
+		<p>Drop the first item below the top of stack.</p>
+		<pre><code>
+
+	CODE NIP  ( 32b1 32b2 -- 32b2)
+		S )+ S ) MOV
+	NEXT inline
+
+		</code></pre><a name="PICK"></a>
+		<h5>ANS 6.2.2030 PICK</h5>
+		<p>( xu ... x1 x0 u -- xu ... x1 x0 xu )</p>
+		<p>
+		Remove u. Copy the xu to the top of the stack. An ambiguous condition exists
+		if there are less than u+2 items on the stack before PICK is executed.
+		0 PICK is equivalent to DUP and 1 PICK is equivalent to OVER.
+		</p><pre><code>
+
+	CODE PICK ( n -- 32b )
+		S )+ D0 MOV
+		[ S D0 4 ] S -) MOV
+	NEXT  inline
+
+		</code></pre><a name="ROLL"></a>
+		<h5>ANS 6.2.2150 ROLL</h5>
+		<p>( xu xu-1 ... x0 u -- xu-1 ... x0 xu )</p>
+		<p>
+		Remove u. Rotate u+1 items on the top of the stack. An ambiguous condition exists if there are less than u+2 items on the stack
+		before ROLL is executed.
+		</p>
+		<p>
+		2 ROLL is equivalent to ROT, 1 ROLL is equivalent to SWAP and 0 ROLL is a null operation.
+		</p><pre><code>
+
+	CODE ROLL
+		[ S ]+ D0 MOV
+		[ S D0 4 ] A0 LEA
+		[ S D0 4 ] [ S -] MOV
+
+		BEGIN
+			[ A0 -] [ 4 A0 ] MOV
+			1 # D0 SUB
+		CS UNTIL
+		\ remember never have anything on the stack
+		\ on the wrong side of the stack pointer.
+		4 # S ADD
+	NEXT
+
+		</code></pre><a name="CS-PICK"></a>
+		<h5>ANS 15.6.2.1015 CS-PICK</h5>
+		<p>c-s-pick TOOLS EXT</p>
+		<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+		<p>
+		Execution: ( C: destu ... orig0|dest0 -- destu ... orig0|dest0 destu )( S: u -- )
+		</p>
+		<p>
+		Remove u. Copy destu to the top of the control-flow stack. An ambiguous
+		condition exists if there are less than u+1 items, each of which shall
+		be an orig or dest, on the control-flow stack before CS-PICK is executed.
+		</p>
+		<p>
+		If the control-flow stack is implemented using the data stack, u shall
+		be the topmost item on the data stack.
+		</p>
+		<p>
+		The intent is to reiterate a dest on the control-flow stack so that it
+		can be resolved more than once. For example:
+		</p><pre><samp>
+
+		\ Conditionally transfer control to beginning of loop
+		\ This is similar in spirit to C's "continue" statement.
+
+		: ?REPEAT  ( dest -- dest ) \ Compilation
+		           ( flag -- )      \ Execution
+			0 CS-PICK   POSTPONE UNTIL
+		; IMMEDIATE
+
+		: XX  ( -- ) \ Example use of ?REPEAT
+			BEGIN
+			...
+			flag ?REPEAT  ( Go back to BEGIN if flag is false )
+			...
+			flag ?REPEAT  ( Go back to BEGIN if flag is false )
+			...
+			flag UNTIL    ( Go back to BEGIN if flag is false )
+			...
+		;
+
+		</samp></pre><p>
+		As the compile stack is the data stack, and as each item is two stack items,
+		CS-PICK is equivilant to 2pick in this system.
+		</p><pre><code>
+
+	CODE CS-PICK ( n -- 32b )
+		S )+ D0 MOV
+		1 # D0 ASL
+		[ 4 S D0 4 ] S -) MOV
+		[ 4 S D0 4 ] S -) MOV
+	NEXT
+
+		</code></pre><a name="CS-ROLL"></a>
+		<h5>ANS 15.6.2.1020 CS-ROLL</h5>
+		<p>c-s-roll TOOLS EXT</p>
+		<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+		<p>Execution: ( C: origu|destu origu-1|destu-1 ... orig0|dest0 --
+                          origu-1|destu-1 ... orig0|dest0 origu|destu )( S: u -- )
+		</p>
+		<p>
+		Remove u. Rotate u+1 elements on top of the control-flow stack so that origu|destu is on top of the control-flow stack. An ambiguous condition exists if
+		there are less than u+1 items, each of which shall be an orig or dest, on the control-flow stack before CS-ROLL is executed.
+		</p>
+		<p>
+		If the control-flow stack is implemented using the data stack, u shall be the topmost item on the data stack.
+		</p><pre><code>
+
+	CODE CS-ROLL
+		[ S ]+ D0 MOV
+		1 # D0 ASL
+		[ S D0 4 ] A0 LEA
+		[ 4 S D0 4 ] [ S -] MOV
+		[ 4 S D0 4 ] [ S -] MOV
+		1 # D0 ADD
+		BEGIN
+			[ A0 -] [ 8 A0 ] MOV
+			1 # D0 SUB
+		CS UNTIL
+		\ remember never have anything on the stack
+		\ on the wrong side of the stack pointer.
+		8 # S ADD
+	NEXT
+
+		</code></pre><a name="TUCK"></a>
+		<h5>ANS 6.2.2300 TUCK</h5>
+		<p>( x1 x2 -- x2 x1 x2 )</p>
+		<p>
+		Copy the first (top) stack item below the second stack item.
+		</p><pre><code>
+
+	CODE TUCK ( 32b1 32b2 -- 32b2 32b1 32b2)
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D0 S -) MOV
+		D1 S -) MOV
+		D0 S -) MOV
+	NEXT
+
+		</code></pre><a name="WITHIN"></a>
+		<h5>ANS 6.2.2440 WITHIN</h5>
+		<p>( n1|u1 n2|u2 n3|u3 -- flag )</p>
+		<p>
+		Perform a comparison of a test value n1|u1 with a lower limit n2|u2 and an upper limit n3|u3,
+		returning true if either (n2|u2 < n3|u3 and (n2|u2 <= n1|u1 and n1|u1 < n3|u3)) or
+		(n2|u2 > n3|u3 and (n2|u2 <= n1|u1 or n1|u1 < n3|u3)) is true, returning false otherwise.
+		An ambiguous condition exists if n1|u1, n2|u2, and n3|u3 are not all the same type.
+		</p>
+		<p>
+		TRUE if lo <= n < hi
+		</p><pre><code>
+
+	CODE WITHIN ( value lo hi - t)
+		S )+ D0 MOV             \ hi
+		S )+ D1 MOV             \ lo
+		S )+ D2 MOV             \ n|u
+		FALSE # S -) MOV
+		D1 D0 SUB               \ hi lo -
+		D1 D2 SUB               \ value lo -
+		D0 D2 SUB               \ ( hi lo - ) ( value lo - ) -
+		CS IF
+			TRUE # S ) MOV
+		THEN
+	NEXT
+
+		</code></pre><a name="D+"></a>
+		<h5>ANS 8.6.1.1040 D+ </h5>
+		<p>DOUBLE</p>
+		<p>( d1|ud1 d2|ud2 -- d3|ud3 )</p>
+		<p>
+		Add d2|ud2 to d1|ud1, giving the sum d3|ud3.
+		</p><pre><code>
+
+	CODE D+ ( lo1 hi1  lo2 hi2 -- lo3 hi3 )
+		\ hi2 -> D0
+		\ lo2 -> D1
+		\ hi1 -> D2
+		\ lo1 -> D3
+		\ want
+		\ D2 hi3
+		\ D3 lo3
+		S ) \\ D3 D0 \\ MMOV
+		8 # S ADD
+		D1 D3 ADD
+		D0 D2 ADDX
+		\\ D3 D2 \\ S ) MMOV
+	NEXT
+
+		</code></pre><a name="D-"></a>
+		<h5>ANS 8.6.1.1050 D-</h5>
+		<p>DOUBLE</p>
+		<p>( d1|ud1 d2|ud2 -- d3|ud3 )</p>
+		<p>
+		Subtract d2|ud2 from d1|ud1, giving the difference d3|ud3.
+		</p><pre><code>
+
+	CODE D- ( lo1 hi1  lo2 hi2 -- lo3 hi3 )
+		\ hi2 -> D0
+		\ lo2 -> D1
+		\ hi1 -> D2
+		\ lo1 -> D3
+		\ want
+		\ D2 hi3
+		\ D3 lo3
+		S ) \\ D3 D0 \\ MMOV
+		8 # S ADD
+		D1 D3 SUB
+		D0 D2 SUBX
+		\\ D3 D2 \\ S ) MMOV
+	NEXT
+
+		</code></pre><a name="D2*"></a>
+		<h5>ANS 8.6.1.1090 D2*</h5>
+		<p>DOUBLE</p>
+		<p>( xd1 -- xd2 )</p>
+		<p>
+		xd2 is the result of shifting xd1 one bit toward the most-significant bit,
+		filling the vacated least-significant bit with zero.
+		</p><pre><code>
+
+	CODE D2* ( lo1 hi1 -- lo2 hi2 )
+		S )+ D0 MOV \ hi
+		S )+ D1 MOV \ lo
+		0 # D2 MOV
+		1 # D0 ASL
+		1 # D1 ASL
+		D2 D0 ADDX
+		D1 S -) MOV
+		D0 S -) MOV
+	NEXT
+
+		</code></pre><a name="D2/"></a>
+		<h5>ANS 8.6.1.1100 D2/</h5>
+		<p>DOUBLE</p>
+		<p>( xd1 -- xd2 )</p>
+		<p>
+		xd2 is the result of shifting xd1 one bit toward the least-significant bit, leaving the most-significant bit unchanged.
+		<br>
+		There is no ROXL instruction and I can see no better way
+		</p><pre><code>
+
+	CODE D2/ ( lo1 hi1 -- lo2 hi2 )
+		S )+ D0 MOV \ hi
+		S )+ D1 MOV \ lo
+		0 # D2 MOV
+		1 # D1 LSR
+		1 # D0 LSR
+		D2 D2 ADDX
+		1F # D3 MOV
+		D3 D2 ASL
+		D2 D1 OR
+		D1 S -) MOV
+		D0 S -) MOV
+	NEXT
+
+		</code></pre><a name="DABS"></a>
+		<h5>ANS 8.6.1.1160 DABS</h5>
+		<p>DOUBLE</p>
+		<p>( d -- ud )</p>
+		<p>
+		ud is the absolute value of d.
+		</p><pre><code>
+
+	CODE DABS ( lo1 hi1 -- lo2 hi2)
+		S ) D0 MOV MI IF
+			4 S) D1 MOV
+			D1 NEG     \ low
+			D0 NEGX    \ high
+			D1 4 S) MOV
+			D0 S ) MOV
+		THEN
+	NEXT
+
+		</code></pre><a name="DNEGATE"></a>
+		<h5>ANS 8.6.1.1230 DNEGATE</h5>
+		<p>DOUBLE</p>
+		<p>( d1 -- d2 )</p>
+		<p>d2 is the negation of d1.</p>
+		<pre><code>
+
+	CODE DNEGATE ( lo1 hi1 -- lo2 hi2 )
+		S )+ D0 MOV
+		S )+ D1 MOV
+		D1 NEG		\ low
+		D0 NEGX		\ high
+		D1 S -) MOV
+		D0 S -) MOV
+	NEXT
+
+		</code></pre><a name="2ROT"></a>
+		<h5>ANS 8.6.2.0420 2ROT</h5>
+		<p>DOUBLE EXT</p>
+		<p>( x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2 )</p>
+		<p>
+		Rotate the top three cell pairs on the stack bringing cell pair x1 x2 to
+		the top of the stack.
+		</p><pre><code>
+
+	CODE 2ROT  ( x5 x4 x3 x2 x1 x0 -- x3 x2 x1 x0 x5 x4 )
+		S ) \\ D5 D0 \\ MMOV
+		8 # S ADD
+		\\ D3 D0 \\ S ) MMOV
+		D5 S -) MOV
+		D4 S -) MOV
+	NEXT
+
+		</code></pre><a name="DU&lt;"></a>
+		<h5>ANS 8.6.2.1270 DU< </h5>
+		<p>DOUBLE EXT</p>
+		<p>( ud1 ud2 -- flag )</p>
+		<p>
+		flag is true if and only if ud1 is less than ud2.
+		</p><pre><code>
+
+	-1 TRUE ??=
+	CODE DU&lt; ( lo1 hi1 lo2 h1 2 --flag)
+		\ hi2 -> D0
+		\ lo2 -> D1
+		\ hi1 -> D2
+		\ lo1 -> D3
+		0 # D4 MOV \ for flag generation
+		S ) \\ D3 D0 \ MMOV
+		10 S) S LEA
+		D1 D3 SUB
+		D0 D2 SUBX
+		D4 D4 SUBX \ generate flag
+		D4 S -) MOV
+	NEXT
+
+		</code></pre><a name="CMOVE"></a>
+		<h5>ANS 17.6.1.0910 CMOVE</h5>
+		<p>STRING</p>
+		<p>( c-addr1 c-addr2 u -- )</p>
+		<p>
+		If u is greater than zero, copy u consecutive characters from the data space
+		starting at c-addr1 to that starting at c-addr2, proceeding character-by-character from
+		lower addresses to higher addresses.
+		</p>
+		<p>
+		If c-addr2 lies within the source region (i.e., when c-addr2 is not less
+		than c-addr1 and c-addr2 is less than the quantity c-addr1 u CHARS +),
+		memory propagation occurs.
+		</p>
+		<samp>
+		Typical use: Assume a character string at address 100: ABCD. Then after
+		<br>
+        100 DUP  CHAR+  3 CMOVE
+		<br>
+		the string at address 100 is AAAA.
+		</samp><pre><code>
+
+	CODE CMOVE
+		S )+ D1 MOV
+		S )+ A0 MOV
+		S )+ A1 MOV
+		1 # D1 SUB  CC IF
+			BEGIN
+				A1 )+ A0 )+ B. MOV
+			1 # D1 SUB
+			CS UNTIL
+		THEN
+	NEXT
+
+		</code></pre><a name="CMOVE&gt;"></a>
+		<h5>ANS 17.6.1.0920 CMOVE></h5>
+		<p>STRING</p>
+		<p>( c-addr1 c-addr2 u -- )</p>
+		<p>
+		If u is greater than zero, copy u consecutive characters from the data space starting at
+		c-addr1 to that starting at c-addr2, proceeding character-by-character from
+		higher addresses to lower addresses.
+		</p>
+		<p>
+		If c-addr1 lies within the destination region (i.e., when c-addr1 is greater than or
+		equal to c-addr2 and c-addr2 is less than the quantity c-addr1 u CHARS +),
+		memory propagation occurs.
+		</p>
+		<samp>
+		Typical use: Assume a character string at address 100: ABCD. Then after
+		<br>
+        100 DUP CHAR+ SWAP 3 CMOVE&gt;
+		<br>
+		the string at address 100 is DDDD.
+		</samp><pre><code>
+
+	CODE CMOVE&gt;
+		S )+ D1 MOV
+		S )+ A0 MOV
+		S )+ A1 MOV
+		D1 A1 ADD
+		D1 A0 ADD
+		1 # D1 SUB  CC IF
+			BEGIN
+				A1 -) A0 -) B. MOV
+			1 # D1 SUB
+			CS UNTIL
+		THEN
+	NEXT
+
+	</code></pre>
+</body>
+</html>
+
+
+
+

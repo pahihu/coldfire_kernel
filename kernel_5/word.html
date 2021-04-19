@@ -1,0 +1,567 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Transfer the token as a counted string. A space is placed at the end, but
+the space is not included in the count.
+</p>
+<p>
+_html_token will remove a token of the form &lt;name&gt;
+</p>
+<p>
+This is designed to support the use of XML files, this is not ANSI standard.
+</p>
+<p>
+The tag cannot include space but this is not an issue. &lt;something&gt; is one dictionary entry.
+&lt;something is another. The &lt;something entry has to look for the &gt;
+</p>
+    <pre> <code>
+	: _html_token { ( input_addr  -- addr n ) }{
+		variable _%output_base
+		}
+		DUP _%output_base !
+		BEGIN
+			&gt;IN @ #TIB @ &lt;
+		WHILE
+			DUP char@ [ BL 1 + ]T LITERAL &lt; IF \ found terminator
+				_%output_base @ -
+				_%output_base @
+				SWAP
+				\ skip the terminator
+				1 CHARS &gt;IN +!
+				EXIT
+			THEN
+			DUP char@ [CHAR] &gt; = IF
+				\ &gt; is included in the token. This is the way it has to be.
+                                \ &lt;something and &lt;something&gt; have to be different dictionary entries.
+				1 CHARS +
+				_%output_base @ -
+				_%output_base @
+				SWAP
+				\ skip the terminator
+				1 CHARS &gt;IN +!
+				EXIT
+			THEN
+			1 CHARS +
+			1 CHARS &gt;IN +!
+		REPEAT
+		\ If we get to here we have data but have run out of line.
+		\ This is a valid termination condition.
+		_%output_base @ -
+		_%output_base @
+		SWAP
+	;
+
+
+        \ conversion table; first 8 bytes contain the counted string
+        \ the next 4 the character
+        | CREATE _ct
+        HERE
+        04264754 t, 3B000000 t, $3E t,   \ GT
+        04264C54 t, 3B000000 t, $3C t,   \ LT
+        0526414D t, 503B0000 t, $26 t,   \ AMP
+        06265155 t, 4F543B00 t, $22 t,   \ QUOT
+
+        HERE SWAP -
+
+        | CONSTANT _ct_length
+        | $0C CONSTANT _ct_entry_length
+
+        \ look for equality between two strings
+        | : &= ( addr n addr n -- ( flag )
+                jump &lt;&gt; IF
+                        DROP
+                        2DROP
+                        FALSE
+                        EXIT
+                THEN
+                \ addr n addr
+                SWAP 0 DO
+                        \ addr1 addr2
+                        OVER I + char@ [ $20 -1 XOR ]T LITERAL AND
+                        OVER I + char@ [ $20 -1 XOR ]T LITERAL AND &lt;&gt; IF
+                                UNLOOP
+                                2DROP
+                                FALSE
+                                EXIT
+                        THEN
+                [ 1 CHARS ]T LITERAL +LOOP
+                2DROP
+                TRUE
+        ;
+
+
+
+        | : _convert_data ( addr n -- char true | false)
+                [ _ct _ct_length + ]T LITERAL
+                [ _ct ]T LITERAL DO
+                         2DUP I COUNT &= IF
+                                2DROP
+                                I [ 2 CELLS ]T LITERAL + @
+                                UNLOOP
+                                TRUE
+                                EXIT
+                         THEN
+                _ct_entry_length +LOOP
+                \ no luck
+                2DROP
+                FALSE
+        ;
+
+        : bytes>chars ( bytes -- chars )
+        ; inline
+
+        \ this forward scans and  modifies the input buffer if required
+        | : _amp_token { ( input_addr  -- ) }{
+		variable _%output_base
+                variable _%&gt;in
+                variable _%bytes
+		}
+		DUP _%output_base !
+                &gt;IN @ _%&gt;in !
+		BEGIN
+			_%&gt;in @ #TIB @ &lt;
+		WHILE
+			DUP char@ DUP [ BL 1 + ]T  LITERAL &lt; IF \ found terminator
+                                2DROP
+                                EXIT
+			THEN
+			[CHAR] ; = IF
+				1 CHARS +
+				_%output_base @ - _%bytes !
+				_%output_base @ _%bytes @  bytes&gt;chars \ convert bytes to char
+                                \ now find out if we have a special character
+                                \ add n (--
+                                _convert_data IF
+                                        \ char
+                                        _%output_base @ char!
+                                        \ character after the play area
+                                        #TIB @ &gt;IN @ - _%bytes @ - 0 MAX
+                                        \ count(--
+                                        _%output_base @ _%bytes @ + \ count from
+                                        _%output_base @ 1 CHARS + \ count from to
+                                        ROT MOVE
+                                        \
+                                        _%bytes @ 1 CHARS - NEGATE #TIB +!
+                                        EXIT
+                                THEN
+                                \ &unknown;
+				EXIT
+			THEN
+			1 CHARS +
+                        1 _%&gt;in +!
+		REPEAT
+                DROP
+        ;
+
+
+	??HEX
+
+
+        \ aa&lt;bb&gt; becomes aa &lt;bb&gt;
+        \ this is the full bottle
+	: (html_word) { variable _%test_character -- ( addr n ) }{
+	           variable _%output_base
+			}
+		TIB >IN @ + DUP _%output_base !
+		\ in_addr (--
+		_%test_character @  BL = IF
+			\ Scan as a XML file
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ BL &gt;  IF
+					DUP char@ [CHAR] &lt; = IF
+						\ input_addr(--
+						_html_token
+						EXIT
+					THEN
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ DUP [ BL 1 + ]T LITERAL &lt;
+                                                IF \ found terminator
+                                                        \ we take the termiantor out of the input stream
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+                                                DUP [CHAR] &lt; = IF
+                                                        \ we don't take the terminator out of the input stream
+                                                        \ it belongs to the next token
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							EXIT
+                                                THEN
+                                                \ this will alter input so &gt; etc are converted.
+                                                [CHAR] & = IF
+                                                        DUP _amp_token
+                                                THEN
+						\ else character to be added to current token
+						1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition.
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ we have a leading space, skip it
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			\ there is no token
+			zero
+			EXIT
+		ELSE
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ _%test_character @  &lt;&gt; IF
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ DUP _%test_character @ = IF \ found terminator
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+                                                \ & tokens can be embedded in strings.
+                                                [CHAR] & = IF
+                                                        DUP _amp_token
+                                                THEN
+                                                1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ leading terminator
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			zero
+		THEN
+	;
+
+        \ aa&lt;bb&gt; becomes aa&lt;bb&gt;
+	: (mixed_word) { variable _%test_character -- ( addr n ) }{
+	           variable _%output_base
+			}
+		TIB >IN @ + DUP _%output_base !
+		\ in_addr (--
+		_%test_character @  BL = IF
+			\ Scan as a XML file
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ BL &gt;  IF
+					DUP char@ $3C = IF
+						\ input_addr(--
+						_html_token
+						EXIT
+					THEN
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ DUP [ BL 1 + ]T LITERAL &lt; IF \ found terminator
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+                                                \ this will alter input so &gt; etc ar3e converted.
+                                                [CHAR] & = IF
+                                                        DUP _amp_token
+                                                THEN
+						\ else character to be added to current token
+						1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition.
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ we have a leading space, skip it
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			\ there is no token
+			zero
+			EXIT
+		ELSE
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ _%test_character @  &lt;&gt; IF
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ DUP _%test_character @ = IF \ found terminator
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+                                                \ & tokens can be embedded in strings.
+                                                [CHAR] & = IF
+                                                        DUP _amp_token
+                                                THEN
+                                                1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ leading terminator
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			zero
+		THEN
+	;
+
+
+        \ no html standards used.
+	: (standard_word) { variable _%test_character -- ( addr n ) }{
+	           variable _%output_base
+			}
+		TIB >IN @ + DUP _%output_base !
+		\ in_addr (--
+		_%test_character @  BL = IF
+			\ Scan as a XML file
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ BL &gt;  IF
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ [ BL 1 + ]T LITERAL &lt; IF \ found terminator
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+						\ else character to be added to current token
+						1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition.
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ we have a leading space, skip it
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			\ there is no token
+			zero
+			EXIT
+		ELSE
+			BEGIN
+				\ while there are characters
+				&gt;IN @ #TIB @ &lt;
+			WHILE
+				DUP char@ _%test_character @  &lt;&gt; IF
+					BEGIN
+						&gt;IN @ #TIB @ &lt;
+					WHILE
+						DUP char@ _%test_character @ = IF \ found terminator
+                                                        DROP
+                                                        _%output_base @ -
+							_%output_base @
+							SWAP
+							1 CHARS &gt;IN +!
+							EXIT
+						THEN
+                                                1 CHARS +
+						1 CHARS &gt;IN +!
+					REPEAT
+					\ If we get to here we have data but have run out of line.
+					\ This is a valid termination condition
+					_%output_base @ -
+					_%output_base @
+					SWAP
+					EXIT
+				THEN
+				\ leading terminator
+				1 CHARS _%output_base +!
+				1 CHARS +          \ in_addr(--
+				1 CHARS &gt;IN +!
+			REPEAT
+			zero
+		THEN
+	;
+
+\ all words have to be seperated by a space
+: standard_word ( --) ['] (standard_word) 'word ! ;
+
+\ html tags can be connected to html tags.
+: mixed_word ( --) ['] (mixed_word) 'word ! ;
+
+\ html tags can be connected to forth tags.
+\ if using this 0&lt; has to be stored in the file 0&amp;lt;
+: html_word ( --) ['] (html_word) 'word ! ;
+
+: (word) 'word @execute ;
+	</code> </pre>
+
+<a name="WORD"></a>
+<h5>6.1.2450 WORD</h5>
+<p>CORE</p>
+<p>( char "{chars}ccc{char}" -- c-addr )</p>
+<p>
+Skip leading delimiters. Parse characters ccc delimited by char.
+An ambiguous condition exists if the length of the parsed string is
+greater than the implementation-defined length of a counted string.
+</p>
+<p>
+c-addr is the address of a transient region containing the parsed word
+as a counted string. If the parse area was empty or contained
+no characters other than the delimiter, the resulting string has a
+zero length. A space, not included in the length, follows the string. A
+program may replace characters within the string.
+</p>
+<p>
+Note: The requirement to follow the string with a space is obsolescent
+and is included as a concession to existing programs that use
+<i>CONVERT</i>. A program shall not depend on the existence of the space.
+</p>
+<h5>COLDFORTH</h5>
+<p>
+The COLDFORTH <i>CONVERT</i> requires a counted string and does not
+need the terminating space. COLDFORTH does not make the concession.
+</p>
+<b>COLDFORTH</b> Strings of the form &amp;lt; etc. are convert to the represented character
+in the input buffer.
+</p>
+	<pre> <code>
+	: WORD ( c - a)
+		 (word)
+                 \ addr n (--
+                 \ we now have to see if it is a spacial character
+                 _token $make _token
+	;
+
+
+	: _defined   ( -- FALSE | xt -1 | xt 1 )
+		BL (word)         \ add n (--
+		sfind
+	;
+
+        : defined
+                _defined IF
+                        DROP TRUE
+                ELSE
+                        FALSE
+                THEN
+        ;
+	</code> </pre>
+<a name="PARSE"></a>
+<h5>6.2.2008 PARSE</h5>
+<p>CORE EXT</p>
+<p>( char "ccc<char>" -- c-addr u )</p>
+<p>
+Parse ccc delimited by the delimiter char.
+</p>
+<p>
+c-addr is the address (within the input buffer) and u is the length
+of the parsed string. If the parse area was empty, the resulting
+string has a zero length.
+</p>
+<p>
+<b>COLDFORTH</b> Strings of the form &amp;lt; etc. are convert to the represented character
+in the input buffer.
+</p>
+	<pre> <code>
+	: Sparse { 	variable %addr
+				variable %n
+				variable _%test_character -- ( addr count) }{
+				variable %end
+			}
+			%addr @ %n @ + %end !
+	                %addr @ \ in_addr (--
+			BEGIN
+				DUP %end @ &lt;
+			WHILE
+				DUP char@  DUP _%test_character @ = IF \ found terminator
+                                        DROP
+                                        %addr @ TUCK -  \ addr count (--
+					EXIT
+				THEN
+                                \ & tokens can be embedded in strings.
+                                [CHAR] & = IF
+                                        DUP _amp_token
+                                THEN
+				\ else character to be added to current token
+				1 CHARS +
+			REPEAT
+			\ If we get to here we have data but have run out of line.
+			\ This is a valid termination condition
+			%addr @ TUCK -  \ addr count (--
+	;
+
+	: $parse ( $ char -- addr count )
+		SWAP COUNT ROT Sparse
+	;
+
+	: PARSE ( test_character -- addr count)
+		TIB >IN @ +                               \ char addr(--
+		#TIB @ &gt;IN @ - ROT Sparse
+		\ added complication: the count doesn't include terminator
+		\ addr n(--addr is the start n is the number of characters before terminator
+		DUP 1+ &gt;IN +!
+	;
+		</code> </pre>
+
+</body>
+</html>

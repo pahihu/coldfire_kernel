@@ -1,0 +1,483 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+	</code> </pre>
+<h3>CVS packed terminal control decode</h3>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	HEX
+	: portC@ ( addr --)
+		DUP 01 AND IF
+			$FFFFFFFE AND
+			\ low byte
+			W@ 
+		ELSE
+			\ high byte
+			W@ 8 RSHIFT 
+		THEN
+		$FF AND
+	;
+
+	??HEX
+	$80 CONSTANT _#first_code_character
+	0  CONSTANT _#exit_code
+
+	: _=command { variable _%point variable _%count -- ( addr count data)  }{
+	
+		}
+
+		_%count @ IF
+			_%point @ portC@ 
+			1  _%point +!   \ we increment by one, these a codes not characters
+			-1 _%count +!
+			_#first_code_character - 
+		ELSE
+			_#exit_code
+		THEN
+
+		\ data (--
+		_%point @ 
+		_%count @
+		ROT 
+	;
+	</code> </pre>	
+<p>
+String until the first charcter greater than 7F.
+The result is placed in the buffer as a $ counted string
+If the next character is a command the rusult is a null string.
+</p>
+	<pre> <code> 
+	: _=string { variable _%point variable _%count variable _%buffer -- ( addr count buffer)  }{
+		variable _%out_pointer
+		}  
+		\ (--
+		_%buffer @  _%out_pointer !
+		#$count_length _%out_pointer +!   \ leave room for count
+		\ We don't have to transfer all the string in one bite so 
+		\ only transfer what will fit into the assigned buffer.
+		_%count @ #$maximum_data MIN zero ?DO
+			_%point @ portC@ DUP _#first_code_character &lt; IF  \ char(--
+				 _%out_pointer @ char!
+				 1 CHARS _%out_pointer +!
+				 1 _%point +!
+				 -1 _%count +!
+			ELSE  \ addr buffer (--
+				DROP
+				_%out_pointer @ #$count_length - _%buffer @ -    \ buffer bytes(--
+				bytes&gt;chars _%buffer @ $count!
+
+				_%point @
+				_%count @
+				_%buffer @
+
+				UNLOOP
+				EXIT
+			THEN
+		LOOP  \ addr buffer (--
+
+		_%out_pointer @ #$count_length - _%buffer @ -    \ buffer bytes(--
+		bytes&gt;chars _%buffer @ $count!
+
+		_%point @
+		_%count @
+		_%buffer @
+
+	;
+	</code> </pre>
+
+<p>
+Strings are extracted from the input buffer untill a control code is found. As the strings
+are moved to the output buffer they are padded dso the string count is always on a word
+boundry. The cont field after the last string is set to -1.
+</p> 
+   
+    <pre> <code>
+	: _=label_string { variable _%point variable _%count variable _%buffer -- ( addr count buffer)  }{
+		variable _%out_pointer
+		variable _%loop_count
+		}  
+		\ (--
+		_%buffer @ _%out_pointer !
+
+		\ We can only transfer what will fit into the assigned buffer.
+		\ We have to subtract #$count_length to leave room for the 
+		\ label strings terminator ( a count of -1)
+		_%count @ #$maximum_data #$count_length - bytes&gt;chars MIN DUP _%loop_count ! 
+		\ subtract from _%count we add what is left over back on
+		NEGATE _%count +!
+		
+		BEGIN
+			\ _%loop_count can go negative.
+			\ It occues if a string that can't fit into the output buffer is removed.
+			_%loop_count @ 0&gt;
+		WHILE
+			_%point @ portC@ DUP _#first_code_character &lt; IF  \ addr buffer char(--
+				\ character is a string count, the rules say the whole string must be in the 
+				\ buffer
+				DUP _%out_pointer @ $count!
+				#$count_length _%out_pointer +!   \ leave room for count
+				1 _%point +!
+				-1 _%loop_count +!
+				\ the just read caracters give the amount to be transfered
+				\ add buffer char(--
+				DUP _%loop_count @ &lt; IF
+					DUP _%point @ + _%point @ DO
+						I portC@ _%out_pointer @ char!
+						1 CHARS _%out_pointer +!
+					LOOP
+					\ Move pointer up 
+					DUP _%point +!
+					\ subtract from _%loop_count
+					NEGATE _%loop_count +!
+					\ take buffer pointer to word boundry
+					\ This is in the rules, the label strings are on a word boundry.
+					_%out_pointer @ 1 + -2 AND _%out_pointer !
+				ELSE 
+					\ can't fit into output buffer remove from input buffer only
+					\ This will make _%loop_count negate but the method of
+					\ updating _%count will deal with that.
+					DUP _%point +!
+					NEGATE _%loop_count +!
+				THEN
+			ELSE  \ addr buffer char(--
+				DROP 
+				\ label strings have to be terminated with -1
+				-1 _%out_pointer @ $count!
+				\ add remaining _%loop_count to _%count to undo damage done when the
+				\ whole value was subtracted
+				_%loop_count @ _%count +!
+
+				_%point @ 
+				_%count @
+				_%buffer @
+				EXIT
+			THEN
+		REPEAT  \ addr buffer (--
+		\ _%loop_count will be negatative if we couldn't fit the string in the output
+		\ buffer, otherwise it will be zero if here.
+		_%loop_count @ _%count +!
+		\ If the count has gone negative something is very wrong just set it back to
+		\ zero and be happy
+		_%count @ 0&lt; IF
+			0 _%count !
+		THEN
+
+		_%point @ 
+		_%count @ 
+		_%buffer @
+
+	;
+	</code> </pre>
+<p>
+The next character in input buffer is a byte parameter.
+</p>    
+    <pre> <code>
+	: _=c@ {  variable _%point variable _%count -- ( addr data)  }{
+		}
+		_%point @ portC@ 
+		1 _%point +!   \ we increment by one, these a codes not characters
+		-1 _%count +!
+		\ data (--
+		_%point @
+		_%count @ 
+		ROT
+	;
+	</code> </pre>
+
+<p>
+The next two characters in input buffer is a word parameter. They are stored high byte 
+low byte. The word can be on any byte boundry. 
+</p> 
+
+	<pre> <code>
+	: _=w@ { variable _%point variable _%count -- ( addr data)  }{
+		}
+
+		zero
+		2 0 DO
+			8 LSHIFT
+			_%point @ portC@ OR
+			1 _%point +!   \ we increment by one, these a codes not characters
+			-1 _%count +!
+			_%count @ 0= IF
+				UNLOOP
+				_%point @ 
+				_%count @ 
+				ROT
+				EXIT
+			THEN
+		LOOP
+
+		\ data (--
+		_%point @ 
+		_%count @ 
+		ROT
+	;
+	</code> </pre>
+
+<p>
+The next two characters in input buffer is a long word parameter. They are stored high byte 
+to low byte. The word can be on any byte boundry. 
+</p>
+
+	<pre> <code> 
+	: _=@ { variable _%point variable _%count -- ( addr data)  }{
+		}
+		zero
+		4 0 DO
+			8 LSHIFT
+			_%point @ portC@ OR
+			1 _%point +!   \ we increment by one, these a codes not characters
+			-1 _%count +!
+			_%count @ 0= IF
+				UNLOOP
+				_%point @ 
+				_%count @ 
+				ROT
+				EXIT
+			THEN
+		LOOP
+		\ data(--
+		_%point @ 
+		_%count @
+		ROT
+	;
+
+	\ 80h
+	: _=exit ( addr count--addr 0)
+		send ( flush type buffer to terminal) 
+		DROP zero
+	;
+
+	\ 81h 
+	: _=null ( addr count --addr count) 
+	;
+
+	\ 82h 
+	: _=send ( addr count--addr count)
+		send 
+	;
+
+	\ 83h 
+	\ ####
+	\ used in ilan to set the number of characters expected
+	\ Allows a task to ask for expect characters.
+	\ See SCONNECT and MCONNECT
+	\ This is a bug. following code is correct.
+	: _=end ( addr--addr)
+		TRUE ABORT" Session finished"
+	;
+
+	\ 84h 
+	: _=?data ( addr count--addr count)
+		\ Use in ILAN
+		TRUE =decode_?data !
+	;
+
+	\ 86h
+	: _=!control ( addr count --addr count ) 
+		_=c@  !control  
+	;
+
+	\ 87h 
+	: _=!eot ( addr count --addr count)
+		buffer _=string !eot 
+	;
+
+	\ 88h) 
+	: _=!device ( addr count--addr count) 
+		_=c@ ( !DEVICE ) DROP 
+	;
+
+	\ 89h 
+	: _=baud ( addr count-- addr count)    
+		_=@ baud 
+	;
+
+	\ 8Ah
+	: _=mark ( addr count--addr count)
+		buffer _=string COUNT MARK 
+	;
+
+	\ 8Bh 
+	: _=tab  ( addr count--addr count)   
+		_=c@ &gt;R _=c@ R&gt; TAB 
+	;
+
+	\ 99
+	\ Abort returns buffers
+	: _=abort  ( addr count--x)
+		ABORT 
+	;
+
+	\ 9A
+	: _=box ( addr count--addr count) 
+		_=c@ &gt;R _=c@ R&gt; .box
+	;
+
+	\ 9B
+	: _=element { ( addr count--addr count) }{
+		variable %temp1
+		variable %temp2
+		variable %temp3
+		variable %temp4
+		variable %temp5
+		variable %temp6
+		}
+		\ The items come out of the buffer in the wrong order
+		_=c@ %temp1 !
+		_=c@ %temp2 !
+		_=c@ %temp3 !
+		_=c@ %temp4 !
+		_=c@ %temp5 !
+		_=c@ %temp6 !
+		%temp6 @ %temp5 @ %temp4 @ %temp3 @ %temp2 @ %temp1 @ .element
+	;
+
+	\ 9C
+	: _=line ( addr count--addr count )
+		_=c@ &gt;R _=c@ &gt;R _=c@ 2R&gt;
+		 .line
+	;
+
+	\ 9D
+	: _=zed ( addr count --addr count)
+		_=c@ &gt;R _=c@ &gt;R _=c@ 2R&gt; SWAP .zed
+	;
+
+	\ A9
+	: _=labels  ( addr count--addr count )
+		buffer _=label_string labels
+	;
+
+	\ AA
+	: _=shift_labels ( addr count --addr count )
+		buffer _=label_string shift_labels
+	;
+
+	\ AF
+	: _=fgnd ( addr count --addr count )
+		_=c@ foreground
+	;
+
+	\ B0
+	: _=bgnd ( addr count--addr count)
+		_=c@ background
+	;
+
+	\ B1
+	: _=border ( addr count --addr count)
+		_=c@
+		border ;
+
+	\ AD
+	: _=message ( add count--addr count)
+		buffer _=string COUNT message
+	;
+
+	\ B2
+	: =?????? ( addr count--x)
+		buffer 10 DUMP  ." &lt;- Last string."
+		OVER 40 - 60 DUMP ." &lt;-within this."
+		user_base .h     ." &lt;- user_base"  send
+		TRUE ABORT" Unknown character in a decode string"
+	;
+
+	\ entries have the stack effect ( addr count-- addr count)
+	\ flag is true if the decode is to terminate.
+	CREATE decode_table
+	0 tw,
+	' _=exit          t, \ 80
+	' _=null          t, \ 81
+	' _=send          t, \ 82
+	' _=end           t, \ 83
+	' _=?data         t, \ 84
+	' clear           t, \ 85
+	' _=!control      t, \ 86
+	' _=!eot          t, \ 87
+	' _=!device       t, \ 88
+	' _=baud          t, \ 89
+	' _=mark          t, \ 8A
+	' _=tab           t, \ 8B
+	' PAGE            t, \ 8C
+	' CR              t, \ 8D
+	' &gt;|              t, \ 8E
+	' |&gt;              t, \ 8F
+	' |i              t, \ 90
+	' |o              t, \ 91
+	' |v              t, \ 92
+	' |h              t, \ 93
+	' |n              t, \ 94
+	' |tl             t, \ 95
+	' |tr             t, \ 96
+	' |bl             t, \ 97
+	' |br             t, \ 98
+	' _=abort         t, \ 99
+	' _=box           t, \ 9A
+	' _=element       t, \ 9B
+	' _=line          t, \ 9C
+	' _=zed           t, \ 9D
+	' normal          t, \ 9E
+	' rev             t, \ 9F
+	' blink           t, \ A0
+	' dim             t, \ A1
+	' udl             t, \ A2
+	' dim&blink       t, \ A3
+	' rev&blink       t, \ A4
+	' rev&dim         t, \ A5
+	' rev&udl         t, \ A6
+	' rev&dim&blink   t, \ A7
+	' rev&dim&udl     t, \ A8
+	' _=labels        t, \ A9
+	' _=shift_labels  t, \ AA
+	' cursor          t, \ AB
+	' no_cursor       t, \ AC
+	' _=message       t, \ AD
+	' no_message      t, \ AE
+	' _=fgnd          t, \ AF
+	' _=bgnd          t, \ B0
+	' _=border        t, \ B1
+	' =??????         t, \ B2
+
+	HERE decode_table - 4/ decode_table TW!
+	</code> </pre>
+	<a name="_(cvs_decode)"></a>
+	<pre> <code>
+	\ we have a small problem, the buffer may be in dual port memory
+	\ and dual port memory only supports word reads.
+	: _(cvs_decode) ( addr count --)
+		BEGIN
+			DUP 0&gt;
+		WHILE
+			buffer _=string
+                        \ addr count buffer(--
+                        \ first byte of buffer contains a character count
+                        \ data is transfered into buffer so type doesn't have to worry about
+                        \ dual port memory which can be word based.
+                        C@ IF
+			   buffer COUNT TYPE 
+			ELSE
+				_=command
+				decode_table vector
+			THEN
+		REPEAT
+		2DROP
+	;
+
+	: _cvs_terminal_codes_decode ( addr number --)
+		$buffer
+			_(cvs_decode)
+		kill_buffer
+	;
+	</code> </pre>
+
+</body>
+</html>
+

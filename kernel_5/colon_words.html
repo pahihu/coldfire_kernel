@@ -1,0 +1,555 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<a name="cell"></a>
+<h5>cell ( --n)</h5>
+<p>
+Size of cell in address units.
+</p>
+
+	<pre> <code>
+	4 CONSTANT cell
+	</code> </pre>
+
+<a name="4*"></a>
+<h5>4* ( x1--x2)</h5>
+<p>
+Muliply input by 4.
+</p>
+	<pre> <code>
+	: 4* 
+		two LSHIFT
+	;
+	</code> </pre>
+
+
+<a name="cell/"></a>
+<h5>cell/ ( n -- cells)</h5>
+<p>
+	Take address units and convert back to cells.
+</p>
+	<pre> <code>
+	: cell/ ( n -- cells
+		4/
+	; 
+	</code> </pre>
+
+
+<a name="8*"></a>
+<h5>8* ( --n)</h5>
+<p>
+Input by 8.
+</p>
+	<pre> <code>
+	: 8*  ( x1 -- x2)
+		three LSHIFT 
+	;   
+	</code> </pre>
+
+
+<a name="8/"></a>
+<h5>8/ ( x1--x2)</h5>
+<p>
+Input divided by 8.
+</p>
+	<pre> <code>
+	:  8/  ( x1 -- x2)
+		three RSHIFT 
+	;   
+	</code> </pre>
+
+
+<a name="16*"></a>
+<h5>16* ( x1--x2)</h5>
+<p>
+Input by 8.
+</p>
+	<pre> <code>
+	: 16* ( x1 --x2)
+		four LSHIFT 
+	;   
+	</code> </pre>
+
+
+<a name="16/"></a>
+<h5>16/ ( x1--x2)</h5>
+<p>
+Input divided by 16.
+</p>
+	<pre> <code>
+	: 16/  ( x2 -- x2) 
+		four RSHIFT
+	; 
+	</code> </pre>
+
+
+<a name="2+"></a>
+<h5>2+ ( n1|u1--n2|u2)</h5>
+<p>
+Two is added to the input.
+</p>
+	<pre> <code>
+	: 2+  ( u1|n1 -- u2|n2)
+		two +
+	;    
+	</code> </pre>
+
+
+<a name="2-"></a>
+<h5>2- ( n1|u1--n2|u2)</h5>
+<p>
+Two is subtracted from the input.
+</p>
+	<pre> <code>
+	: 2-  ( u1|n1 -- u2|n2)
+		two -
+	;    
+	</code> </pre>
+
+
+<a name="3+"></a>
+<h5>3+ ( n1|u1--n2|u2)</h5>
+<p>
+Three is added to the input.
+</p>
+	<pre> <code>
+	: 3+  ( u1|n1 -- u2|n2)
+		three +
+	;    
+	</code> </pre>
+
+
+<a name="4+"></a>
+<h5>4+ ( n1|u1--n2|u2)</h5>
+<p>
+Four is added to the input.
+</p>
+	<pre> <code>
+	: 4+  ( u1|n1 -- u2|n2)
+		four +
+	;
+	</code> </pre>
+
+
+<a name="4-"></a>
+<h5>4- ( n1|u1--n2|u2)</h5>
+<p>
+Four is subtracted from the input.
+</p>
+	<pre> <code>
+	: 4-  ( u1|n1 -- u2|n2)
+		four -
+	; 
+	</code> </pre>
+
+
+<a name="3*"></a>
+<h5>3* ( n1|u1--n2|u2)</h5>
+<p>
+Input is multipied by 3.
+</p>
+	<pre> <code>
+
+	: 3*  ( u1|n1 -- u2|n2)
+		three *
+	;    
+	</code> </pre>
+
+
+<a name="8+"></a>
+<h5>8+ ( n1|u1--n2|u2)</h5>
+<p>
+Eight is added to the input.
+</p>
+	<pre> <code>
+	: 8+ ( u1|n1 -- u2|n2)
+		eight +
+	;	     
+	</code> </pre>
+
+
+<a name="8-"></a>
+<h5>8- ( n1|u1--n2|u2)</h5>
+<p>
+Eight is subtracted from the input.
+</p>
+	<pre> <code>
+	: 8- ( u1|n1 -- u2|n2)
+		eight -
+	;
+	</code> </pre>
+
+
+<a name="dup@"></a>
+<h5>dup@ ( a-addr--a-addr value)</h5>
+<p>
+Duplicate the top stack item and fetch the data.
+</p>
+	<pre> <code>
+	: dup@ ( addr -- addr 32b )
+		DUP @
+	; inline
+	</code> </pre>
+
+
+<a name="3dup"></a>
+<h5>3dup ( x1 x2 x3 -- x1 x2 x3 x1 x2 x3 )</h5>
+<p>
+Top three stack items a duplicated..
+</p>
+	<pre> <code>
+	: 3DUP ( a b c -- a b c a b c)
+		jump jump jump
+	;
+	</code> </pre>
+
+
+<a name="$move"></a>
+<h5>$move ( addr1 addr2 max--)</h5>
+<p>
+Move the counted string pointed to by addr1 to addr2, the length of the data area 
+at addr2 is given by max.<br>
+max includes the character count. It is the receiving data area length
+</p>
+	<pre> <code>
+   : $move ( addr1 addr2 buffer_size --)
+		ROT           \ addr2 max addr1(--
+		COUNT         \ addr2 max addr1+1 characters(--
+		CHARS         \ addr2 max addr1+1 bytes(--	
+		#$count_length +  \ addr2 max addr1+1 n1
+		ROT           \ addr2 addr1+1 n1 max(--
+		MIN           \ addr2 adr1+1 n2--
+		SWAP #$count_length -       \ addr2 n2 addr1(--
+		-rot          \ addr1 addr2 n2(--
+		MOVE
+	;
+
+
+	</code> </pre>
+<a name="dgt"></a>
+<h5>d></h5>
+<p>
+Signed compare two double numbers.  If d1 > d2 , return TRUE.
+</p>
+
+	<pre> <code>
+	: d>            ( d1 d2 -- f )
+		2SWAP D< 
+	; 
+	</code> </pre>
+
+<a name="not"></a>
+<h5>not ( n1|u1--n2|u2)</h5>
+<p>
+Just like 0=, documents the fact that you expected a flag.
+See also <a HREF="#0=">0=</a> , <a HREF="#INVERT">INVERT</a> 
+and <a HREF="#NEGATE">NEGATE</a>.  
+</p>
+	<pre> <code>
+
+	: not  ( flag -- flag1) 
+		0= 
+	; inline   
+	</code> </pre>
+<a name="utod"><h5>u&gt;d</h5>
+</a>
+<p>
+	Change unsigned number to double
+</p>
+
+	<pre> <code>
+	: u>d ( u --dl dh )
+		0
+	; inline
+	</code> </pre>
+<a name="dtou"></a>
+<h5>d&gt;u</h5>
+<p>
+	Change double to unsigned, no error checking
+</p>
+  
+	<pre> <code>
+	: d>u ( u --dl dh )
+		DROP
+	; inline
+	</code> </pre>
+
+
+<a name="u/mod"></a>
+<h5>u/mod ( u1 u2 -- rem quot )</h5>
+<p>
+Two unsigned numers are divided and the remaimder and quotent are returned.
+</p>
+
+	<pre> <code>
+	: u/mod ( u1 u2 -- rem quot )
+		>R u>d R> UM/MOD
+	;
+	</code> </pre>
+
+
+<a name="mu/mod"></a>
+<h5>mu/mod ( d1 u -- rem d2 )</h5>
+<p>
+A double number is divided and a remainder and double number are returned.
+This is used in # . The divider is the contents of BASE the remainder is a
+character. The number returned is what remains after the division.
+</p>
+	<pre> <code>
+	: mu/mod   ( lo hi u -- rem lo hi )
+		>R zero  R@           \ lo hi zero u
+		UM/MOD                \ lo rem quot (--
+		R>                    \ lo rem quot u<-
+		SWAP                  \ lo rem u quot (--
+		>R                    \ lo rem u (--
+		UM/MOD                \ rem quot (--
+		R>                    \ rem l h (--
+	;
+	</code> </pre>
+
+
+<a name="2**"></a>
+<h5>2** ( n1 -- x1 )</h5>
+<p>
+Raise 2 to the specified power
+</p>
+<pre> <samp>
+	2 2** -> 4
+</samp> </pre>
+	<pre> <code>
+	: 2** ( n - x1)
+		one SWAP LSHIFT
+	;
+	</code> </pre>
+
+
+<a name="@execute"></a>
+<h5>@execute ( a-addr--  )</h5>
+<p>
+A value is fetched form address, if non zero it is used as a
+execution token.
+</p>
+	<pre> <code>
+	: @execute ( addr --)
+		@ ?DUP IF EXECUTE THEN
+	;
+	</code> </pre>
+<h3>Additioanl shift operators</h3>
+<a name="&gt;asl"></a>
+<h5> >asl ( value -- asl_value )</h5>
+<p>
+Work out the asl value required to set the
+highest bit set in the value supplied.
+</p>
+<pre>
+	eg:  4 >asl -> 2     2 2** -> 4
+	     5 >asl -> 2
+</pre>
+	<pre> <code>
+	: >asl ( value -- asl_value)
+		zero SWAP                 \ count value (--
+		BEGIN
+			1 RSHIFT
+			DUP not IF
+				DROP
+				EXIT
+			THEN
+			SWAP 1+ SWAP
+		AGAIN
+	;
+	</code> </pre>
+<a name="$&lt;&lt;"></a>
+<h5> << ( x1 u --x2)</h5>
+<p>IEEE1275</p>
+<p>
+Synonym for lshift
+</p>
+	<pre> <code>
+	: << ( x1 u --x2)
+		LSHIFT ; inline
+	</code> </pre>
+
+<h5> >> ( x1 u --x2)</h5>
+<p>IEEE1275</p>
+<p>
+Synonym for rshift
+</p>
+	<pre> <code>
+	: >> ( x1 u --x2)
+		RSHIFT ; inline
+	</code> </pre>
+<a name="vector"><h5>vector</h5></a>
+<p>
+Vector to entry in table, n is the entry number, addr is the
+base address of the table.
+</p>
+	<pre> <code>
+	zero
+	| DUP CONSTANT _#vector_table_count  2+
+	| DUP CONSTANT _#vector_table_data   DROP
+
+
+	: vector ( n addr --)
+		TUCK _#vector_table_count + W@ 1- MIN
+		CELLS
+		_#vector_table_data + + @execute
+	;
+	</code> </pre>
+        \ <a name="-leading"></a>
+<p>
+Remove leading blanks
+</p>
+	<pre> <code>
+	: -leading  { ( variable _%addr ) variable _%number -- ( a2 n2 ) }
+		_%number @ zero DO
+			DUP char@ BL <> IF
+				_%number @ I -
+				UNLOOP
+				EXIT
+			THEN
+			1 CHARS +
+		LOOP
+		\ get to here nothing but blank
+		zero
+	;
+
+
+
+    CREATE NULL 0 t,
+
+        \ <a name="$="></a>
+	: $=  ( addr addr -- flag)
+		2DUP $count@ SWAP $count@ <> IF
+			2DROP FALSE EXIT
+		THEN
+		DUP $count@ >R
+		#$count_length + SWAP #$count_length +
+		R> zero DO
+			OVER char@ OVER char@ <> IF
+				2DROP
+				UNLOOP
+				FALSE
+				EXIT
+			THEN
+			1 CHARS +
+			SWAP
+			1 CHARS +
+		LOOP
+		2DROP
+		TRUE
+	;
+
+        \ <a name="$make"></a>
+	\ convert a stack described string to a counted string
+	\ The inverse of COUNT
+	: $make  ( source number destination --)
+	   2DUP $count!
+	   #$count_length + SWAP MOVE
+	;
+
+        \ <a name="-$trailing"></a>
+        : -$trailing ( addr --)
+    	        COUNT -TRAILING SWAP #$count_length - $count!
+        ;
+
+        \ <a name="$&lt;"></a>
+
+	_#less -1 ??=
+        : $< ( $1 $2 --flag)
+		SWAP COUNT ROT COUNT COMPARE 0< ;
+
+    \ Non standard
+        \ <a name="$&gt;"></a>
+	_#greater 1 ??=
+        : $> ( $1 $2 --flag)
+		SWAP COUNT ROT COUNT COMPARE 0>
+	;
+
+        \ <a name="$+"></a>
+	: $+ { ( $1 $2 ) variable %addr  variable %buffer_length -- }{
+		variable %base
+		variable %total_count }
+		%addr @ %base !
+		\ room for count
+		#$count_length NEGATE %buffer_length +!
+		#$count_length %addr +!
+
+		SWAP COUNT %buffer_length @ MIN DUP %total_count !
+		%addr @ SWAP MOVE
+		\ $2(--
+		%total_count @ NEGATE %buffer_length +!
+		%total_count @ %addr +!
+		COUNT %buffer_length @ MIN DUP %total_count +!
+		%addr @ SWAP MOVE
+		%total_count @ %base @ $count!
+	;
+
+        \ <a name="$move"></a>
+        : $move ( addr1 addr2 buffer_size --)
+		ROT           \ addr2 max addr1(--
+		COUNT         \ addr2 max addr1+1 characters(--
+		CHARS         \ addr2 max addr1+1 bytes(--
+		#$count_length +  \ addr2 max addr1+1 n1
+		ROT           \ addr2 addr1+1 n1 max(--
+		MIN           \ addr2 adr1+1 n2--
+		SWAP #$count_length -       \ addr2 n2 addr1(--
+		-rot          \ addr1 addr2 n2(--
+		MOVE
+	;
+
+        \ <a name="unaligned!"></a>
+
+	\ The coldfire can handle unaligned operations
+	: unaligned! ( value addr --)
+		!
+	; inline
+
+        \ <a name="unaligned@"></a>
+	: unaligned@ ( addr --)
+		@
+	; inline
+
+        \ <a name="unalignedW@"></a>
+	: unalignedW@ ( addr --)
+		W@
+	; inline
+
+          \ <a name="unalignedW!"></a>
+	: unalignedW! ( addr --)
+		W!
+	; inline
+
+
+
+
+	</code> </pre>
+<a name="cell_aligned"><h5>cell_aligned ( addr1 -- addr2 )</h5></a>
+<p>
+OR the two double numbers
+</p>
+        <pre><code>
+        : cell_aligned ( addr -- a-addr)
+		3 + -4 AND ;
+
+	</code> </pre>
+<a name="line_aligned"><h5>line_aligned ( addr1 -- addr2 )</h5></a>
+<p>
+OR the two double numbers
+</p>
+        <pre><code>
+	\ line aligned, needed for fast DMA
+	: line_aligned ( addr -- a-addr)
+		$0F + -10 AND ;
+
+	</code> </pre>
+
+
+</body>
+</html>

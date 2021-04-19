@@ -1,0 +1,501 @@
+<html>
+<head>
+<title>CVS FORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>COLDFORTH Multitasking</h2>
+<p>
+If a computer is controlling a machine, TCP/IP should have a low priority. 
+Stopping the machine at limit switches, generating a nice function output; 
+they are all things of greater importance. What does it matter if a couple 
+of datagrams get dropped, the network has probable dropped some anyway. 
+The whole TCP/IP protocol suite is designed around the 
+assumption that datagram delivery is unreliable.
+</p>
+<p>
+COLDFORTH supports preemptive multitasking and places TCP/IP communication priority 
+a level above the lowest level. The lowest level is used for user input.
+Both levels are below the priority levels used to control the machinery. 
+</p>
+<p>
+TCP/IP requires the timeout of routes, the timeout of ARP entries, timeout of 
+defragmentation attempts, and the detection of TCP inaction. All these functions are placed in 
+tasks that sit on the lowest priority level along with terminal input and 
+buffer defragmentation. Getting the data through has a higher priority.
+</p>
+<p>
+Having a preemptive multitasker allows you to give the plant priority and still enjoy
+the benefits TCP/IP brings to industrial control.
+</p>
+<p>
+This article looks at why preemptive multitasking is important and how it is implemented 
+in COLDFORTH.
+</p>
+
+<h3>Why is time important?</h3>
+<p>
+If you're using your computer to stop a piece of machinery at a limit switch 
+or to generate time based waveforms; time matters. 
+If you don't stop at the limit switch you run into the end stops. 
+If you make a mess of an analog function generating a speed reference the equipment 
+will not accelerate smoothly placing extra stress on the equipment and occupants.
+</p>
+<p>
+Let's take a closer look at waveform generation. In the real world 
+you create an S curve when generating a speed reference, such a curve limits 
+the jerk ( the derivative of acceleration). For our example we will 
+look at the generation of a simple ramp.
+</p>
+<p>
+The desired function is.
+</p>
+<img src="./ramp.png" HEIGHT=157 WIDTH=185 >
+<p>
+If you implement your software well and take a close look at the output you will see what
+is shown below.
+</p>
+<img src="./ramp1.png" HEIGHT=235 WIDTH=424 >
+<p>
+If you schedule badly but take into account the elapsed time, things look good 
+at a distance. The magnified image is an irregular staircase. If this
+was controlling a DC machine the big steps would represent large current demands, current
+demands that could lead to equipment failure, or in extreme cases current demands
+the real world can't deliver.  
+<p>
+<img src="./ramp2.png" HEIGHT=237 WIDTH=422 >
+<p>
+And if you schedule badly, and don't take into account the elapsed time things don't look 
+good even at a distance. As the diagram below shows.
+</p> 
+<img src="./ramp3.png" HEIGHT=240 WIDTH=412 >
+
+<h3>To get the smooth option do I need preemptive multitasking?</h3>
+<p>
+The sort answer is no. You can do it with no multitasking. If an application 
+programmer was trying to do the job with an OS that supported
+no multitasking they would simply call the ramp function regularly.
+<p>
+<pre> <samp>
+: anns_ramp_function
+	whatever_is_required
+;
+
+
+: my_function ( --)
+	do_some_of_my_stuff
+	anns_ramp_function
+	do_some_more_of_my_stuff
+	\ forget ann I need to get this job done
+	\ anns_ramp_function
+	and_so_on
+;
+</samp> </pre>
+<p>
+If you do it this way all code has to contain calls to unrelated code.
+Not a very modular solution, and the reason why many FORTH systems support
+a single loop multitasker. The sample code them becomes.
+</p>
+<pre> <samp>
+#clock_low task: anns_ramp_function
+	BEGIN
+		whatever_is_required
+		xpause
+	AGAIN
+;task
+
+
+: my_function ( --)
+	do_some_of_my_stuff
+	xpause
+	do_some_more_of_my_stuff
+	\ forget every one else I need to get this job done
+	\ xpause
+	and_so_on
+;
+</samp> </pre>
+<p>
+In the FORTH environment switching from one task to the next in a task loop
+is a simple matter. You push the state of the FORTH environment onto a stack, 
+save the stack pointer into a task specific location and start the next task. 
+COLDFORTH is a subroutine threaded forth that supports
+local variables and objects. To switch tasks within a loop:
+</p>
+<ul>
+<li>Pushes the current local variable pointer onto the data stack</li>
+<li>Pushes the current object pointer onto the data stack</li>
+<li>Pushes the return stack pointer onto the data stack</li>
+<li>Store the current data stack pointer into the tasks user area</li>
+<li>Active the next task in the loop</li>
+</ul>
+<p>
+There are FORTHS that support single loop multitaskers, but don't maintain
+the local variable and object pointer in registers. These FORTH will
+switch tasks even faster.
+</p>
+<p>
+The single loop multitasker brings one big advantage. You do not have to 
+know anything about the other functions, you simply exit to the multitasker
+often, and give others a go.
+</p>
+<p>
+There a two major problems:
+</p>
+<ul>
+<li>All tasks have to be nice</li>
+<li>If the system is overloaded the OS has no idea what is important and what is not.</li>
+</ul>
+
+<h4>A preemptive scheduler</h4>
+<p>
+A preemptive scheduler is run by an interrupt source. The interrupt can be anything; 
+a clock, or if your computer is dealing with video images the horizontal sync. Whatever 
+the event, the idea is simple. When the event occurs you suspend the low
+priority stuff ( which hopefully is where you are at) and start the high 
+priority stuff. It then doesn't matter how  the low priority stuff behaves.
+</p>
+<p>
+Preemptive multitasking can be taken to extremes, where every process is scheduled 
+independently of every other. This is how Unix works. But even in these
+environments single loop multitasking is implemented within the process. They are
+called threads.
+<p>
+For preemptive multitasking to work you need to be able to suspend the 
+low priority stuff and restart it from where you left off. When you store the 
+low priority task you have to store the entire machine state. This involves a lot more
+work than switching tasks within a loop. COLDFORTH running on the COLDFIRE has 
+to save 16 general purpose registers and 3 MAC registers.
+</p>
+<p>
+On a processor running Unix properly, there is a memory protection system that limits 
+the memory a process can access. Unix task switch code has to deal with the memory
+protection system; saving what is, and setting things up for what will be.
+</p>
+<h3>The COLDFORTH scheduler</h3>
+<p>
+There are many different ways to schedule tasks in a preemptive environment. COLDFORTH
+has a limited number of tasks loops and the loops are scheduled in a well defined
+manner.
+</p>
+<p>
+When you initiate a reschedule in an interrupt routine you set the active flag true
+for the level you want scheduled, and you make sure the priority level to be scheduled
+next ( <i>_xlevel_next</i>) is at least as high as the priority of the level you 
+want scheduled. 
+</p>
+<p>
+When the OS switches from supervisor state to user state it looks at the priority
+of the level currently being run ( <i>_xlevel</i>), if it is lower than 
+<i>_xlevel_next</i> the OS suspends the current level and activates the higher level.
+</p>
+<p>
+The diagram below shows what happens when a digital interrupt routine calls for
+a reschedule.
+</p>
+<img src="./tasking.png" HEIGHT=445 WIDTH=789 >
+<h4>Description of above diagram follows </h4>
+
+When the interrupt occurs the multitasker was running clock_medium. The active flag 
+is still set for clock_ip. Clock_low has the repeat flag set, as is always the case 
+for the lowest priority level.
+<br> <br>
+The digital1 interrupt sets the active flag for the digital1 task loop, and raises 
+the priority to that level. When the system switches back from supervisor state 
+to user state it suspends clock_medium and starts the digital1 task. 
+When the digital1 task loop is started the active flag for the level is reset.
+<br>
+<br>
+When the digital1 tasks are finished, the level switching code looks to see if the 
+digital2 level was suspended it wasn't so it looks at the active flag. It is not 
+set so nothing in the digital2 level is executed. The clock_high level also 
+was no machine state stored, and no active flag set. That level is ignored also. 
+The clock_medium level was the level interrupted, so the machine state is restored 
+and execution continues in the clock_medium level.
+<br>
+<br>
+When clock_medium is finished the OS looks at clock_ip, that level has no machine state
+stored but has its active flag set so the active flag is reset and the 
+tasks on the clock_ip level are looked at. 
+<br>
+<br>
+After clock_ip, clock_low is looked at. Clock low has a machine state stored ( this will
+always be the case). The level is inititated from the saved state. When the level is 
+finished <a HREF="./traps.html#trap27">trap27</a> is executed. The next level is once again clock_low. Clock_low has it's 
+repeat flag set so the tasks in the level are then looked at again. 
+
+<h3>The COLDFIRE multitasking words</h3>
+<p>
+The COLDFIRE task supports task activation modes that reflect real time control requirements.
+To highlight their significance they all start with x.
+</p>
+
+<table border=0 >
+<th colspan=3 ><strong>multitasking words</strong></th>
+<tr><td><b>WORD</b></td><td><b>STACK</b></td><td><b>DESCRIPTION</b></td></tr>
+<tr><td><em>xcycle</em></td><td>( n--)</td><td>Add n to the task activation time and wait until then</td></tr>
+<tr><td><em>xnext</em></td><td>( --)</td><td>Exit to the multitasker without altering the tasks status</td></tr>
+<tr><td><em>xoff</em></td><td>( --)</td><td>Set the tasks status to sleep and exit to the multitasker</td></tr>
+<tr><td><em>xpause</em></td><td>( --)</td><td>Set the tasks status to wake and exit to the multitasker</td></tr>
+<tr><td><em>xsleep</em></td><td>( --)</td><td>Set the tasks status to sleep</td></tr>
+<tr><td><em>xtest</em></td><td>( --)</td><td>Set the tasks status to test</td></tr>
+<tr><td><em>xtimeout?</em></td><td>( --flag)</td><td>Did an external event wake us or did we time out</td></tr>
+<tr><td><em>xwait</em></td><td>( n--)</td><td>Wait n ticks ( where a tick is 10 msec) and start the task again</td></tr>
+<tr><td><em>xwake</em></td><td>( --)</td><td>Set the tasks status to wake</td></tr>
+</table>
+<p>
+The difference between <i>xcycle</i> and <i>xwait</i> may need some explanation. 
+<i>xwait</i> takes the current time and adds n and uses that as the next task 
+activation time. If the task slips because of overload, the time is lost forever. 
+<i>xcycle</i> takes the time when the task should of been activated and adds n 
+to it. If the task slips the lost time is made up next time around. 
+It you  program <i>anns_ramp_function</i> as follows
+</p>
+<pre> <samp>
+ram_variable %ramp_value
+#clock_medium task: ramp
+	BEGIN
+		#ramp_rate %ram_value +!
+		%ram_value @ to_analog_output
+		10 xcycle
+	AGAIN
+;task
+</samp> </pre>
+<p>
+The following output can then occur if the program is run on a heavily loaded system.
+</p>
+<img src="./ramp4.png" HEIGHT=239 WIDTH=423 >
+<p>
+There is a potential problem. If the system is continually overloaded there will never 
+be an opportunity to catch up.
+</p>
+<h3>The COLDFIRE task loop</h3>
+<p>
+It is common in FORTH systems for a task to start with an instruction that controls
+behavior, with the instruction being altered as the tasks status changes. 
+For example, if the task is suspended  the instruction could be one that jumped 
+to the instruction at the start of the next task. If the task is to be awakened 
+the instruction could be a call to a routine that starts the task.
+</p>
+<p>
+Unfortunately for this scheme to work you must be able to write self modify code. 
+Many processors now support separate instruction and data caches, such processes 
+place one major restriction on the program. You cannot modify the instruction stream 
+without flushing the cache. The 5407 will be such a processor.
+</p>
+<p>
+COLDFORH tasks start with an instruction ( <a HREF="./traps.html#trap22">trap22</a>
+ for the COLDFIRE ) but it is fixed. 
+The state of the task is determined by a numeric value stored after the trap instruction. 
+The value in fact, could be used as an offset into a jump table.
+</p>
+<p> 
+The following diagram shows what a task loop would look like if it contained two tasks, 
+one that could be activated through dual port memory, and one that is internal 
+to the system.
+</p>
+<img src="./task_loop.png" HEIGHT=498 WIDTH=657 >
+<p>
+<p>
+The things to note are:
+</p>
+<ul>
+<li>The level switching is handled by <a HREF="./traps.html#trap27">trap27</a></li>
+<li>Task activation is handled by <a HREF="./traps.html#trap22">trap22</a></li>
+<li>The ability to put the activation area in dual port memory complicates the structure
+as the activation area is not always at the start of the tasks user area</li>
+</ul>
+<h3>Dual port memory activation</h3>
+<p>
+Imagine if you had I/O cards that allowed you to write data to a buffer on the card, 
+and then write an activation code to a memory location, and that code wakes up a task 
+that was designed to deal with your problem. If you could do that you would no 
+longer have to write polling or interrupt routines in the I/O card.
+</p>
+<p>
+Supporting task activation through dual port memory gives you that.
+</p>
+
+<h3>_system_rte trap27</h3>
+<p>
+These two words hold the multitasker together. If you understand how these work, 
+you understand the system. Unfortunately they are, and have to be code words.
+</p>
+<p>
+When discussing the suspension of low level task we talked about interrupts setting active flags 
+and raising the priority level, then when switching from supervisor to use mode, running
+the higher level.
+</p>
+<p>
+When returning from an exception you have to return with <a HREF="./system_rte.html#_system_rte">_system_rte</a>. This code looks to
+see if you are switching back to user, and if you are, looks to see if the current 
+loop needs to be suspended and a high loop started. 
+</p>
+<p>
+When an exception is executed COLDFORTH switches to a supervisor stack. When task 
+loops are suspended all exceptions have been serviced. We are about to switch back 
+to user state. We could save the machine state on the supervisor stack and allow 
+it to sit there until we next want to schedule that level.
+</p>
+<p>
+That is what we do. We leave the user stack and the supervisor stack with the exception
+frame that started the process, and we stack onto the supervisor stack the machine state. 
+We then set up an exception frame that will take us to the level that we want to start 
+and we return from the exception.
+</p>
+<p> 
+<a HREF="./traps.html#trap27">trap27</a>, the code that is responsible for level switching, removes the exception frame 
+that was created when it was called, looks at the supervisor stack to see if there 
+is a relevant machine state stored. If there is, <a HREF="./traps.html#trap27">trap27</a> restores the machine state and 
+returns from the exception using the exception frame that was created in times gone by.
+</p>
+<p>
+If there is no relevant machine state stored on the supervisor for the level 
+about to be started, <a HREF="./traps.html#trap27">trap27</a> sets up a frame to start the first action 
+in the next level. 
+</p>
+<h4>_system_rte</h4>
+<p>
+The code for <a HREF="./system_rte.html#_system_rte">_system_rte</a> runs something like this:
+</p>
+<pre> <samp>
+: system_rte ( excpt_frame -- excpt_frame machine_state _xlevel@| )
+	are_we_returning_to_user
+	\ stuff flag &lt-- 
+	_xlevel_next @ _xlevel @ &gt 
+	\ stuff flag flag &lt--
+	AND IF
+		save_the_machine_state _xlevel @
+		\ excpt_frame machine_state _xlevel@ &lt--
+		_xlevel_next @ setup_an_excpt_frame
+		\ excpt_frame machine_state _xlevel@ excpt_frame2 &lt--
+	THEN
+	return_from_exception
+;
+</samp> </pre>
+<p>
+Things are a little complex as you have to take care to preserve all registers up to
+the time you save the machine state, or if you don't save the machine state, you have
+to preserve the machine state until you return_from_exception. 
+For this reason <a HREF="./system_rte.html#_system_rte">_system_rte</a> is written in machine code.
+</p>
+<h4>trap27</h4>
+<p>
+The code for <a HREF="./traps.html#trap27">trap27</a> runs something like this:
+</p>
+<pre> <samp>
+: trap27 ( ?? old_xlevel@ excpt_frame -- ?? old_xlevel@ excpt_frame)
+	remove_exception_frame
+	\ ?? old_xlevel@ &lt--
+	DUP level_we_want_to_switch_to = IF
+		\ exception_frame machine_state old_xlevel@ &lt--
+		setup_machine_state
+		\ exception_frame&lt--
+	ELSE
+		setup_exception_frame_to_start_new_level
+	THEN
+	return_from_exception
+;
+</samp> </pre>
+<p>
+Once again things are a little complex, we may get ourselves into the situation where
+we are trying to restore a machine state. For this reason <a HREF="./traps.html#trap27">trap27</a> is written in code.
+</p>
+<table>
+<tr>
+<td>
+<img src="./system_stack.png" HEIGHT=412 WIDTH=272 >
+</td>
+<td>
+<p>
+There can be multiple machine states saved on the system stack. But the high 
+priority levels will be saved on top of the low priority levels. This diagram 
+shows a possible system stack state when servicing a high priority  interrupt.
+</p>
+</td>
+</tr>
+</table>
+<h3>trap22</h3>
+<p>
+After <a HREF="./system_rte.html#_system_rte">_system_rte</a> and <a HREF="./traps.html#trap27">trap27</a>, <a HREF="./traps.html#trap22">trap22</a> is positively boring. You don't even have 
+to run it with interrupts disabled. We do however have to destroy the exception 
+frame so it to is written in
+code.
+</p>
+<p>
+The code for <a HREF="./traps.html#trap22">trap22</a> runs something like this:
+</p>
+<pre> <samp>
+: trap22 ( exception_frame -- )
+	set_us_beack_to_user_mode
+	remove_exception_frame_leave_status_address
+	\ status_address&lt--
+	DUP @ sleep = IF
+		DROP
+		jump_to_next_in_loop
+	THEN
+	DUP wake = IF
+		DROP
+		activate_task
+	THEN
+	DUP test = IF
+		task_restart_time @ xclock- @ + 0&lt IF
+			DROP
+			activate_task
+		THEN
+	THEN
+	next_in_loop
+;
+</samp> </pre>
+<p>
+How we test for activation time is the only noteworthy item. The interrupt clock 
+increments a counter called <i>xclock+</i> and decrements a counter called 
+<i>xclock-</i>. Then you want to set an activation time you take the <i>xclock+</i> 
+value add the delay and store as the task activation time. To see if the time 
+has expired you add the stored value to the contents of <i>xclock-</i>. When the
+required time has passed the summation will be negative.
+</p>	
+<h3>Programming model</h3>
+<p>
+To write code in a multitasking environment you lose total control. You have 
+to follow some rules. In a single loop multitasker you can assume you have  
+resources that are shared with other processors up until you  exit to the 
+multitasker. This assumption is the foundation of systems that implement 
+FORTH BLOCKs as a consistent shared resource. That is all tasks will 
+see the same data, and tasks can alter data in a BUFFER/BLOCK, but must execute 
+UPDATE before exiting to the multitasker.
+</p>
+<p>
+With preemptive multitasking such assumptions are not valid. The only 
+data tasks can alter is data they own. If you use blocks, only one 
+task can have access to the block at a time. BUFFER or BLOCK must make a 
+copy of the data available to the task, UPDATE must write the data back 
+to the file system. But what happens if two task ask for the same buffer. 
+There are now two copies and two potential updates. The only solution is 
+to lock the block until the UPDATE occurs Not the correct action if the 
+task only wanted to read the block. The solution in such an environment 
+is to move to a OPEN-READ/WRITE-CLOSE paradigm. You can then indicate the 
+desired operation ( read or write )  when opening the file.
+</p>
+<p>
+If you're going to add the overhead of opening/closing the resource you may 
+as well go for something larger than a block. The FORTH file words suddenly 
+become very important. The block words next to useless.
+</p>
+<p>
+The strict priority used to schedule the COLDFORTH task loops however allows 
+one useful generalization.
+<b>
+If you're in a high priority task altering data that is used by a low priority task, 
+you will get to finish your job before the low priority task gets to play. 
+</b>
+</p>
+<p>
+This generalization is used a lot in the COLDFORTH TCP/IP implementation.
+</p> 
+</body>
+</html>
+
+

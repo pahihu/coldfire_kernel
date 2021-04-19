@@ -1,0 +1,89 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>link_class</h3>
+<a HREF="./license.html">license</a>
+<p>
+This class allows the creation of a linked list of objects. Override :list_head
+to place the obects ina different list.
+</p>
+	<pre> <code>
+	\ base_class
+	\ 	:construct
+	\ 	:destruct
+	\ 	:print
+	\	 	link_class
+	\			:list_head
+	\			:number_of_links
+
+	base_class class
+
+		protected
+
+		\ This is only a default, normally things get overridden and the object is placed
+		\ in the relevant list
+		ram_variable _%linked_objects
+		\ normally :construct gets overridden
+		\ and a different head used
+		double% instance_variable %%object_link
+                public
+
+		\ this gets overridden whenever a different head is used
+		\ Not that the construct and destruct word get the linked
+		\ list using this method. As a result only one method has to
+		\ be overridden.
+		m: ( --addr )
+			_%linked_objects
+		; method :list_head
+
+		m: ( --)
+			%%object_link this :list_head link_double
+		; overrides :construct
+
+		m: ( --)
+			%%object_link unlink_double
+		; overrides :destruct
+                </code></pre>
+                <a name="link_to_object"></a>
+                <pre><code>
+
+		: link>object ( addr --obj)
+			[ %%object_link ]T LITERAL
+			-
+		;
+
+		\ Information
+		\ -----------
+		m:  ( --n)
+			this :list_head number_in_list
+		; method :number_of_links
+
+		m: ( indent --)
+			CR DUP SPACES
+			." link_object | " ." Object: " this .h
+			CR DUP SPACES ." Linked_objects: " this :number_of_links .h
+			this :list_head @ BEGIN
+				DUP
+			WHILE
+				OVER 4+ OVER link>object DUP this <> IF
+					:print
+				ELSE
+					2DROP
+				THEN
+                                @
+			REPEAT
+			2DROP
+			send
+		; overrides :print
+
+	end_class link_class
+	</code> </pre>
+</body>
+</html>

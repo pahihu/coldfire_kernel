@@ -1,0 +1,378 @@
+<html>
+
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h5>terminal</h5>
+<a HREF="./license.html">license</a>
+<p>
+This set of words are called with the I/O object on the stack. The I/O object
+has another set that calls these words.
+</p>
+<p>
+The device specific behaviour of terminals and printers 
+is hidden behind this set of words.
+</p>
+<p>
+In other words, this object is terminal/printer specific, it does
+not care how the terminal is connected. The device shouldn't care what
+terminal is connected.
+</p> 
+
+<pre> <code>
+	terminal_class class
+ 
+		m: ( --)
+			this [parent] :construct
+    		$4F %%character_max ! 
+			$17 %%line_max !     
+		; overrides :construct
+
+		m: ( --)
+			%%?page @ not IF
+				EXIT
+			THEN
+			%%page @ IF
+				\ The read is agains the current input device.
+				\ This is correct.
+    			keybuffer one 'input_file @ :read_line 2DROP
+			THEN
+		; overrides ::?page
+
+		m: ( addr num object --)
+			OVER %%character +!
+			:write
+		; overrides ::type
+
+		\ normal character presentation
+		| CREATE _$ws60_norm $031B4730 t,
+		m: ( object --)
+			_$ws60_norm COUNT ROT :write
+		; overrides ::normal
+
+		\ reverse character presentation
+		| CREATE _$ws60_rev $031B4734 t,
+		m: ( object --)
+			_$ws60_rev COUNT ROT :write			
+		; overrides ::rev
+
+
+		\ blink character presentation
+		| CREATE _$ws60_blink $031B4732 t,
+		m: ( object --)
+			_$ws60_blink COUNT ROT :write				
+		; overrides ::blink
+
+		\ dim character presentation
+		| CREATE _$ws60_dim $031B4770 t,
+		m: ( object --)
+			_$ws60_dim COUNT ROT :write	
+		; overrides ::dim
+
+		\ underline character presentation
+		| CREATE _$ws60_udl $031B4738 t,
+		m: ( object --)
+			_$ws60_udl COUNT ROT :write	
+		; overrides ::udl
+
+		| CREATE _$ws60_dim&blink $031B4772 t,
+		m: ( object --)
+			_$ws60_dim&blink COUNT ROT :write	
+		; overrides ::dim&blink
+
+		| CREATE _$ws60_rev&blink $031B4736 t,
+		m: ( object --)
+			_$ws60_rev&blink COUNT ROT :write	
+		; overrides ::rev&blink
+
+		| CREATE _$ws60_rev&dim $031B4774 t,
+		m: ( object --)
+			_$ws60_rev&dim COUNT ROT :write	
+		; overrides ::rev&dim
+
+		| CREATE _$ws60_rev&udl $031B473C t,
+		m: ( object --)
+			_$ws60_rev&udl COUNT ROT :write	
+		; overrides ::rev&udl
+
+		| CREATE _$ws60_rev&dim&blink $031B4776 t,
+		m: ( object --)
+			_$ws60_rev&dim&blink COUNT ROT :write	
+		; overrides ::rev&dim&blink
+
+		| CREATE _$ws60_rev&dim&udl $031B477C t,
+		m: ( object --)
+			_$ws60_rev&dim&udl COUNT ROT :write	
+		; overrides ::rev&dim&udl
+
+		m: { ( line char ) variable %object -- }
+			%%character_max @ MIN
+			SWAP %%line_max @ MIN
+			2DUP 8 LSHIFT +
+			$1B3D2020 + _emit_buffer !
+			_emit_buffer four %object @ :write 
+			%%line ! 
+			%%character !
+		; overrides ::tab 
+		
+		| CREATE _$ws60_terminator  $03200D0A t,  
+		m: ( object-- )
+			0 %%character !
+			1 %%line +!
+			_$ws60_terminator COUNT ROT :write
+		; overrides ::cr
+		
+		| CREATE _$ws60_page $021B2B00 t,	
+		m: ( object--)
+			1 %%page +!
+			0 %%character !
+			0 %%line !
+			_$ws60_page COUNT ROT :write
+		; overrides ::page
+		
+		\ to graphics
+		| CREATE _$ws60_>| $031B4802 t,
+		m: ( object --)
+			_$ws60_>| COUNT ROT :write
+		; overrides ::>|
+
+		\ from graphics
+		| CREATE _$ws60_|> $031B4803 t,
+		m: ( object --)
+			_$ws60_|> COUNT ROT :write
+		; overrides ::|>
+
+		\ pc element input
+		| CREATE _$ws60_|i $01390000 t,
+		m: ( object --)
+			_$ws60_|i COUNT ROT :write
+		; overrides ::|i
+
+		\ pc element output
+		| CREATE _$ws60_|o $01340000 t,
+		m: ( object --)
+			_$ws60_|o COUNT ROT :write
+		; overrides ::|o
+
+		\ pc element vertical line
+		| CREATE _$ws60_|v $01360000 t,
+		m: ( object --)
+			_$ws60_|v COUNT ROT :write
+		; overrides ::|v
+
+		\ pc element horizontal line
+		| CREATE _$ws60_|h $013A0000 t,
+		m: ( object --)
+			_$ws60_|h COUNT ROT :write
+		; overrides ::|h
+
+		\ pc element not
+		| CREATE _$ws60_|n $014F0000 t,
+		m: { variable  %object -- }
+			%object @ this :|>
+			_$ws60_|n COUNT %object @ :write
+			%object @ this :>|
+		; overrides ::|n
+
+		\ pc element top left
+		| CREATE _$ws60_|tl $01320000 t,
+		m: ( object --)
+			_$ws60_|tl COUNT ROT :write
+		; overrides ::|tl
+
+		\ pc element top right
+		| CREATE _$ws60_|tr $01330000 t,
+		m: ( object --)
+			_$ws60_|tr COUNT ROT :write
+		; overrides ::|tr
+
+		\ pc element bottom left
+		| CREATE _$ws60_|bl $01310000 t,
+		m: ( object --)
+			_$ws60_|bl COUNT ROT :write
+		; overrides ::|bl
+
+		\ pc element bottom left
+		| CREATE _$ws60_|br $01350000 t,
+		m: ( object --)
+			_$ws60_|br COUNT ROT :write
+		; overrides ::|br
+
+		| CREATE term.tab 4 tw, 800B tw, 810A tw, 8208 tw, 830C tw,
+
+
+	    | : term>code ( char --code)  term.tab W@ 2* 2+ two  DO
+	    	term.tab I + 1+ C@ OVER = IF
+	    	  DROP term.tab I + C@ 2R> 2DROP EXIT
+	    	THEN 2 +LOOP 
+		;
+    
+	    | : func>code ( char -- code)
+	    	DUP $40 $50 WITHIN IF  
+				$40 - 
+			ELSE
+	    		DUP $60 $70 WITHIN IF  
+					$50 - 
+				ELSE
+	    			DROP 0 
+				THEN 
+			THEN  
+			#end_function +  
+		;
+
+		\ On entry %data_pointer points to the start of the buffer
+		\ %number is the number of characters in the buffer including the terminator
+		\ to date
+		\ On exit the terminator should not be included int eh data count.
+		\ %handle is the instance variable for the device driver.
+		m: { variable %data_pointer  
+			variable %number 
+			variable %handle -- ( number flag) }
+
+			%data_pointer @ %number @ + 1- %data_pointer !
+			 
+			%data_pointer @ char@ #^z = IF
+				#end_eof %data_pointer @ char!
+				%number @ FALSE
+				EXIT
+			THEN
+			%data_pointer @ char@ #cr = 
+			%number @ one > AND
+			%data_pointer @ 2 CHARS - char@ 01 = AND  IF ( fuction key)
+				%data_pointer @ 1 CHARS - char@ func>code
+    			-2 %number +! 
+				2 CHARS NEGATE %data_pointer +!  ( reduce string by two)
+			ELSE 
+				%data_pointer @ char@ term>code 
+			THEN
+			%data_pointer @ char!
+			%number @ 1 - TRUE
+		; overrides ::termination>code
+
+
+		| CREATE _$ws60_label_rev 041B4101 t, 74000000 t,
+		| CREATE _$ws60_label_no_save 031B654A t,
+		| CREATE _$ws60_label_end 010D0000 t,
+		m: { ( table_addr ) variable %object -- }
+			?DUP IF  ( Fkey labels required )
+				_$ws60_label_rev COUNT %object @ :write
+				_$ws60_label_no_save COUNT %object @ :write
+    			zero BEGIN 
+					OVER C@ 0FF <> 
+				WHILE
+					\ select the label
+					\ addr count(--
+    				031B7A30 OVER + _emit_buffer ! 
+					_emit_buffer COUNT %object @ :write
+    				OVER COUNT %object @ :write 
+					SWAP DUP C@ 2+ -2 AND + SWAP 
+					_$ws60_label_end COUNT %object @ :write
+					1+
+    			REPEAT 
+				NIP  
+				\ blank remaining labels
+				8 MIN 8 SWAP ?DO  
+					031B7A30 I + _emit_buffer !
+					_emit_buffer COUNT %object @ :write
+					_$ws60_label_end COUNT %object @ :write 
+				LOOP
+			ELSE
+    			8 zero DO   
+					031B7A30 I + _emit_buffer !
+					_emit_buffer COUNT %object @ :write
+					_$ws60_label_end COUNT %object @ :write 
+				LOOP
+			THEN 
+		; overrides ::labels
+
+
+		m: { ( table_addr ) variable %object -- }
+			?DUP IF  ( Fkey labels required )
+				_$ws60_label_rev COUNT %object @ :write
+				_$ws60_label_no_save COUNT %object @ :write
+    			zero BEGIN 
+					OVER C@ 0FF <> 
+				WHILE
+					\ select the label
+					\ addr count(--
+    				031B7A50 OVER + _emit_buffer ! 
+					_emit_buffer COUNT %object @ :write
+    				OVER COUNT %object @ :write 
+					SWAP DUP C@ 2+ -2 AND + SWAP 
+					_$ws60_label_end COUNT %object @ :write
+					1+
+    			REPEAT 
+				NIP  
+				\ blank remaining labels
+				8 MIN 8 SWAP ?DO  
+					031B7A50 I + _emit_buffer !
+					_emit_buffer COUNT %object @ :write
+					_$ws60_label_end COUNT %object @ :write 
+				LOOP
+			ELSE
+    			8 zero DO   
+					031B7A50 I + _emit_buffer !
+					_emit_buffer COUNT %object @ :write
+					_$ws60_label_end COUNT %object @ :write 
+				LOOP
+			THEN 
+		; overrides ::shift_labels
+
+
+		| CREATE _$ws60_cursor $031B6031 t,
+		m: ( object --)
+			_$ws60_cursor COUNT ROT :write
+		; overrides ::cursor
+
+		| CREATE _$ws60_no_cursor $031B6030 t,
+		m: ( object --)
+			_$ws60_no_cursor COUNT ROT :write
+		; overrides ::no_cursor
+
+		| CREATE _$ws60_mess 061B4103 t, 361B4600 t,
+		| CREATE _$ws60_mess_end 010D0000 t,
+		m: { ( addr num ) variable %object -- }
+			_$ws60_mess COUNT %object @ :write
+    		$30 MIN ( message characteres limit)
+    		%object @ :write 
+			_$ws60_mess_end COUNT %object @ :write
+		; overrides ::message
+
+		| CREATE _$ws60_no_mess 041B4103 t, 31000000 t,
+		m: ( object --)
+			_$ws60_no_mess COUNT ROT :write		
+		; overrides ::no_message
+
+		m:
+			CR DUP SPACES ." ws60_class | " ." Object: " this .h 
+			send
+			DROP
+		; overrides :print
+
+	end_class ws60_class
+
+
+	: ws60 ( --) 
+		ws60_class 'output_file @ :!terminal 
+	;
+
+
+
+
+
+
+
+
+
+
+
+</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,257 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Demux connection allows the souce machine and source port to become part
+of the demux equation.
+</p>
+<p>
+It must be possible to add entries to the demux table from anywhere, while
+the table is in use by others.
+</p>
+<p>
+A dest port ( thats us) can have more than one entry that will resolve for a given
+src port ip, and dest port combination. The match that has the most bits set in the
+scr_port and scr_ip masks is the one we want selected.
+</p>
+<p>
+Thus duplicitry occues because a server wil first lisen to a port, if a trasaction
+is start a socket is developed. This receive datgrams detined to the same
+destination port, it is now src port and src machine specific.
+<p>
+Bucket_structure
+</p>
+	<pre> <code>
+        | CREATE _$sock_magic ," SOCK_MUX"
+	zero
+	| DUP CONSTANT _#demux_fwd_link      CELL+
+	| DUP CONSTANT _#demux_bck_link      CELL+
+	| DUP CONSTANT _#demux_local_port    CELL+
+	| DUP CONSTANT _#demux_users         CELL+
+	| DUP CONSTANT _#demux_object        CELL+
+        | DUP CONSTANT _#demux_magic         8 +
+	| DUP CONSTANT _#demux_sort          CELL+
+	| DUP CONSTANT _#demux_remote_port       CELL+
+	| DUP CONSTANT _#demux_remote_port_mask  CELL+
+	| DUP CONSTANT _#demux_remote_ip         CELL+
+	| DUP CONSTANT _#demux_remote_ip_mask    CELL+
+	\ only used if needed. Needed by TCP
+	| DUP CONSTANT _#demux_time          CELL+
+	| DUP CONSTANT _#demux_try_time      CELL+
+	| DUP CONSTANT _#demux_live_time     CELL+
+	|	CONSTANT _#demux_length
+
+	\ doesn't have to be just a warning that you have increased the buffer
+	\ size required to make a table entry with the latest addition to the data
+	\ structure
+	_#demux_length $80 _#sys_buffer_user - > ??
+
+	\ we use #demux_release so make sure the following is true
+	_#demux_bucket_fwd_link _#demux_fwd_link ??=
+	_#demux_bucket_bck_link _#demux_bck_link ??=
+	_#demux_bucket_key _#demux_local_port ??=
+	_#demux_bucket_users _#demux_users ??=
+	_#demux_bucket_object _#demux_object ??=
+
+	</code> </pre>
+	<pre> <code>
+	\ count the number of bits in the mask
+	: _mask_bits_set ( x -- n )
+		zero
+		$20 0 DO
+ 			OVER 01 AND +
+			SWAP
+			2/
+			SWAP
+		LOOP
+		NIP
+	;
+	</code> </pre>
+
+<p>
+Find an entry; you will note that the destination ip is not included, your destination is
+a machine not a specific ip on that machine. If your executing this code the ip has been
+routed to the machine, and there is no need at look at the destination ip.
+If we reply we do have to  make sure the ip is not to a broadcast address.
+And we do have to use the same ip address that was used to send the message to us,
+as the sending machine is not likly to know that multiple ip addresses are the same machine.
+</p>
+	<pre> <code>
+	: demux_socket_find {
+					variable %local_port
+
+					variable %remote_ip
+
+					variable %remote_port
+
+					variable %table
+					variable %num --  ( addr|0) }
+
+		%local_port @ %table @ %num @ demux_hash
+		\ list(--
+		_lock_word
+		BEGIN
+			@ DUP
+		WHILE
+			\ destination port has to be equal
+			DUP _#demux_local_port + @ %local_port @ = IF
+				\ source port has to be tested, the and value may make it a null test.
+				DUP _#demux_remote_port + @ OVER _#demux_remote_port_mask + @ %remote_port @ AND = IF
+					DUP _#demux_remote_ip + @ OVER _#demux_remote_ip_mask + @ %remote_ip @ AND = IF
+						\ we have the entry
+						\ list(--
+						1 OVER _#demux_users + +!
+						xclock+ @ OVER _#demux_time + !
+						_unlock_word
+						EXIT
+					THEN
+				THEN
+			THEN
+		REPEAT
+		\ 0(--
+		\ not found
+		_unlock_word
+	;
+	</code> </pre>
+<p>
+Add entry to mux table, if entry is not present.
+</p>
+	<pre> <code>
+	\ time for entry to live if noone updates. Only relevent
+	\ if there is a time routine to delete the entries.
+	\ set tp 2min.
+	 | #1sec #120 * CONSTANT #demux_time_to_live
+
+	CREATE $in_use ," In use"
+	: demux_socket_add {
+			variable %object      \ the object that contains the :proto_demux method
+			variable %local_port   \ always set
+			variable %remote_ip      \ the src machine is the other machine
+			variable %remote_ip_mask \ mask can make relevent or not
+			variable %remote_port    \ mask can make the scr port relevent or not
+			variable %remote_port_mask
+			variable %table       \ the table the entries are linked into.
+			variable %num_lists -- ( $|bucket 0 ) }{
+
+
+			variable %bucket
+			variable %sort
+
+			}
+		_#demux_length get_free_buffer %bucket !
+		%bucket @ _#demux_length ERASE
+                \ set the magic
+                [ _$sock_magic COUNT DROP ]T LITERAL %bucket @ _#demux_magic + 8 MOVE
+		\ (--
+		%local_port @ %bucket @ _#demux_local_port + !
+
+		%remote_port @ %remote_port_mask @ AND %bucket @ _#demux_remote_port + !
+		%remote_port_mask @ %bucket @ _#demux_remote_port_mask + !
+
+		%remote_ip @ %remote_ip_mask @ AND %bucket @ _#demux_remote_ip + !
+		%remote_ip_mask @ %bucket @ _#demux_remote_ip_mask + !
+
+		\ ip specific before port specific.
+		%remote_ip_mask @ _mask_bits_set 8 LSHIFT
+		%remote_port_mask @ _mask_bits_set +
+		DUP %bucket @ _#demux_sort + ! %sort !
+
+		%object @  %bucket @ _#demux_object + !
+		1 %bucket @ _#demux_users + !
+
+		#demux_time_to_live %bucket @ _#demux_live_time + !
+
+		xclock+ @ %bucket @ 2DUP _#demux_time + !
+		_#demux_try_time + !
+
+		\ (--
+		%local_port @ %table @ %num_lists @
+		demux_hash
+		\ list(--
+		DUP
+		\ list list(--
+		_lock_word
+		BEGIN
+			@ DUP
+		WHILE
+			DUP _#demux_sort + @ %sort @ = IF
+				DUP _#demux_local_port + @ %local_port @ = 
+				IF
+					\ The machine address has to be equal ( after masking)
+					DUP _#demux_remote_ip + @ OVER _#demux_remote_ip_mask + @ 
+					%remote_ip @ AND = IF
+						\ the scr_port has to be equal after masking
+						DUP _#demux_remote_port + @ OVER
+						_#demux_remote_port_mask + @ %remote_port @ AND = IF
+							\ already an entry
+							_unlock_word
+							\ list list(--
+							2DROP
+							%bucket @ kill_free_buffer
+							$in_use
+							EXIT
+						THEN
+					THEN
+				THEN
+			THEN
+		REPEAT
+		\ we can use
+		\ list zero(--
+		DROP
+		\ we now have to scan down list until sort key in list is greater or equal.
+		\ This links us in from more specific to less specific.
+		BEGIN
+			DUP @
+		WHILE
+			DUP @ _#demux_sort + @ %sort @ > not IF
+				\ can link in here
+				\ this will unlock
+				%bucket @ SWAP link_double
+				\ need the address to see if the entry is valid
+				%bucket @
+				zero
+				EXIT
+			THEN
+			@
+		REPEAT
+		\ get here we are at the list
+		\ can link in here
+		\ this will unlock
+		%bucket @ SWAP link_double
+		\ need the address to see if the entry is valid
+		%bucket @
+		zero
+	;
+
+	\ trace down relevent list and see if object is in table.
+	\ This is needed when objects are closing, the close cannot
+	\ finish until table entry using object has gone
+	: _demux_socket_free? ( object key table number(--)
+		demux_hash
+		\ object list(--
+		BEGIN
+			@ DUP
+		WHILE
+			2DUP _#demux_object + @ = IF
+				2DROP
+				FALSE
+				EXIT
+			THEN
+		REPEAT
+		\ object 0(--
+		\ not found
+		2DROP
+		TRUE
+	;			
+
+	</code> </pre>
+
+</body>
+</html>

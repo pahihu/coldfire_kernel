@@ -1,0 +1,113 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+
+<h5> _random number generator</h5>
+<a HREF="./license.html">license</a>
+<p>
+This is a maximally equidustributed combined LFSR random number generator. The seed value is set after the init files are loaded in an attempt to give some randomness to the inital values. The random_seed 
+is set using the initial sum of D7 and a block of dynamic memory.
+</p>
+<a name="random">
+	<pre><code>
+	ram_variable %random_seed
+	ram_variable %z1
+	ram_variable %z2
+	ram_variable %z3
+	ram_variable %z4
+
+
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+
+	| : _random_init
+		_lreg_SCNT0 @ xclock+ @ + 1 LSHIFT 2 MAX %z1 !
+		HERE 8 MAX %z2 !
+		%random_seed @ $10 MAX %z3 !
+		_lreg_SCNT0 @ $8 LSHIFT xclock+ @ + 7 LSHIFT $80 MAX %z4 !
+	;
+
+[ELSE]
+	| : _random_init
+		_wreg_TCN1 W@ xclock+ @ + 1 LSHIFT 2 MAX %z1 !
+		HERE 8 MAX %z2 !
+		%random_seed @ $10 MAX %z3 !
+		_wreg_TCN1 W@ $8 LSHIFT xclock+ @ + 7 LSHIFT $80 MAX %z4 !
+	;
+[THEN]
+	
+	CODE random
+		\ b = (((z1 << 6 ) ^ z1) >> 13 ) ;
+		%z1 AB D0 MOV 
+		D0 D5 MOV
+		6 # D5 LSL 
+		D0 D5 EOR
+		#13 # D6 MOV
+		D6 D5 LSR
+
+		\ z1 = ((( z1 & 4294967294 << 18 ) ^ b ) ;
+		#4294967294 # D0 AND
+		#18 # D6 MOV 
+		D6 D0 LSL
+		D5 D0 EOR
+		D0 %z1 AB MOV
+
+		\ b = (((z2<<2)^z2)>>27); 
+		%z2 AB D1 MOV
+		D1 D5 MOV
+		2 # D5 LSL
+		D1 D5 EOR
+		#27 # D6 MOV
+		D6 D5 LSR
+
+		\ z2 = (((z2 & 4294967288) << 2) ^b) ;
+		#4294967288 # D1 AND
+		2 # D1 LSL
+		D5 D1 EOR
+		D1 %z2 AB MOV
+
+		 \ b = (((z3<<13)^z3)>>21); 
+		%z3 AB D2 MOV
+		D2 D5 MOV
+		13 # D6 MOV
+		D6 D5 LSL
+		D2 D5 EOR
+		#21 # D6 MOV
+		D6 D5 LSR
+
+   		\ z3 = (((z3 & 4294967280) << 7) ^b) ;
+		#4294967280 # D2 AND
+		7 # D2 LSL
+		D5 D2 EOR
+		D2 %z3 AB MOV
+
+		 \ b = (((z4<<3)^z4)>>12); 
+		%z4 AB D3 MOV
+		D3 D5 MOV
+		3 # D5 LSL
+		D3 D5 EOR
+		#12 # D6 MOV
+		D6 D5 LSR
+
+   		\ z4 = (((z4 & 4294967168) << 13) ^b) ;
+		#4294967168 # D3 AND
+		#13 # D6 MOV
+		D6 D3 LSL
+		D5 D3 EOR
+		D3 %z4 AB MOV
+
+		D1 D0 EOR
+		D2 D0 EOR
+		D3 D0 EOR
+		D0 S -) MOV
+	NEXT
+	</code> </pre>
+
+</body>
+</html>

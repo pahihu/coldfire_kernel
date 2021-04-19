@@ -1,0 +1,53 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	03 CONSTANT _#initial_q_digits
+	</code> </pre>
+<h3>Q numbers</h3>
+<h5>q* ( r1 r2 --r3 )</h5>
+<p>q multiple<p>
+
+	<pre> <code>
+	: q*  ( n n q -- n )
+		>R M* R> d>>a DROP
+	;
+	</code> </pre>
+
+<h5>q/ ( r1 r2 --r3 )</h5>
+<p>q divide</p>
+
+	<pre> <code>
+	: q/ ( r1 r2 q -- r3 )
+		>R SWAP S>D R>
+		d<< ROT SM/REM NIP
+	;
+	</code> </pre>
+
+<h5>q+ ( r1 r2 ---r2)</h5>
+<p> q +</p>
+
+	<pre> <code>
+	: q+ ( r1 r2 --  r3)
+		+ ; inline
+	</code> </pre>
+
+<h5>q- ( r1 r2 ---r2)</h5>
+<a name="prints_q"><a>
+	<pre><code>
+	#FLOAT [IF]
+	: q. ( number q --)
+		q>f FS.
+	;
+	[THEN]
+	</code> </pre>
+</body>
+</html>

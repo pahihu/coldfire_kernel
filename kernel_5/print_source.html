@@ -1,0 +1,66 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    ( file_code>file )
+    CREATE don't_know 0 t, 0 tw, ," Not known" ," Not known"
+    
+    CODE (file_code>file) ( code head --addr )
+    	S )+ A0 MOV 
+		S )+ D0 MOV
+		0 # D2 MOV
+    	BEGIN A0 ) D1 MOV NE WHILE
+    		D1 A0 MOV
+    		#uf_code 0) D2 W. MOV
+			D2 D0 CMP EQ IF ( this is it)
+    			A0 S -) MOV
+    			NEXT assembler
+    		THEN
+    	REPEAT
+    	don't_know # S -) MOV
+    NEXT
+    
+    : file_code>file ( code --addr )
+      %used_files_head (file_code>file) ;
+    
+    : .source_details ( line addr --)
+    	#uf_$file + DUP DUP C@ 2+ -2 AND +
+    	( line addr addr_$drive )
+    	." DRIVE: " $type
+    	."  FILE: " $type
+    	."  LINE: " . ;
+    
+    : .source ( add --)
+    	DUP #src_line + W@
+    	SWAP #src_file_code + W@
+    	file_code>file .source_details ;
+    
+    : .used_file ( addr --)
+    	#uf_$file + DUP DUP C@ 2+ -2 AND +
+    	( line addr_$file addr_$drive )
+    	." DRIVE: " $type
+    	current_line @  current_character  @ 20 MAX TAB
+    	."  FILE: " $type ;
+    
+    : used_file_title ." USER FILES" ;
+    
+    : .USED_FILES ( --)
+    	['] used_file_title 'TITLE !
+    	FIRST_PAGE
+    	%used_files_head BEGIN
+    		@ DUP
+    	WHILE
+    		DUP .used_file FORM
+    	REPEAT DROP 0 'TITLE ! ;
+	</code> <pre>    
+
+</body>
+</html>

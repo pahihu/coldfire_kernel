@@ -1,0 +1,712 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h1>COLDFORTH Version 0.92</h1>
+<a HREF="./license.html">license</a><br>
+<a HREF="./history.html">history</a><br>
+<h3>Source</h3>
+
+<a HREF="./kernel.html">source</a>
+<h3>Source tar</h3>
+<p>
+To extract save in desired directory and issue command <samp>tar xzf tr.tar.gz</samp>
+</p>
+<a HREF=" ./tr.tar.gz">tar ball</a>
+
+<h3>manual</h3>
+              <h3>Coldforth manual</h3>
+                <a href= "../manual/chapter1.html">chapter 1 Getting started</a><br>
+                <a href= "../manual/chapter2.html">chapter 2 Maths</a><br>
+                <a href= "../manual/chapter3.html">chapter 3 The program</a><br>
+               <a href= "../manual/chapter4.html">chapter 4 Using HTML files as source</a><br>
+                <a href= "../manual/chapter5.html">chapter 5 Memory management</a><br>
+                <a href= "../manual/chapter6.html">chapter 6 Objects</a><br>
+                <a href= "../manual/chapter7.html">chapter 7 Strings</a><br>
+                <a href= "../manual/chapter8.html">chapter 8 I/O sub system</a><br>
+
+                <a href= "../manual/chapter9.html">chapter 9 TCP/IP</a><br>
+                <a href= "../manual/chapter10.html">chapter 10 Html Server</a><br>
+                <a href= "./manual/chapter11.html">chapter 11 Multitasker</a><br>
+
+                <a href= "../manual/appendix1.html">Appendix 1 Heap Management</a><br>
+                 <a href= ../manual/appendix2.html">Appendix 2 Multitasker</a><br>
+                 <a href= "../manual/source/word_list.html">Appendix 3 Word list</a><br>
+                <a href= "../manual/rfc2616.html">HTTP Spec</a><br>
+             <a href= "../manual/assignment1.html">Assignment 1 simple programs</a><br>
+<h3>The standard</h3>
+<a HREF="//www.taygeta.com/forth/dpans.html">ANSI standard (draft)</a>
+<h3>ANS WORDS</h3>
+<dl>
+<dt> <a HREF="./ansi_code_words.html#!">! ( x a-addr -- )</a>
+<dt> <a HREF="./number_output.html#hash"># ( ud1 -- ud2 )</a>
+<dt> <a HREF="./number_output.html#hashgt">#&gt; ( xd -- c-addr u )</a>
+<dt> <a HREF="./number_output.html#hashS">#S ( ud1 -- ud2 )</a>
+<dt> <a HREF="./user_variables.html#hashTIB">#TIB ( -- addr )</a>
+<dt> <a HREF="./more_ansi_colon_words.html#tick">' ( "name" -- addr )</a>
+<dt> <a HREF="./quit_interpret_etc.html#(">(</a>
+<dt> (LOCAL)     paren-local-paren     LOCAL
+<dt> <a HREF="./ansi_code_words.html#*">* ( n1|u1 n2|u2 -- u3|u3 )</a>
+<dt> <a HREF="./ansi_colon_words.html#*/">*/ ( n1 n2 n3 -- n4 )</a>
+<dt> <a HREF="./ansi_colon_words.html#*/MOD">*/MOD ( n1 n2 n3 --n4)</a>
+<dt> <a HREF="./ansi_code_words.html#+">+ ( n1|u1 n2|u2 -- n3|u3 )</a>
+<dt> <a HREF="./ansi_code_words.html#+!">+! ( n|u a-addr -- )</a>
+<dt> <a HREF="./compile.html#+LOOP">+LOOP ( n|u a-addr -- )</a>
+<dt> <a HREF="./memory_allocation.html#,">, ( x -- )</a>
+<dt> <a HREF="./ansi_code_words.html#-">- ( u1|n1 u2|n2 -- u3|n3 -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#-TRAILING">-TRAILING ( c-addr1 u1 -- c-addr2 u2 )</a>
+<dt> <a HREF="./number_output.html#.">. ( n -- )</a>
+<dt> <a HREF="./string_literals.html#.quote">." ( "string" -- )</a>
+<dt> <a HREF="./more_forth.html#.(">.( ( "string" -- )</a>
+<dt> <a HREF="./number_output.html#.R">.R ( n width -- )</a>
+<dt> <a HREF="./more_ansi_colon_words.html#.S">.S ( -- )</a>
+<dt> <a HREF="./ansi_code_words.html#/">/ ( n1 n2 -- n3 )</a>
+<dt> <a HREF="./ansi_code_words.html#/MOD">/MOD ( n1 n2 -- n3 n4 )</a>
+<dt> <a HREF="./ansi_colon_words.html#/STRING">/STRING ( c-addr u1 n -- c-addr2 u2 )</a>
+<dt> <a HREF="./ansi_code_words.html#0lt">0&lt; ( x -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#0ltgt">0&lt;&gt; ( x -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#0=">0= ( x -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#0gt">0&gt; ( x -- flag )</a>
+<dt> <a HREF="./ansi_colon_words.html#1+">1+ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#1-">1- ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#2!">2! ( x1 x2 addr -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#2*">2* ( x1 -- x2 )</a>
+<dt> <a HREF="./ansi_code_words.html#2/">2/ ( x1 -- x2 )</a>
+<dt> <a HREF="./compile.html#2gtR">2>R ( x1 x2 -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#2@">2@ ( addr -- x1 x2)</a>
+<dt> <a HREF="./compile.html#2CONSTANT">2CONSTANT child ( -- x1 x2)</a>
+					<dd>Defining word
+					<dd>parent (x1 x2 "name" --)
+					<dd>child ( --x1 x2)
+<dt> <a HREF="./ansi_code_words.html#2DROP">2DROP ( x1 x2 -- )</a>
+<dt> <a HREF="./ansi_code_words.html#2DUP">2DUP ( x1 x2 -- x1 x2 x1 x2 )</a>
+<dt> <a HREF="./compile.html#2LITERAL">2LITERAL runtime ( -- x1 x2 )</a>
+					<dd>compiling word
+					<dd>compile time ( x1 x2 --)
+					<dd>runtime  ( --x1 x2)
+<dt> <a HREF="./ansi_code_words.html#2OVER">2OVER ( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )</a>
+<dt> <a HREF="./compile.html#2Rgt">2R> ( -- x1 x2)</a>
+<dt> <a HREF="./ansi_code_words.html#2R@">2R@ ( -- x1 x2)</a>
+<dt> <a HREF="./ansi_code_words.html#2ROT">2ROT ( x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2 )</a>
+<dt> <a HREF="./ansi_code_words.html#2SWAP">2SWAP ( x1 x2 x3 x4 -- x3 x4 x1 x2 )</a>
+<dt> <a HREF="./compile.html#2VARIABLE">2VARIABLE child( -- addr )</a>
+					<dd>Defining word
+					<dd>parent ( "name" --)
+					<dd>child ( --addr)
+<dt> <a HREF="./compile.html#colon">: child ( i*x-- j*x )</a>
+					<dd>compile time ( "name" -- colon_sys )
+					<dd>child        ( i*x -- j*x)
+<dt> <a HREF="./compile.html#:NONAME">:NONAME child ( i*x-- j*x )</a>
+					<dd>compile time ( "name" -- colon_sys )
+					<dd>runtime      ( i*x -- j*x)
+<dt> <a HREF="./compile.html#semicolon">; runtime ( -- )</a>
+					<dd>compile time ( colon_sys -- )
+					<dd>runtime      ( -- )
+<dt> <a HREF="./compile.html#semicolon_code">;CODE runtime ( -- )</a>
+					<dd>compile time ( colon_sys -- )
+					<dd>runtime      ( -- )
+<dt> <a HREF="./ansi_code_words.html#lt">&lt; ( n1 n2 -- flag )</a>
+<dt> <a HREF="./number_output.html#lthash">&lt;# ( -- )</a>
+<dt> <a HREF="./ansi_code_words.html#ltgt">&lt;&gt; ( x1 x2 -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#gt">&gt; ( n1 n2 -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#=">&gt;= ( x1 x2 -- flag )</a>
+<dt> <a HREF="./word_head.html#>BODY">&gt;BODY ( xt -- pfa )</a>
+<dt> <a HREF="./float.html#toFLOAT">&gt;FLOAT ( c-addr n -- float true|false )</a>
+<dt> <a HREF="./user_variables.html#toIN">&gt;IN ( xt -- pfa )</a>
+<dt> <a HREF="./number.html#toNUMBER">&gt;NUMBER ( ulow uhigh c-addr1 u1 -- ulow uhigh c-addr2 u2 )</a>
+<dt> <a HREF="./compile.html#gtR">>R ( x -- )</a>
+<dt> <a HREF="./number_output.html#question_mark">? ( a-addr -- )</a>
+<dt> <a HREF="./compile.html#questionDO">?DO ( a-addr -- )</a>
+<dt> <a HREF="./ansi_code_words.html#_DUP">?DUP ( x -- 0 | x x )</a>
+<dt> <a HREF="./ansi_code_words.html#@">@ ( c-addr -- x )</a>
+<dt> <a HREF="./more_forth.html#ABORT">ABORT ( ???-- )</a>
+<dt> <a HREF="./more_forth.html#ABORTquote">ABORT" ( ???-- )</a>
+<dt> <a HREF="./ansi_code_words.html#ABS">ABS ( n -- u )</a>
+<dt> <a HREF="./input_output.html#ACCEPT">ACCEPT ( addr +n -- +n )</a>
+<dt> <a HREF="./compile.html#AGAIN">AGAIN runtime ( -- )</a>
+<dt> <a HREF="./compile.html#AHEAD">AHEAD runtime ( -- )</a>
+<dt> <a HREF="./memory_allocation.html#ALIGN">ALIGN ( -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#ALIGNED">ALLIGNED ( addr -- a-addr )</a>
+<dt> <a HREF="./heap_control.html#ALLOCATE">ALLOCATE ( u -- a-addr ior)</a>
+<dt> <a HREF="./memory_allocation.html#ALLOT">ALLOT ( n -- )</a>
+<dt> <a HREF="./vocabulary.html#ALSO">ALSO ( -- )</a>
+<dt> <a HREF="./ansi_code_words.html#AND">AND ( x1 x2 -- x3 )</a>
+<dt> <a HREF="./wordlists.html#ASSEMBLER">ASSEMBLER( -- )</a>
+<dt> AT-XY       at-x-y                FACILITY
+<dt> <a HREF="./user_variables.html#BASE">BASE( -- addr)</a>
+<dt> <a HREF="./compile.html#BEGIN">BEGIN compile_time( -- addr)</a>
+<dt> <a HREF="./input_output.html#BIN">BIN ( fam1 -- fam2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#BL">BL ( -- char )</a>
+<dt> <a HREF="./ansi_colon_words.html#BLANK">BLANK ( c-addr u --  )</a>
+<dt> BLK         b-l-k                 BLOCK
+<dt> BLOCK                             BLOCK
+<dt> BUFFER                            BLOCK
+<dt> BYE                               TOOLS EXT
+<dt> <a HREF="./ansi_code_words.html#C!">C! ( char c-addr -- )</a>
+<dt> <a HREF="./string_literals.html#C_">C" ( -- )</a>
+<dt> <a HREF="./memory_allocation.html#C,">C, ( char -- )</a>
+<dt> <a HREF="./ansi_code_words.html#C@">C@ ( c-addr -- char )</a>
+<dt> <a HREF="./compile.html#CASE">CASE Run-time: ( -- )</a>
+<dt> <a HREF="./user_using_words.html#CATCH">CATCH ( i*x xt -- j*x 0 | i*x n )</a>
+<dt> <a HREF="./ansi_colon_words.html#CELL+">CELL+ ( a-addr1 -- a-addr2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#CELLS">CELLS ( n1 -- n2 )</a>
+<dt> <a HREF="./more_ansi_colon_words.html#CHAR">CHAR ( -- ascii )</a>
+<dt> <a HREF="./ansi_colon_words.html#CHAR+">CHAR+ ( c-addr1 -- c-addr2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#CHARS">CHARS ( n1 -- n2 )</a>
+<dt> <a HREF="./input_output.html#CLOSE-FILE">CLOSE-FILE ( fileid -- ior)</a>
+<dt> <a HREF="./ansi_code_words.html#CMOVE">CMOVE ( addr1 addr2 count -- )</a>
+<dt> <a HREF="./ansi_code_words.html#CMOVEgt">CMOVE> ( addr1 addr2 count -- )</a>
+<dt> <a HREF="./compile.html#CODE">CODE ( "name" --)</a>
+<dt> <a HREF="./ansi_colon_words.html#COMPARE">COMPARE ( c-addr1 u1 c-addr2 u2 -- )</a>
+<dt> <a HREF="./compile.html#COMPILE,">COMPILE, Execution: ( xt -- )</a>
+<dt> <a HREF="./compile.html#CONSTANT">CONSTANT child(  -- x)</a>
+					<dd>Defining word
+					<dd>parent ( x "name" --)
+					<dd>child ( -- x )
+<dt> <a HREF="./number.html#CONVERT">CONVERT ( ud1 c-addr1 -- ud2 c-addr2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#COUNT">COUNT ( c-addr1 -- c-addr2 u )</a>
+<dt> <a HREF="./input_output.html#CR">CR ( --)</a>
+<dt> <a HREF="./user_using_words.html#CREATE">CREATE ( "name" -- )</a>
+<dt> <a HREF="./input_output.html#CREATE-FILE">CREATE-FILE ( c-addr u fam -- fileid ior )</a>
+<dt> <a HREF="./ansi_code_words.html#CS-PICK">CS-PICK Execution: ( C: destu ... orig0|dest0 --
+                                              destu ... orig0|dest0 destu )( S: u -- )</a>
+<dt> <a HREF="./ansi_code_words.html#CS-ROLL">CS-ROLL ( C: origu|destu origu-1|destu-1 ... orig0|dest0 --
+                                              origu-1|destu-1 ... orig0|dest0 origu|destu )( S: u -- )
+<dt> <a HREF="./ansi_code_words.html#D+">D+ ( d1|du1 d2|du2 -- d3|du3 )</a>
+<dt> <a HREF="./ansi_code_words.html#D-">D- ( d1|du1 d2|du2 -- d3|du3 ) </a>
+<dt> <a HREF="./number_output.html#D.">D. ( d -- )</a>
+<dt> <a HREF="./number_output.html#D.R">D.R ( d width -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#D0lt">D0&lt; ( d -- flag )</a>
+<dt> <a HREF="./ansi_colon_words.html#D0=">D0= ( d -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#D2*">D2* ( xd1 -- xd2 )</a>
+<dt> <a HREF="./ansi_code_words.html#D2/">D2/ ( xd1 -- xd2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#Dlt">D&lt; ( d1 d2 -- flag )</a>
+<dt> <a HREF="./ansi_colon_words.html#D=">D= ( d1 d2 -- flag )</a>
+<dt> <a HREF="./float.html#DtoF">D&gt;F ( d1 -- f1 )</a>
+<dt> <a HREF="./ansi_colon_words.html#D>S">D&gt;S ( d -- n)</a>
+<dt> <a HREF="./ansi_code_words.html#DABS">DABS ( d -- ud )</a>
+<dt> <a HREF="./base_altering.html#DECIMAL">DECIMAL ( -- )</a>
+<dt> <a HREF="./vocabulary.html#DEFINITIONS">DEFINITIONS ( -- )</a>
+<dt> <a HREF="./input_output.html#DELETE-FILE">DELETE-FILE ( fileid -- ior)</a>
+<dt> <a HREF="./user_using_words.html#DEPTH">DEPTH ( -- n)</a>
+<dt> DF!         d-f-store             FLOATING EXT
+<dt> DF@         d-f-fetch             FLOATING EXT
+<dt> DFALIGN     d-f-align             FLOATING EXT
+<dt> DFALIGNED   d-f-aligned           FLOATING EXT
+<dt> DFLOAT+     d-float-plus          FLOATING EXT
+<dt> DFLOATS     d-floats              FLOATING EXT
+<dt> <a HREF="./ansi_colon_words.html#DMAX">DMAX ( d1 d2 -- d3 )</a>
+<dt> <a HREF="./ansi_colon_words.html#DMIN">DMIN ( d1 d2 -- d3 )</a>
+<dt> <a HREF="./ansi_code_words.html#DNEGATE">DNEGATE ( d1 -- d2 )</a>
+<dt> <a HREF="./compile.html#DO">DO ( limit start -- )</a>
+<dt> <a HREF="./compile.html#DOES">DOES&gt; runtime ( -- )</a>
+<dt> <a HREF="./ansi_code_words.html#DROP">DROP ( x -- )</a>
+<dt> <a HREF="./ansi_code_words.html#DUlt">DU&lt; ( ud1 ud2 -- flag)</a>
+<dt> <a HREF="./ansi_code_words.html#DUP">DUP< ( x1 -- x1 x1)</a>
+<dt> <a HREF="./more_forth.html#DUMP">DUMP ( addr n --)</a>
+<dt> <a HREF="./wordlists.html#EDITOR">EDITOR ( --)</a>
+<dt> EKEY        e-key                 FACILITY EXT
+<dt> EKEY>CHAR   e-key-to-char         FACILITY EXT
+<dt> EKEY?       e-key-question        FACILITY EXT
+<dt> <a HREF="./compile.html#ELSE">ELSE runtime ( -- )</a>
+<dt> <a HREF="./basic_io.html#EMIT">EMIT ( char --)</a>
+<dt> EMIT?       emit-question         FACILITY EXT
+<dt> EMPTY-BUFFERS                     BLOCK EXT
+<dt> <a HREF="./compile.html#ENDCASE">ENDCASE Run-time: ( x -- )</a>
+<dt> <a HREF="./compile.html#ENDOF">ENDOF Run-time: (  -- )</a>
+<dt> <a HREF="./environment.html#ENVIRONMENT_">ENVIRONMENT?( c-addr u -- false | i*x true )</a>
+<dt> <a HREF="./ansi_code_words.html#ERASE">ERASE ( addr u -- )</a>
+<dt> <a HREF="./quit_interpret_etc.html#EVALUATE">EVALUATE ( i*x c-addr u -- j*x )</a>
+<dt> <a HREF="./ansi_code_words.html#EXECUTE">EXECUTE ( xt -- )</a>
+<dt> <a HREF="./compile.html#EXIT">EXIT execution( -- )</a>
+<dt> <a HREF="./input_output.html#EXPECT">EXPECT ( add n -- )</a>
+<dt> <a HREF="./float.html#Fstore">F! ( float float_addr -- )</a>
+<dt> <a HREF="./float.html#Fby">F* ( float float -- float )</a>
+<dt> F**         f-star-star           FLOATING EXT
+<dt> <a HREF="./float.html#Fplus">F+ ( float float -- float)</a>
+<dt> <a HREF="./float.html#Fminus">F- ( float float -- float )</a>
+<dt> <a HREF="./float.html#Fdot">F. ( float -- )</a>
+<dt> <a HREF="./float.html#Fdivide">F/ ( float float -- float)</a>
+<dt> <a HREF="./float.html#F0lessthan">F0&lt; ( float -- flag)</a>
+<dt> <a HREF="./float.html#F0equal">F0= ( float -- flag)</a>
+<dt> <a HREF="./float.html#Flessthan">F&lt; ( float float -- flag)</a>
+<dt> <a HREF="./float.html#FtoD">F&lt;D ( float -- double)</a>
+<dt> <a HREF="./float.html#Ffetch">F@ ( float_addr -- float)</a>
+<dt> <a HREF="./float.html#FABS">FABS( float -- float)</a>
+<dt> FACOS       f-a-cos               FLOATING EXT
+<dt> FACOSH      f-a-cosh              FLOATING EXT
+<dt> <a HREF="./float.html#FALIGN">FALIGN ( -- )</a>
+<dt> <a HREF="./float.html#FALIGNED">FALIGNED ( addr -- float_addr )</a>
+
+
+<dt> FALOG       f-a-log               FLOATING EXT
+<dt> <a HREF="./ansi_colon_words.html#FALSE">FALSE ( -- 0)</a>
+<dt> FASIN       f-a-sine              FLOATING EXT
+<dt> FASINH      f-a-cinch             FLOATING EXT
+<dt> FATAN       f-a-tan               FLOATING EXT
+<dt> FATAN2      f-a-tan-two           FLOATING EXT
+<dt> FATANH      f-a-tan-h             FLOATING EXT
+<dt> <a HREF="./float.html#FCONSTANT">FCONSTANT child (  -- float )</a>
+					<dd>Defining word
+					<dd>parent (m1 e2 "name" --)
+					<dd>child ( --m1 e2)
+<dt> FCOS        f-cos                 FLOATING EXT
+<dt> FCOSH       f-cosh                FLOATING EXT
+<dt> <a HREF="./float.html#FDEPTH">FDEPTH ( -- n )</a>
+<dt> <a HREF="./float.html#FDROP">FDROP ( float float-- float)</a>
+<dt> <a HREF="./float.html#FDUP">FDUP ( float -- float float)</a>
+<dt> FE.         f-e-dot               FLOATING EXT
+<dt> FEXP        f-e-x-p               FLOATING EXT
+<dt> FEXPM1      f-e-x-p-m-one         FLOATING EXT
+<dt> <a HREF="./input_output.html#FILE-POSITION">FILE-POSITION ( fileid -- ud ior)</a>
+<dt> <a HREF="./input_output.html#FILE-SIZE">FILE-SIZE ( fileid -- ud ior)</a>
+<dt> <a HREF="./input_output.html#FILE-STATUS">FILE-STATUS ( fileid -- code ior)</a>
+<dt> <a HREF="./ansi_code_words.html#FILL">FILL (c-addr u char -- )</a>
+<dt> <a HREF="./find.html#FIND">FIND ( c-addr -- c-addr 0 | xt 1 | xt -1 )</a>
+<dt> <a HREF="./float.html#FLITERAL">FLITERAL runtime( -- float )</a>
+					<dd>compiling word
+					<dd>compile time ( m1 e2 --)
+					<dd>runtime  ( --m1 e2)
+<dt> FLN         f-l-n                 FLOATING EXT
+<dt> FLNP1       f-l-n-p-one           FLOATING EXT
+<dt> <a HREF="./float.html#FLOATplus">FLOAT+ ( float_addr1 -- float_addr2)</a>
+<dt> <a HREF="./float.html#FLOATS">FLOATS ( n -- bytes )</a>
+<dt> FLOG        f-log                 FLOATING EXT
+<dt> <a HREF="./float.html#FLOOR">FLOOR ( float1 -- float2 )</a>
+<dt> FLUSH                             BLOCK
+<dt> <a HREF="./input_output.html#FLUSH-FILE">FLUSH-FILE ( fileid -- ior)</a>
+<dt> <a HREF="./ansi_code_words.html#FM/MOD">FM/MOD ( d1 n1 -- n2 n3 )</a>
+<dt> <a HREF="./float.html#FMAX">FMAX ( float float -- float )</a>
+<dt> <a HREF="./float.html#FMIN">FMIN ( float flaot -- float )</a>
+<dt> <a HREF="./float.html#FNEGATE">FNEGATE ( float -- float )</a>
+<dt> FORGET                            TOOLS EXT
+<dt> <a HREF="./wordlists.html#FORTH">FORTH ( -- )</a>
+<dt> <a HREF="./wordlists.html#FORTH-WORDLIST">FORTH-WORDLIST ( -- wid )</a>
+<dt> <a HREF="./float.html#FOVER">FOVER ( floata floatb -- floata floatb floata)</a>
+<dt> <a HREF="./heap_control.html#FREE">FREE ( a-addr -- ior )</a>
+<dt> <a HREF="./float.html#FROT">FROT ( floata floatb floatc -- floatb floatc floata)</a>
+<dt> <a HREF="./float.html#FROUND">FROUND ( floata -- floatb)</a>
+<dt> <a HREF="./float.html#FSdot">FS. ( float -- )</a>
+<dt> FSIN        f-sine                FLOATING EXT
+<dt> FSINCOS     f-sine-cos            FLOATING EXT
+<dt> FSINH       f-cinch               FLOATING EXT
+<dt> FSQRT       f-square-root         FLOATING EXT
+<dt> <a HREF="./float.html#FSWAP">FSWAP ( floata floatb -- floatb floata)</a>
+<dt> FTAN        f-tan                 FLOATING EXT
+<dt> FTANH       f-tan-h               FLOATING EXT
+<dt> <a HREF="./float.html#FVARIABLE">FVARIABLE child(  -- f-addr)</a>
+					<dd>Defining word
+					<dd>parent ( "name" --)
+					<dd>child ( --f-addr)
+<dt> F~          f-proximate           FLOATING EXT
+<dt> <a HREF="./vocabulary.html#GET-CURRENT">GET-CURRENT ( -- wid )</a>
+<dt> <a HREF="./vocabulary.html#GET-ORDER">GET-ORDER (  -- wid-n ...wid-1 n )</a>
+<dt> <a HREF="./memory_allocation.html#HERE">HERE( --  addr )</a>
+<dt> <a HREF="./base_altering.html#HEX">HEX( -- )</a>
+<dt> <a HREF="./number_output.html#HOLD">HOLD ( char -- )</a> 
+<dt> <a HREF="./compile.html#I">I ( --x1)</a>
+<dt> <a HREF="./compile.html#IF">IF ( flag--)</a>
+<dt> <a HREF="./compile.html#IMMEDIATE">IMMEDIATE ( --)</a>
+<dt> <a HREF="./input_output.html#INCLUDE-FILE">INCLUDE-FILE ( i*x fileid -- j*x)</a>
+<dt> <a HREF="./input_output.html#INCLUDED">INCLUDED ( i*x c-addr u -- j*x)</a>
+<dt> <a HREF="./ansi_code_words.html#INVERT">INVERT ( x1 -- x2 )</a>
+<dt> <a HREF="./ansi_code_words.html#J">J ( -- x1 )</a>
+<dt> <a HREF="./input_output.html#KEY">KEY( -- char)</a>
+<dt> <a HREF="./input_output.html#KEY?">KEY?( -- flag)</a>
+<dt> <a HREF="./compile.html#LEAVE">LEAVE ( -- )</a> 
+<dt> LIST                              BLOCK EXT
+<dt> <a HREF="./compile.html#LITERAL">LITERAL runtime ( --32b )</a> 
+					<dd>compile time ( 32b --)
+					<dd>runtime  ( --32b)
+<dt> LOAD                              BLOCK
+<dt> LOCALS|     locals-bar            LOCAL EXT
+<dt> <a HREF="./compile.html#LOOP">LOOP runtime ( -- )</a> 
+<dt> <a HREF="./ansi_code_words.html#LSHIFT">LSHIFT ( x1 u -- x2 )</a>
+<dt> <a HREF="./ansi_code_words.html#M*">M* ( n1 n2-- l1 hi )</a>
+<dt> <a HREF="./ansi_colon_words.html#M*/">M*/ ( d1 n1 +n2-- d2 )</a>
+<dt> <a HREF="./ansi_code_words.html#M+">M+ ( d1|ud1 n -- d2|ud2 )</a> 
+<dt> <a HREF="./marker.html#MARKER">MARKER ( "name" -- )</a> 
+<dt> <a HREF="./ansi_code_words.html#MAX">MAX ( n1 n2-- n3 )</a>
+<dt> <a HREF="./ansi_code_words.html#MIN">MIN ( n1 n2 -- n3 )</a>
+<dt> <a HREF="./ansi_colon_words.html#MOD">MOD ( n1 n2 -- n3 )</a>
+<dt> <a HREF="./ansi_code_words.html#MOVE">MOVE ( addr1 addr2 u--)</a>
+<dt> MS                                FACILITY EXT
+
+<dt> <a HREF="./ansi_code_words.html#NEGATE">NEGATE ( n1-- n2 )</a>
+<dt> <a HREF="./ansi_code_words.html#NIP">NIP ( x1 x2 -- x2 )</a>
+<dt> <a HREF="./compile.html#OF">OF Run-time: ( x1 x2 --   | x1 )</a>
+<dt> <a HREF="./vocabulary.html#ONLY">ONLY ( -- )</a>
+<dt> <a HREF="./input_output.html#OPEN-FILE">OPEN-FILE ( addr num mode -- fileid ior)</a>
+<dt> <a HREF="./ansi_code_words.html#OR">OR ( x1 x2-- x3 )</a>
+<dt> ORDER                             SEARCH EXT
+<dt> <a HREF="./ansi_code_words.html#OVER">OVER ( x1 x2-- x1 x2 x1 )</a>
+<dt> <a HREF="./Kernel.html#PAD">PAD ( -- a-addr )</a>
+<dt> <a HREF="./input_output.html#PAGE">PAGE ( -- )</a>
+<dt> <a HREF="./word.html#PARSE">PARSE ( char "ccc{char}" -- c-addr u )</a>
+<dt> <a HREF="./ansi_code_words.html#PICK">PICK ( xu ...x2 x1 u -- xu ...x2 x1 xu)</a>
+<dt> <a HREF="./more_forth.html#POSTPONE">POSTPONE Compilation: ( " name" -- )</a>
+<dt> <a HREF="./float.html#PRECISION">PRECISION ( --u )</a>
+<dt> <a HREF="./vocabulary.html#PREVIOUS">PREVIOUS ( -- )</a>
+<dt> <a HREF="./quit_interpret_etc.html#QUERY">QUERY ( -- )</a>
+<dt> <a HREF="./quit_interpret_etc.html#QUIT">QUIT ( -- )</a>
+<dt> <a HREF="./input_output.html#R/O">R/O ( -- fam)</a>
+<dt> <a HREF="./input_output.html#R/W">R/W ( -- fam)</a>
+<dt> <a HREF="./compile.html#Rgt">R> ( -- x1 )</a>
+<dt> <a HREF="./compile.html#R@">R@ ( -- x1 )</a>
+<dt> <a HREF="./input_output.html#READ-FILE">READ-FILE ( c-addr u1 fileid-- u2 ior)</a>
+<dt> <a HREF="./input_output.html#READ-LINE">READ-LINE ( c-addr u1 fileid-- u2 ior)</a>
+<dt> <a HREF="./compile.html#RECURSE">RECURSE ( -- )</a>
+<dt> <a HREF="./input_output.html#REFILL">REFILL ( -- flag )</a>
+<dt> <a HREF="./input_output.html#RENAME-FILE">RENAME-FILE ( c-addr1 u1 c-addr2 u2 -- ior)</a>
+<dt> <a HREF="./compile.html#REPEAT">REPEAT Run-time: ( -- )</a>
+<dt> <a HREF="./input_output.html#REPOSITION-FILE">REPOSITION-FILE ( fileid-- u2 ior)</a>
+<dt> <a HREF="./float.html#REPRESENT">REPRESENT ( float -- )</a>
+<dt> <a HREF="./heap_control.html#RESIZE">RESIZE ( a-addr1 u -- a-addr2 ior )</a>
+<dt> <a HREF="./input_output.html#RESIZE-FILE">RESIZE-FILE ( ud fileid -- ior)</a>
+<dt> <a HREF="./input_output.html#RESTORE-INPUT">RESTORE-INPUT ( x1 x2 x3 x4 x5 x6 6-- flag)</a>
+<dt> <a HREF="./ansi_code_words.html#ROLL">ROLL ( xu xu-1 ... x0 u -- xu-1 ... x0 xu )</a>
+<dt> <a HREF="./ansi_code_words.html#ROT">ROT ( x1 x2 x3-- x2 x3 x1 )</a>
+<dt> <a HREF="./ansi_code_words.html#RSHIFT">RSHIFT ( x1 u-- x2 )</a>
+<dt> <a HREF="./string_literals.html#S_">S" ( -- )</a>
+<dt> <a HREF="./ansi_code_words.html#S>D">S&gt;D ( n-- lo1 hi1 )</a>
+<dt> SAVE-BUFFERS                      BLOCK
+<dt> <a HREF="./input_output.html#SAVE-INPUT">SAVE-INPUT ( -- x1 x2 x3 x4 x5 x6 6)</a>
+<dt> SCR         s-c-r                 BLOCK EXT
+<dt> <a HREF="./ansi_colon_words.html#SEARCH">SEARCH ( c-addr1 u1 c-addr2 u2 -- c-addr3 u3 flag )</p></a>
+<dt> <a HREF="./find.html#SEARCH-WORDLIST">SEARCH-WORDLIST ( c-addr u wid -- 0 | xt 1 | xt -1 )</a>
+<dt> SEE                               TOOLS
+<dt> <a HREF="./vocabulary.html#SET-CURRENT">SET-CURRENT ( wid-n -- )</a>
+<dt> <a HREF="./vocabulary.html#SET-ORDER">SET-ORDER ( wid-n wid-1 n -- )</a>
+<dt> <a HREF="./float.html#SET-PRECISION">SET-PRECISION ( u -- )</a>
+<dt> SF!         s-f-store             FLOATING EXT
+<dt> SF@         s-f-fetch             FLOATING EXT
+<dt> SFALIGN     s-f-align             FLOATING EXT
+<dt> SFALIGNED   s-f-aligned           FLOATING EXT
+<dt> SFLOAT+     s-float-plus          FLOATING EXT
+<dt> SFLOATS     s-floats              FLOATING EXT
+<dt> <a HREF="./number_output.html#SIGN">SIGN ( n -- )</a>
+<dt> <a HREF="./string_literals.html#SLITERAL">SLITERAL runtime( -- c-addr2 u )</a>
+<dt> <a HREF="./ansi_code_words.html#SM/REM">SM/REM ( lo hi n1-- n2 n3)</a>
+<dt> <a HREF="./more_ansi_colon_words.html#SOURCE">SOURCE ( -- c-addr u )</a>
+<dt> <a HREF="./user_variables.html#SOURCE-ID">SOURCE-ID ( -- addr)</a>
+<dt> <a HREF="./number_output.html#SPACE">SPACE (  -- )</a>
+<dt> <a HREF="./number_output.html#SPACES">SPACES ( n -- )</a>
+<dt> <a HREF="./input_output.html#SPAN">SPAN ( -- addr )</a>
+<dt> <a HREF="./user_variables.html#STATE">STATE ( -- addr )</a>
+<dt> <a HREF="./ansi_code_words.html#SWAP">SWAP ( x1 x2 -- x2 x1 )</a>
+<dt> <a HREF="./compile.html#THEN">THEN runtime ( -- )</a>
+<dt> <a HREF="./abort.html#THROW">THROW ( k*x n -- k*x | i*x n )</a>
+<dt> THRU                              BLOCK EXT
+<dt> <a HREF="./user_using_words.html#TIB">TIB ( -- addr)</a>
+<dt> TIME&DATE   time-and-date         FACILITY EXT
+<dt> <a HREF="./objects.html#TO">TO runtime ( x -- )</a>
+<dt> <a HREF="./ansi_colon_words.html#TRUE">TRUE ( -- -1 )</a>
+<dt> <a HREF="./ansi_code_words.html#TUCK">TUCK ( x1 x2--x2 x1 x2)</a>
+<dt> <a HREF="./input_output.html#TYPE">TYPE ( addr count -- )</a>
+<dt> <a HREF="./number_output.html#U.">U. ( u -- )</a>
+<dt> <a HREF="./number_output.html#U.R">U.R ( u width -- )</a>
+<dt> <a HREF="./ansi_code_words.html#Ult">U&lt; ( u1 u2 -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#Ugt">U&gt; ( u1 u2 -- flag )</a>
+<dt> <a HREF="./ansi_code_words.html#UM*">UM* ( u1 u2 -- lo1 hi1 )</a>
+<dt> <a HREF="./ansi_code_words.html#UM/MOD">UM/MOD ( lo1 hi1 u1-- u1 u2 )</a>
+<dt> <a HREF="./ansi_code_words.html#UNLOOP">UNLOOP ( -- )</a>
+<dt> <a HREF="./compile.html#UNTIL">UNTIL runtime( flag-- )</a>
+<dt> <a HREF="./memory_allocation.html#UNUSED">UNUSED ( --value )</a>
+<dt> UPDATE                            BLOCK
+<dt> <a HREF="./objects.html#VALUE">VALUE ( x "name" -- )</a>
+<dt> <a HREF="./compile.html#VARIABLE">VARIABLE child( -- addr)</a>
+					<dd>Defining word
+					<dd>parent ( "name" --)
+					<dd>child ( --addr)
+<dt> <a HREF="./input_output.html#W/O">W/O ( -- fam)</a>
+<dt> <a HREF="./compile.html#WHILE">WHILE ( flag-- )</a>
+<dt> <a HREF="./ansi_code_words.html#WITHIN">WITHIN ( n1|u1 n2|u2 n3|u3 -- flag)</a>
+<dt> <a HREF="./word.html#WORD">WORD ( char "{chars}ccc{char}" -- c-addr )</a>
+<dt> <a HREF="./vocabulary.html#WORDLIST">WORDLIST ( -- wid )</a>
+<dt> <a HREF="./words.html#WORDS">WORDS ( "name" --)</a>
+<dt> <a HREF="./input_output.html#WRITE-FILE">WRITE-FILE ( c-addr1 fileid -- ior)</a>
+<dt> <a HREF="./input_output.html#WRITE-LINE">WRITE-LINE ( c-addr1 fileid -- ior)</a>
+<dt> <a HREF="./ansi_code_words.html#XOR">XOR ( x1 x2-- x3 )</a>
+<dt> <a HREF="./compile.html#[">[ execution( -- )</a>
+<dt> <a HREF="./compile.html#[']">['] runtime( -- xt )</a>
+<dt> <a HREF="./more_forth.html#[CHAR]">[CHAR] runtime( -- char )</a>
+<dt> <a HREF="./more_forth.html#[COMPILE]">[COMPILE] compile( "name" --)</a>
+<dt> <a HREF="./if_then_else.html#[ELSE]">[ELSE] ( -- )</a>
+<dt> <a HREF="./if_then_else.html#[IF]">[IF] ( -- )</a>
+<dt> <a HREF="./if_then_else.html#[THEN]">[THEN] ( -- )</a>
+<dt> <a HREF="./compile.html#backslash">\ ( --)</a>
+<dt> <a HREF="./compile.html#]">] ( --)</a>
+</dl>
+
+
+<h3>META EXTENSIONS</h3>
+<dl>
+<dt> <a HREF="./vocabulary.html#meta_vocabularies">vocabularies</a>
+</dl>
+<a name="coldwords"></a>
+<h3>COLDFORTH WORDS</h3>
+<dl>
+<dt> <a HREF="./heap_control.html#_$buffer">#$buffer ( -- n )</a>
+<dt> <a HREF="./number_output.html#hash]">#] ( d -- c-addr u )</a>
+<dt> <a HREF="./task_loops.html#task_level_names">#clock_high ( -- value )</a>
+<dt> <a HREF="./task_loops.html#task_level_names">#clock_medium ( -- value )</a>
+<dt> <a HREF="./task_loops.html#task_level_names">#task_level_clock_low ( -- value ) </a>
+<dt> <a HREF="./number_output.html#_picture_min">#picture_min ( -- u )</a>
+<dt> <a HREF="./vocabulary.html#_vocs">#vocs ( -- n )</a>
+<dt> <a HREF="./string_literals.html#$_">$" ( -- )</a>
+<dt> <a HREF="./heap_control.html#$buffer">$buffer ( -- )</a>
+<dt> <a HREF="./number_output.html#$date">$date ( year month day addr n -- $ )</a>
+<dt> <a HREF="./number_output.html#$hold">$hold ( $ -- )</a>
+<dt> <a HREF="./input_output.html#$mkfile">$mkfile ( $--)</a>
+<dt> <a HREF="./number_output.html#$months">$months ( -- addr )</a>
+<dt> <a HREF="./colon_words.html#$move">$move ( from to max -- )</a>
+<dt> <a HREF="./number_output.html#$sec">$sec ( ticks addr n -- $ )</a>
+<dt> <a HREF="./number_output.html#$ticks">$ticks ( n addr n --$)</a>
+<dt> <a HREF="./number_output.html#$time">$time ( ticks addr n-- $ )</a>
+<dt> <a HREF="./number_output.html#(d.)">(d.) ( d addr n -- c-addr len )</a>
+<dt> <a HREF="./number_output.html#(dr.)">(dr.) ( d base n-frac addr n -- )</a>
+<dt> <a HREF="./code_words.html#-rot">-rot ( x1 x2 x3 -- x3 x1 x2 )</a>
+<dt> <a HREF="./string_literals.html#,_">," ( -- )</a>
+<dt> <a HREF="./string_literals.html#,string">,string ( addr n -- )</a>
+<dt> <a HREF="./print_system_data.html#.buffers">.buffers ( -- )</a>
+<dt> <a HREF="./print_system_data.html#.buffers_used">.buffers_used ( -- )</a>
+<dt> <a HREF="./prompt.html#.context">.context ( -- )</a>
+<dt> <a HREF="./number_output.html#.d">.d ( n -- )</a>
+<dt> <a HREF="./number_output.html#.date">.date ( yyy mmm ddd -- )</a>
+<dt> <a HREF="./number_output.html#.h">.h ( u -- )</a>
+<dt> <a HREF="./number_output.html#.l">.l ( n -- )</a>
+<dt> <a HREF="./number_output.html#.sec">.sec ( ticks -- )</a>
+<dt> <a HREF="./number_output.html#.ticks">.ticks ( ticks -- )</a>
+<dt> <a HREF="./number_output.html#.ticks">.ticks ( ticks -- )</a>
+<dt> <a HREF="./number_output.html#.time">.time ( ticks -- )</a>
+<dt> <a HREF="./colon_words.html#16*">16* ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#16/">16/ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#2**">2** ( n -- x1 )</a>
+<dt> <a HREF="./colon_words.html#2+">2+ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#2-">2- ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./compile.html#2rgtdrop">2r>drop ( -- )</a>
+<dt> <a HREF="./colon_words.html#3*">3* ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#3+">3+ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./code_words.html#3drop">3drop ( x1 x2 x3 -- )</a>
+<dt> <a HREF="./colon_words.html#3dup">3dup ( x1 x2 x3  -- x1 x2 x3 x1 x2 x3 )</a>
+<dt> <a HREF="./colon_words.html#4*">4* ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#4+">4+ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#4-">4- ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./code_words.html#4/">4/ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./code_words.html#4drop">4drop ( x1 x2 x3 x4 -- )</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#4dup">4dup ( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 x3 x4 )</a>
+<dt> <a HREF="./compile.html#4rgtdrop">4r>drop ( -- )</a>
+<dt> <a HREF="./colon_words.html#8*">8* ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#8+">8+ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#8-">8- ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./colon_words.html#8/">8/ ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./code_words.html#gtlt">&gt;&lt; ( x1 -- x2)</a>
+<dt> <a HREF="./colon_words.html#gtgta">&gt;&gt;a ( 32b1 u -- 32b2 )</a>
+<dt> <a HREF="./colon_words.html#gtasl">&gt;asl ( value -- asl-value )</a>
+<dt> <a HREF="./code_words.html#gtwlt">&gt;w&lt; ( x1 -- x2)</a>
+<dt> <a HREF="./colon_words.html#@execute">@execute ( a-addr -- )</a>
+<dt> <a HREF="./input_output.html#Smkfile">Smkfile ( addr n--)</a>
+<dt> <a HREF="./abort.html#abort_code>$">abort_code>$ ( code -- $)</a>
+
+<bt> <a HREF="./memory_allocation.html#bank_allot">bank_allot ( n--)</a>
+<bt> <a HREF="./compile.html#bank_create">bank_create ( parent -- child -- addr)</a>
+<bt> <a HREF="./memory_allocation.html#bank_here">bank_here ( --addr)</a>
+<bt> <a HREF="./compile.html#bank_variable">bank_variable ( parent -- child -- addr)</a>
+
+<dt> <a HREF="./base_altering.html#binary">binary ( -- )</a>
+<dt> <a HREF="./heap_control.html#buffer">buffer ( -- addr )</a>
+<dt> <a HREF="./heap_control.html#buffer_size">buffer_size ( addr -- u )</a>
+<dt> <a HREF="./heap_control.html#buffer_save_ip">buffer_save_ip ( addr -- )</a>
+<dt> <a HREF="./heap_control.html#buffer_too_big">buffer_too_big? ( -- flag )</a>
+<dt> <a HREF="./colon_words.html#cell">cell ( -- n )</a>
+<dt> <a HREF="./colon_words.html#cell/">cell/ ( x1 -- x2 )</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#char!">char! ( char addr --)</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#char@">char@ ( addr -- char )</a>
+<dt> <a HREF="./vocabulary.html#current">current ( -- char )</a>
+<dt> <a HREF="./number_output.html#d.l">d.l ( d len -- )</a>
+<dt> <a HREF="./colon_words.html#dgt">d&gt; ( d1 d2 -- flag )</a>
+<dt> <a HREF="./source/code_words.html#dgtgt">d&gt;&gt; ( 64b1 u--64b3)</a>
+<dt> <a HREF="./source/code_words.html#dgtgta">d&gt;&gt;a ( 64b1 u--64b3)</a>
+<dt> <a HREF="./colon_words.html#dtou">d&gt;u ( d -- u )</a>
+<dt> <a HREF="./source/code_words.html#dltlt">d&lt;&lt; ( 64b1 u--64b3)</a>
+<dt> <a HREF="./number_output.html#digit">digit ( u -- ascii_u )</a>
+<dt> <a HREF="./source/code_words.html#dand">dand ( 64b1 64b2--64b3) </a>
+<dt> <a HREF="./source/code_words.html#dor">dor ( 64b1 64b2--64b3)</a>
+<dt> <a HREF="./colon_words.html#dup@">dup@( a-addr -- a-addr x1 )</a>
+<dt> <a HREF="./compile.html#dupgtr">dup>r ( -- )</a>
+<dt> <a HREF="./source/code_words.html#dxor">dxor ( 64b1 64b2--364b3</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#eight">eight ( -- 8 )</a>
+<dt> <a HREF="./vocabulary.html#extend_wordlist">extend_wordlist ( wid1 -- wid2 )</a>
+<dt> <a HREF="./float.html#ftos">f&gt;s ( float--n)</a>
+<dt> <a HREF="./float.html#ftoq">f&gt;q ( float qbase--q)</a>
+<dt> <a HREF="./input_output.html#file">file ( fam "name"--)</a>
+<dt> <a HREF="./float.html#fmdot">fm. ( vector_source1 row column -- )</a>
+<dt> <a HREF="./float.html#fmtofv">fm&gt;fv ( vector_source1 rows columns vector_dest slected_column -- )</a>
+<dt> <a HREF="./float.html#qtofv">fv&gt;qv (addr1 addr2 n qbase--)</a>
+<dt> <a HREF="./float.html#fvdot">fv. ( vector_source1  n -- )</a>
+<dt> <a HREF="./float.html#fvbyf">fv*f ( vector_source1 float vector_dest n -- )</a>
+<dt> <a HREF="./float.html#fvbyfv">fv*fv ( vector_source1 vector_source2 vector_dest n -- )</a>
+<dt> <a HREF="./float.html#fvplusf">fv+f ( vector_source1 float vector_dest n -- )</a>
+<dt> <a HREF="./float.html#fvplusfv">fv+fv ( vector_source1 vector_source2 vector_dest n -- )</a>
+<dt> <a HREF="./float.html#fvminusfv">fv-fv ( vector_source1 vector_source2 vector_dest n -- )</a>
+<bt> <a HREF="./memory_allocation.html#fast_allot">fast_allot ( n--)</a>
+<bt> <a HREF="./compile.html#fast_create">fast_create ( parent -- child -- addr)</a>
+<bt> <a HREF="./memory_allocation.html#fast_here">fast_here ( --addr)</a>
+<bt> <a HREF="./compile.html#fast_variable">fast_variable ( parent -- child -- addr)</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#four">four ( -- 4 )</a>
+<dt> <a HREF="./float.html#fvsum">fvsum ( vector_source n -- float )</a>
+<dt> <a HREF="./xwords.html#get">get ( addr -- )</a>
+<dt> <a HREF="./heap_control.html#get/kill_buffer">get_buffer ( n-- )</a>
+<dt> <a HREF="./xwords.html#grab">grab ( addr -- ) </a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#jump">jump ( x1 x2 x3  -- x1 x2 x3 x1)</a>
+<dt> <a HREF="./heap_control.html#get/kill_buffer">kill_buffer ( -- )</a>
+<dt> <a HREF="./memory_allocation.html#line_align">line_align ( -- )</a>
+<dt> <a HREF="./colon_words.html#line_aligned">line_aligned ( addr1 -- addr2 )</a>
+<dt> <a HREF="./link_lists.html#link_double">link_double ( link_addr head -- )</a>
+<dt> <a HREF="./input_output.html#mkfile">mkfile ( "name"--)</a>
+<dt> <a HREF="./ansi_colon_words.html#mt*">mt* ( d1 n1 +n2 -- d2 )</a>
+<dt> <a HREF="./colon_words.html#mu/mod">mu/mod ( d1 u -- rem d2 )</a>
+<dt> <a HREF="./heap_control.html#n_buffer_size">n>buffer_size ( n1 -- n2 )</a>
+<dt> <a HREF="./compile.html#name_wordlist">name_wordlist ( wid -- )</a>
+<dt> <a HREF="./colon_words.html#not">not ( n1|u1 -- n2|u2 )</a>
+<dt> <a HREF="./base_altering.html#octal">octal ( -- )</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#one">one ( -- 1)</a>
+<dt> <a HREF="./vocabulary.html#previous_definitions">previous_definitions ( -- )</a>
+<dt> <a HREF="./float.html#qtof">q&gt;f (q qbase --f )</a>
+<dt> <a HREF="./float.html#qtofv">q&gt;fv (q qbase --f )</a>
+
+<bt> <a HREF="./memory_allocation.html#port_allot">port_allot ( n--)</a>
+<bt> <a HREF="./compile.html#port_create">port_create ( parent -- child -- addr)</a>
+<bt> <a HREF="./memory_allocation.html#port_here">port_here ( --addr)</a>
+<bt> <a HREF="./compile.html#port_variable">port_variable ( parent -- child -- addr)</a>
+
+<dt> <a HREF="./number_output.html#r.">r. ( n base n-frac -- )</a>
+<dt> <a HREF="./number_output.html#r.l">r.1 ( n base n-frac width -- )</a>
+<dt> <a HREF="./number_output.html#r.r">r.r ( n base n-frac width -- )</a>
+<dt> <a HREF="./compile.html#rgtdrop">r>drop ( -- )</a>
+<bt> <a HREF="./memory_allocation.html#ram_allot">ram_allot ( n--)</a>
+<bt> <a HREF="./compile.html#ram_create">ram_create ( parent -- child -- addr)</a>
+<bt> <a HREF="./memory_allocation.html#ram_here">ram_here ( --addr)</a>
+<bt> <a HREF="./compile.html#ram_variable">ram_variable ( parent -- child -- addr)</a>
+<dt> <a HREF="./random.html#random">random ( -- x31 )</a>
+<dt> <a HREF="./xwords.html#release">release ( addr -- )</a>
+<dt> <a HREF="./float.html#stof">s&gt;f (n --f )</a>
+<dt> <a HREF="./find.html#search_thread">search_thread ( c-addr u thread -- c-addr 0 | xt 1 | xt -1)</a>
+<dt> <a HREF="./xwords.html#sleep/wake">sleep ( -- value ) </a>
+<dt> <a HREF="./code_words.html#sqrt">sqrt ( u1 -- u2 )</a>
+
+<bt> <a HREF="./memory_allocation.html#static_allot">static_allot ( n--)</a>
+<bt> <a HREF="./compile.html#static_create">static_create ( parent -- child -- addr)</a>
+<bt> <a HREF="./memory_allocation.html#static_here">static_here ( --addr)</a>
+<bt> <a HREF="./compile.html#static_variable">static_variable ( parent -- child -- addr)</a>
+
+<dt> <a HREF="./float.html#svtofv">sv&gt;fv ( vector_source vector_dest n -- )</a>
+<dt> <a HREF="./vocabulary.html#threads_number">threads_number ( -- addr )</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#three">three ( -- 3 )</a>
+<dt> <a HREF="./ansi_colon_words.html#tnegate">tnegate ( tri1 -- tri2 )</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#two">two ( -- 2 )</a>
+<dt> <a HREF="./ansi_colon_words.html#u/mod">u/mod ( u1 u2 -- rem quot )</a>
+<dt> <a HREF="./colon_words.html#utod">u&gt;d ( u -- d )</a>
+<dt> <a HREF="./ansi_colon_words.html#ut*">ut* ( d u -- tri )</a>
+<dt> <a HREF="./ansi_colon_words.html#ut/">ut/ ( tri n -- d )</a>
+<dt> <a HREF="./compile.html#ubuffer">ubuffer</a>
+					<dd>Defining word
+					<dd>parent (u --)
+					<dd>child ( --addr)
+<dt> <a HREF="./link_lists.html#unlink_double">unlink_double ( link_addr-- )</a>
+<dt> <a HREF="logical_unit.html#visible">visible ( -- value )</a>
+<dt> <a HREF="./compile.html#vocabulary">vocabulary ( wid -- )</a>
+<dt> <a HREF="./vocabulary.html#_vocs">#vocs ( -- n )</a>
+<dt> <a HREF="./memory_allocation.html#w,">w, ( 16b -- )</a>
+<dt> <a HREF="./xwords.html#sleep/wake">wake ( -- value )</a>
+<dt> <a HREF="./xwords.html#xcycle">xcycle ( u -- )</a>
+<dt> <a HREF="./xwords.html#xgrab">xgrab ( addr -- )</a>
+<dt> <a HREF="./xwords.html#xnext">xnext ( -- )</a>
+<dt> <a HREF="./xwords.html#xoff">xoff ( -- )</a>
+<dt> <a HREF="./xwords.html#xpause">xpause ( -- )</a>
+<dt> <a HREF="./xwords.html#xsleep">xsleep ( -- )</a>
+<dt> <a HREF="./xwords.html#xtest">xtest ( -- )</a>
+<dt> <a HREF="./xwords.html#_xtimeout">xtimeout? ( --flag)</a>
+<dt> <a HREF="./xwords.html#xwake">xwake ( --)</a>
+<dt> <a HREF="./colon_words_used_by_ansi.html#zero">zero ( -- 0 )</a>
+<dt> <a HREF="./number_output.html#[hash">[# ( addr-top --  )</a>
+
+
+
+<dt> <a HREF="./float.html#stof">s&gt;f ( n--flaot)</a>
+</dl>
+
+
+<a name="symbol_standard"></a>
+<h3>Symbol standard</h3>
+<p>
+The aim is to follow the following standard, to date all the work has not been done
+</p>
+<table border=0>
+<tr><td>Constants start with                              </td><td>#</td></tr>
+<tr><td>Variables start with                              </td><td>%</td></tr>
+<tr><td>Counted string words starts with a                </td><td>$</td></tr>
+<tr><td>Words that return a flag end with                 </td><td>?</td></tr>
+<tr><td>We use _ to seperate words                        </td><td>_</td></tr>
+<tr><td>Print words start with a                          </td><td>.</td></tr>
+<tr><td>Words to be used with TO end with a               </td><td>@</td></tr>
+<tr><td>Hex numbers                                       </td><td>&</td></tr>
+<tr><td>Words that deal with a string described on stack  </td><td>"</td></tr>
+<tr><td>Zero terminated strings ( we try not to use them) </td><td>z"</td></tr>
+<tr><td>Words that belong to the kernel and will never
+		be documented and should not be used in
+		applications start with a                         </td><td>_</td></tr>
+<tr><td>In the kernel immediate words runtime code starts with</td><td>_do_</td></tr>
+
+</table>
+<p>
+ANS words are in capitals, ANS words that don't follow the standard
+are left that way. For instance WORD should really be $WORD as it returns a 
+counted string. The system is case sensative. This is a system that forces 
+you to learn the ANS standard, that might be a good thing.
+</p>
+
+<a name="thankyou"></a>
+<h3>Thankyou</h3>
+<ul>
+<li>
+The ANS word descriptions are taken from the on line version of
+the ANS draft. This resource is available because of ???
+<li>
+The work done by Andrew McKewan and Tom Zimmer has been 
+well read (win32FORTH).
+<li>
+Colour Vision Systems Pty Ltd for supplying the resources needed to
+get this job done.
+<li>
+The ANS forth standard committee. It definitly advances the 
+language, but why oh why change the definition of truth. Both 1 and
+-1 are boring, I think next time go for something interesting
+like 42, the meaning of life the universe and everything.
+</ul>
+<a name="ANSI_deviations"></a>
+<h3>ANSI standard, known deviations</h3>
+<ul>
+<li>
+<i>KEY</i> Standard requires characters not to be echoed. COLDFORTH echos as set 
+previously by <i>echo_on</i> and <i>echo_off</i>.</li>
+<li><i>ACCEPT</i> Standard requires character echo. COLDFORTH echos is set 
+previously by <i>echo_on</i> and <i>echo_off</i>.</li>
+<li><i>QUIT</i> Standard reguires QUIT to take input and type 
+prompt on completion. COLDFORTH types prompt and accepts input.</li>
+<li><i>QUIT</i> Emptying the return stack is aborts problem not the
+problem of QUIT. COLDFORTH's QUIT does not empty the return stack.</li>
+<li><i>ABORT"</i> Throws the address of a counted string, not -2.</li>
+<li>The ANSI standard local variables are a joke.</li>
+<li>CONVERT takes a counted string</li>
+<li>A number with a point in it is treated as a float. It is the right 
+solution</li>
+</ul>
+</body>
+</html>

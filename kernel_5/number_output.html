@@ -1,0 +1,836 @@
+
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a name="picture_number"><a>
+<h3> Pictured number conversion</h3>
+<a HREF="./license.html">license</a>
+<p>
+<i>[#</i> and <i><#</i> come from two different design philosophies. 
+The <i><#</i>  philosophy has the called 'word' 'function' (call it what you like) 
+supplying the address. 
+
+This creates two problems:
+</p>
+<p>
+1) The function either has to use a fixed location,
+making the function non re-entrant, or take the buffer
+out of a pool and either have the user call another function to return the buffer,
+or hand the responsibility  of buffer return to the user.
+The first solution complicates the users life,
+the second places a lot of resposibility on the user.
+</p>
+<p>
+2) You more often than not you have to move data as the programmer has no way
+of having the function place the data where he wants it.
+</p>
+<p>
+It is far better to take the path offered by <i>[#</i>
+Have the user supply the data area and give the user easy to use data
+area allocation functions. 
+</p>
+<p>
+Anyway if you look at the number output words only <a HREF="#(d.)">(d.)</a> 
+<a HREF="#(dr.)">(d.r)</a> and <a HREF="#hashgt">#></a> 
+supply the address of the data. The kernel uses <i>[#</i> for all number output, 
+as a result you can use <i>.S</i> in the middle of a <i>[#</i> word and not destroy 
+what you are trying to create. <i>(d.)</i> and <i>(d.r)</i> are not 
+ANS words so take care, they are written to suit the preferred implementation. 
+<i><#</i> , <i>#></i> and <i>PAD</i> are available, but it would be better to 
+use <a HREF="#[hash">[#</a> , <a HREF="#hash]">#]</a> ,
+<a HREF="#get/kill_buffer">get_buffer</a> and <a HREF="#buffer_end">buffer_end</a>.
+</p>
+<p>
+The buffer should be a minimum of <a HREF="#_picture_min">#picture_min</a> bytes long.
+The kernel does not do overflow checks. 
+</p>
+<pre> <code>
+HEX
+</code> </pre>
+<p>
+User data area. The <i>_hold></i> cell holds the address below where the next character 
+is to be place. The <i>_hold_base</i> hold the end address of the string. 
+The pictured number words always build the string downwards.
+</p>
+	<pre> <code>
+	\ picture number conversion pointer
+	| uvariable _hold>
+	\ picture number conversion base
+	| uvariable _hold_base         
+	</code> </pre>
+<a name="#picture_min"><a>
+<h5>#picture_min</h5>
+<p>
+If claiming a buffer for pictured number conversion use <i>#picture_min</i> to specify 
+the buffer length.
+</p>
+<p>
+The minimum picture size is about 25 bytes if no characters
+are held in the picture. We make it so it will just fit in a 80 hex byte
+buffer.
+</p>
+	<pre> <code>
+	??HEX
+	80 _#sys_buffer_user - CONSTANT #picture_min
+	</code> </pre>
+<p>
+Number conversion data area needed for <i><#</i>, as it is allocated as a <i>ubuffer</i>
+the data area will only exist if used. The kernel does not use it.
+</p>
+	<pre> <code>
+	#picture_min ubuffer _picture_buffer
+	</code> </pre>
+<a name="SPACES"></a>
+<h5>ANS 6.1.2230 SPACES</h5> 
+<p>CORE</p>
+<p>( n -- )</p>
+<p>
+If n is greater than zero, display n spaces. 
+</p>
+	<pre> <code>    
+	: SPACES  ( n --)
+		$buffer					 \ n(--
+			buffer OVER #$maximum_data MIN BL FILL  \ n(--
+			BEGIN  
+				buffer OVER #$maximum_data MIN TYPE \ n(--
+				DUP #$maximum_data MIN -
+				DUP 0=                       \ n1 flag(--
+			UNTIL 
+			DROP
+		kill_buffer
+	;
+	</code> </pre>
+<a name="SPACE"></a>
+<h5>ANS 6.1.2220 SPACE</h5> 
+<p>CORE</p>
+<p>( -- )</p>
+<p>
+Display one space. 
+</p>
+	<pre> <code>
+	: SPACE   ( --)  
+		BL EMIT    
+	;
+	</code> </pre>
+
+<a name="HOLD"></a>
+<h5>ANS 6.1.1670 HOLD</h5> 
+<p>CORE</p>
+<p>( char -- )</p>
+<p>
+Add char to the beginning of the pictured numeric output string. 
+An ambiguous condition exists if <i>HOLD</i> executes outside of a <i><# #></i> 
+delimited number conversion. 
+</p>
+<p>
+<b>COLDFORTH</b> <i>HOLD</i> can be used between <i>[#</i> and <i>#]</i> 
+</p>
+	<pre> <code>
+	: HOLD ( char --)
+	    _hold> @ 1 - C! -1 _hold> +! 
+	;
+	</code> </pre>
+
+
+
+<a name="&quot;hold"></a>
+<h5>"hold</h5>
+<p>
+<i>_hold></i> points to the start of a sting being built down in memory
+this word adds a string TO that string. <i>"hold</i> can be used between <i><# #></i>
+and <i>[# #]</i>
+</p>
+<dt>
+<dt>c-addr = Start address of characters
+<dt>len = Number of characters
+</dt>
+	<pre> <code>
+	: "hold ( c-addr len -- )
+	    DUP         \ addr len len (--
+	    NEGATE      \ addr len -len (--
+	    _hold> +!   \ addr len (-- now points TO where start will be after move
+	    _hold> @    \ addr len to(--
+	    SWAP        \ from to len (--
+	    MOVE
+	;
+	</code> </pre>
+
+<a name="digit"></a>
+<h5>digit ( n --ascii)</h5>
+<p>
+Factors out the conversion of a digit to a printable character.
+</p>
+	<pre> <code>
+	: digit ( n -- ascii)
+		9 OVER < IF
+			[ CHAR A CHAR 9 - 1- ]T LITERAL +
+		THEN
+		[CHAR] 0 + 
+	;
+	</code> </pre>
+
+
+<a name="$hold"></a>
+<h5>$hold</h5>
+<p>
+Move a counted string to the pictured number area. Can be used between <i><# #></i> and
+<i>[# #]</i>
+</p>
+	<pre> <code>
+	: $hold ( $ --)
+		COUNT
+		"hold 
+	;
+	</code> </pre>
+
+
+
+<a name="SIGN"><a>
+<h5>ANS 6.1.2210 SIGN</h5>
+<p>CORE</p> 
+<p>( n -- )</h5>
+<p>
+If n is negative, add a minus sign to the beginning of the pictured 
+numeric output string. An ambiguous condition exists if <i>SIGN</i> executes 
+outside of a <i><# #></i> delimited number conversion. 
+</p>
+<p>
+<b>COLDFORTH</b> <i>SIGN</i> can be used between <i>[#</i> and <i>#]</i> 
+</p>
+	<pre> <code>
+	: SIGN         ( n --)
+		0< IF
+		    [CHAR] - HOLD
+		THEN 
+	;
+	</code> </pre>
+
+
+<a name="#"><a>
+<h5>ANS 6.1.0030 #</h5>
+<p>CORE</p>
+<p>( ud1 -- ud2 )</p>
+<p>
+Divide ud1 by the number in </i>BASE</i> giving the quotient ud2 and the remainder n. 
+(n is the least-significant digit of ud1.) Convert n to external form and 
+add the resulting character to the beginning of the pictured numeric output 
+string. An ambiguous condition exists if <i>#</i> executes outside of a <i><# #></i> 
+delimited number conversion. 
+</p>
+<p>
+<b>COLDFORTH</b> <i>#</i> can be used between <i>[#</i> and <i>#]</i> 
+</p>
+
+	<pre> <code>
+	: #            ( lo hi -- lo hi  )
+		BASE @                 \ lo hi base (--
+		mu/mod					\ rem lo hi (--
+		ROT
+		digit HOLD 
+	;
+	</code> </pre>
+
+
+<a name="hashS"><a>
+<a name="#S"><a>
+<h5>ANS 6.1.0050 #S</h5>
+<p>CORE</p> 
+<p>( ud1 -- ud2 )</p>
+<p>
+Convert one digit of ud1 according to the rule for <i>#</i>. Continue conversion 
+until the quotient is zero. ud2 is zero. An ambiguous condition exists if 
+<i>#S</i> executes outside of a <i><# #></i> delimited number conversion.
+</p>
+<p>
+<b>COLDFORTH</b> <i>#S</i> can be used between <i>[#</i> and <i>#]</i> 
+</p>
+	<pre> <code>
+	: #S           ( lo hi -- lo hi )
+		BEGIN
+			# 2DUP OR  \ d flag (--
+			0= 
+		UNTIL
+	;
+	</code> </pre>
+<a name="hash]"><a>
+<a name="#]"><a>
+<h5>#] ( sys xd -- c-addr u)</h5>
+<p>
+Drop xd. Make the pictured numeric output
+string available as a character string. c-addr and u
+specify the resulting character string. REstore previous
+contents of _hold> and _hold_base
+</p>
+	<pre> <code>
+	: #]          ( lo hi -- c-addr u)
+		2DROP
+		_hold> @ _hold_base @ OVER -
+                R> 2R>
+		_hold_base !
+		_hold> !
+                >R
+ ;
+	</code> </pre>
+
+<a name="hashgt"><a>
+<a name="#&gt;"><a>
+<h5>ANS 6.1.0040 #></h5>
+<p>CORE</p>
+<p>( xd -- c-addr u )</p>
+<p>
+Drop xd. Make the pictured numeric output string available as a character
+string. c-addr and u specify the resulting character string. A program may
+replace characters within the string.
+</p>
+	<pre> <code>
+	: #>  ( lo hi -- c-addr u)
+                2DROP
+		_hold> @ _hold_base @ OVER -
+        ;
+	</code> </pre>
+<a name="[hash"><a>
+<h5>[#</h5>
+<p>
+Start a pictured number conversion using the supplied address and count. The picture
+is built down. This version does not check for overflow, but there is no
+reason why you can't. The previous contents of _hold> and _hold_base are save on the return stack.
+</p>
+	<pre> <code>
+	: [# ( lo hi addr count --sys0 sys1 lo hi)
+		\ the picture is always built back from the pointer
+		\ so the base is the end.
+		_hold> @
+		_hold_base @         \ lo hi addr count sys1 sys2(--
+                \ save sys on the return stack
+		R> -rot 2>R >R       \ lo hi addr count(--
+		+ DUP _hold_base !   \ lo hi addr_end(--
+		_hold> !             \ lo hi(--
+	;
+	</code> </pre>
+
+<a name="lthash"><a>
+<h5>ANS 6.1.0490 <#</h5>
+<p>CORE</p>
+<p>( -- )</p>
+<p>Initialize the pictured numeric output conversion process. Not recommended
+look at using <i>[#</i> instead.
+</p>
+	<pre> <code>
+	: <#           ( -- )
+		_picture_buffer #picture_min + DUP
+		_hold_base !
+                _hold> !
+	;
+	</code> </pre>
+
+
+
+<a name="(d.)"><a>
+<h5>(d.)</h5>
+<p>
+Note this requires a buffer address and count,
+the address can be a character boundary, see <i>r.</i>
+</p>
+	<pre> <code>
+	: (d.)         ( l h addr n  -- addr len )
+		[#
+			TUCK             \ h l h (--
+			DABS             \ h |d| (--
+			#S               \ h 0d (--
+			ROT SIGN
+		#]                   \ addr len (--
+	;
+	</code> </pre>
+<h5>(.ip)</h5>
+<p>
+DECIMAL number in form
+nnn.nnn.nnn.nnn
+with no leading zeros.
+</p>
+	<pre> <code>
+	: (.ip) ( ip_addr zero addr n -- addr n )
+		BASE @ >R
+		DECIMAL
+		[#
+			\ ip_addr zero(--
+			3 0 DO 
+				OVER $FF AND zero  
+				BEGIN
+					# 
+				OVER not UNTIL  
+				[CHAR] . HOLD
+				2DROP
+				SWAP
+				8 RSHIFT
+				SWAP
+			LOOP
+			OVER $FF AND zero BEGIN
+				# 
+			OVER not UNTIL
+			2DROP
+		#]
+		R> BASE !
+	;
+	</code> </pre>
+<a name="D."><a>
+<h5>ANS 8.6.1.1060 D.</h5>
+<p>DOUBLE</p>
+<p>( d -- )</p>
+<p>
+Display d in free field format. 
+</p>
+	<pre> <code>
+	: D.           ( l h -- )
+		#picture_min get_buffer         
+			buffer #picture_min (d.)
+			TYPE SPACE
+		kill_buffer
+	;
+	</code> </pre>
+
+
+
+<a name="D.R"><a>
+<h5>ANS 8.6.1.1070 D.R</h5>
+<p>DOUBLE</p> 
+<p>( d n -- )</p>
+<p>
+Display d right aligned in a field n characters wide. If the number of 
+characters required to display d is greater than n, all digits are 
+displayed with no leading spaces in a field as wide as necessary. 
+</p>
+<p>
+In <i>D.R</i>, the R is short for RIGHT. 
+</p>
+
+	<pre> <code> 
+	: D.R          ( d len -- )
+		#picture_min 
+		get_buffer
+		    >R
+		    buffer #picture_min (d.)
+		    R> OVER - 
+			zero MAX 
+			SPACES 
+			TYPE
+		kill_buffer
+	;
+	</code> </pre>
+
+
+
+<a name="d.l"><a>
+<h5>d.l</h5>
+<p>
+Display d left aligned in a field n characters wide. If the number of 
+characters required to display d is greater than n, all digits are 
+displayed with no leading spaces in a field as wide as necessary. 
+</p>
+	
+	<pre> <code>
+	: d.l          ( d len -- )
+		#picture_min get_buffer
+		    >R						\ lo hi (--
+		    buffer #picture_min  (d.)  \ addr len (--
+			TUCK					\ len addr len (--
+			TYPE					\ len (--
+			R> SWAP -               
+			zero MAX
+			SPACES	
+		kill_buffer
+	;
+	</code> </pre>
+
+
+
+<a name="."><a>
+<h5>ANS 6.1.0180 .</h5> 
+<p>CORE</p>
+<p>( n -- )</p>
+<p>
+Display n in free field format. 
+</p>
+	<pre> <code>
+	: .    ( n --)
+		S>D D. SPACE
+	;
+	</code> </pre>
+
+
+
+<a name=".R"><a>
+<h5>ANS 6.2.0210 .R</h5>
+<p>dot-r CORE EXT</p>
+<p>( n1 n2 -- )</p>
+<p>
+Display n1 right aligned in a field n2 characters wide. If the number 
+of characters required to display n1 is greater than n2, all digits 
+are displayed with no leading spaces in a field as wide as necessary. 
+</p>
+<p>
+ In <i>.R</i>, R is short for RIGHT. 
+</p>
+	<pre> <code>
+	HEX
+	: .R   ( n1 len --)
+		>R 
+		S>D 
+		R> 
+		D.R 
+	;
+	</code> </pre>
+
+
+
+<a name=".l"><a>
+<h5>.l</h5>
+<p>	
+The l stands or LEFT
+</p>
+	<pre> <code>
+	: .l ( n1 len --)
+		>R S>D R> d.l
+	;
+	</code> </pre>
+
+
+
+<a name="U."><a>
+<h5>ANS 6.1.2320 U.</h5>
+<p>CORE</p> 
+<p>( u -- )<p>
+<p>
+Display u in free field format. 
+</p>
+	<pre> <code>
+	: U.   ( u --)
+		u>d  \ extend as unsigned number
+		D.
+	;
+	</code> </pre>
+
+
+
+<a name="U.R"><a>
+<h5>ANS 6.2.2330 U.R</h5>
+<p>CORE EXT</p> 
+<p>( u n -- )</p>
+<p>
+Display u right aligned in a field n characters wide. If the number of 
+characters required to display u is greater than n, all digits are 
+displayed with no leading spaces in a field as wide as necessary. 
+</p>
+	<pre> <code>
+	: U.R  ( u len --)
+		u>d SWAP D.R
+	;
+	</code> </pre>
+
+
+
+<a name="question_mark"><a>
+<h5>ANS 15.6.1.0600 ?</h5> 
+<p>TOOLS</p>
+<p>( a-addr -- )</p>
+<p>
+Display the value stored at a-addr. 
+<i>?</i> may be implemented using pictured numeric output words. 
+Consequently, its use may corrupt the transient region identified by <i>#></i>. 
+<br> <br> <strong>COLDFORTH</strong>
+</p>
+<ol>
+<li>It is not implemented using a fixed translation region, see initial comments.
+<li>?name takes a flag and performs an action name? returns a flag. 
+? should not read and print a cell.
+</ol> 
+<p>DON'T USE THIS LET IT DIE</p>
+	
+	<pre> <code>
+	: ?    ( a-addr --)
+		@ . 
+	;
+	</code> </pre>
+<a name=".h"><a>
+<h5>.h</h5>
+<p>
+Print the unsigned number as a 8 digit hex number with one leading space.
+Nice and handy for displaying memory.
+</p>
+	<pre> <code>     
+    : .h ( u --)
+    	BASE @ >R 
+		HEX 
+		u>d					\ lo hi (--
+		#picture_min get_buffer
+			buffer #picture_min [# BL HOLD # # # # # # # # #] TYPE
+		kill_buffer
+    	R> BASE ! 
+    ;
+    </code> </pre>
+
+
+
+<a name=".d"><a>
+<h5>.d</h5>    
+<p>
+No every one knows real programers have <i>BASE</i> set to 16, full time. Every now
+and again you do need to convert a number to decimal. This word is for you.
+</p>
+	<pre> <code>
+	: .d ( u --)
+    	BASE @ >R 
+		DECIMAL 
+		. 
+		R> BASE ! 
+    ;
+	</code> </pre>
+
+
+
+<pre> <code>
+DECIMAL
+</code> </pre>
+<a name="$months"></a>
+<h5>$months</h5>
+<p>
+An array containing the months as 4 byte counted strings.
+</p>
+	<pre> <code>
+    CREATE $months
+    ," JAN" ," FEB" ," MAR" ," APR" ," MAY" ," JUN" ," JUL" ," AUG"
+    ," SEP" ," OCT" ," NOV" ," DEC"
+	</code> </pre>
+
+
+
+<a name="$date"></a>
+<h5>$date</h5>
+<p>
+Given the year month day and a buffer, place 
+a string representing the date below the given address. The address
+returned is the address of a counted string located in the supplied buffer.
+</p>
+	<pre> <code>
+	: $date ( year month day addr n --$)
+		2>R
+		ROT DUP 1900 < IF 
+			1900 + 
+		THEN  
+		\ year
+		u>d 2R@ [# # # # #  BL HOLD #]              \ mmm ddd addr count1(--
+		R> OVER - >R NIP                            \ mmm ddd count1 (--
+		-rot                                        \ count1 mmm ddd (--
+		\ month
+		SWAP u>d                                    \ count1 ddd mmml mmmh (--
+		2R@
+		[# DROP 1- zero MAX 11 MIN 4* $months + $hold BL HOLD zero zero #] \ count1 ddd addr count2 (--
+		\ adjust buffer                             
+		R> OVER - >R NIP                            \ count1 ddd count2
+		ROT + SWAP                                  \ count3 ddd
+		u>d
+		2R>
+		[# # # #]                                  \ count3 addr count
+		ROT +                                       \ addr count3(--
+		\ turn into a $string
+		OVER [ _#$_count _#$_data  - ]T LITERAL +  $count! 
+		[ _#$_count _#$_data  - ]T LITERAL +
+	;
+    </code> </pre>
+
+
+
+<a name=".date"><a>
+<h5>.date</h5>
+<p>
+Given the year month and day print a date in the form.
+</p>
+<samp>dd mmm yyyy</samp>
+	<pre> <code>  
+	: .date ( yyy mmm ddd -- )  
+		#picture_min get_buffer
+			buffer #picture_min $date 
+			$type 
+		kill_buffer 
+	;
+    </code> </pre>
+
+
+
+<a name="$sec"></a>
+<h5>$sec</h5>
+<p>
+Give the time in ticks ( 10msec increments since midnight), create a string below address
+that represents the time, to the second. The address returned is the address of a counted 
+string located n the supplied buffer.
+</p>
+	<pre> <code>
+	: $sec ( ticks addr n -- $ )
+		BASE @ >R
+		2>R
+		u>d
+		2R>
+		[#
+			DROP
+			#1sec / ( to secs)
+			u>d 
+			DECIMAL # 6 BASE W! # [CHAR] : HOLD 
+			DECIMAL # 6 BASE W! # [CHAR] : HOLD 
+			DECIMAL # # 
+		#] 
+		\ turn into a $string
+		OVER [ _#$_count _#$_data  - ]T LITERAL +  $count! 
+		[ _#$_count _#$_data  - ]T LITERAL +
+		R> BASE !
+	;
+	</code> </pre>
+
+
+
+<a name=".sec"></a>
+<h5>.sec</h5>
+<p>
+Given the time in ticks ( 10 msec increments since midnight), print out the time
+in the form:
+</P>
+<samp>hh:mm:ss</samp>
+
+	<pre> <code>    
+	: .sec ( ticks--)
+		#picture_min get_buffer
+			buffer #picture_min $sec
+			$type 
+		kill_buffer
+	;
+    </code> </samp>
+
+
+
+<a name="$time"></a>
+<h5>$time</h5>
+<p>
+Give the time in ticks ( 10msec increments since midnight), create a string below address
+that represents the time, to the minute. The address returned is the address of a counted 
+string located n the supplied buffer.
+</p>
+	<pre> <code>
+	: $time ( ticks addr n -- addr)
+		BASE @ >R
+		2>R
+		u>d
+		2R>
+		[#
+			DROP
+			[ #1sec 60 * ]T LITERAL  / ( To mins) 
+			u>d
+			DECIMAL # 6 BASE W! # [CHAR] : HOLD 
+			DECIMAL # # 
+		#]
+		OVER [ _#$_count _#$_data  - ]T LITERAL +  $count! 
+		[ _#$_count _#$_data  - ]T LITERAL +
+		R> BASE ! 
+	;
+    </code> </pre>
+
+
+
+<a name=".time"></a>
+<h5>.time</h5>
+<p>
+Given the time in ticks ( 10 msec increments since midnight), print out the time
+in the form:
+</P>
+<samp>hh:mm</samp>
+
+	<pre> <code>    
+	: .time ( n --)
+		#picture_min get_buffer
+			buffer #picture_min $time
+			$type 
+		kill_buffer
+	;
+    </code> </samp>
+
+
+
+<a name="$ticks"></a>
+<h5>$ticks</h5>
+<p>
+Give the time in ticks ( 10msec increments since midnight), create a string below address
+that represents the time, to the msec. The address returned is the address of a counted 
+string located n the supplied buffer.
+</p>
+	<pre> <code> 
+    : $ticks ( n addr u--)
+		BASE @ >R
+		2>R
+		u>d
+		2R>		
+		[# 
+			DROP
+			#1sec /MOD 
+			SWAP u>d  # # 2DROP [CHAR] . HOLD 
+			60 /MOD 
+			SWAP u>d  # # 2DROP [CHAR] : HOLD 
+			60 /MOD 
+			SWAP u>d  # # 2DROP [CHAR] : HOLD
+			u>d 
+			# # 
+		#]
+		OVER [ _#$_count _#$_data  - ]T LITERAL +  $count! 
+		[ _#$_count _#$_data  - ]T LITERAL +
+		R> BASE ! 
+	;
+    </code> </pre>
+
+
+
+<a name=".ticks"></a>
+<h5>.ticks</h5>
+<p>
+Given the time in ticks ( 10 msec increments since midnight), print out the time
+in the form:
+</p>
+<samp>hh:mm:ss.xx</samp>
+
+	<pre> <code>    
+	: .ticks ( n --)
+		#picture_min get_buffer
+			buffer #picture_min $ticks 
+			$type
+		kill_buffer  
+	;
+	</code> </pre>
+        \ <a name="$+num"></a>
+	<p>
+	Convert num to a string and add he string to the end of the other string.
+	</p> 
+	<pre> <code>
+	: $+num { ( $1 num ) variable %new_$ variable %new_length -- }
+		zero 
+		\ $ lo hi(--
+		#$buffer get_buffer
+			buffer #$buffer 
+			\ $1 lo hi addr n(--
+			(d.) 
+			\ $1 addr n (--
+			SWAP  [ _#$_count _#$_data - ]T LITERAL + 
+			TUCK $count!
+			\ $1 $2(--
+			OVER $type
+			DUP $type
+			%new_$ @ %new_length @ $+
+			%new_$ @ $type
+		kill_buffer
+	;
+
+	</code> </pre>
+</body>
+</html>
+

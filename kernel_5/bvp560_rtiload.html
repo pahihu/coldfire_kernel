@@ -1,0 +1,238 @@
+<html>
+<head>
+<title>bvp560.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+This needs to be loaded before the cross compile othwise you have to deal with cross issues.
+The code is meant to be host code so it is simpler to load it first and then use the words at the end
+of the cross compile.
+</p>
+
+<p>
+Notes
+<UL>
+	<LI> Removed timer 1 from init.html. Have to put back in</LI>
+	<LI> SDRAM size is not currently correct. Need to have enough room for bootload variables, so kludgy for now</LI>
+	<LI> Changed start PC to be in DRAM. Not really right, as on reboot bootloader does all</LI>
+	<LI> Removed code to start watchdog timer</LI>
+	<LI> </LI>
+	<LI> </LI>
+	<LI> </LI>
+	<LI> </LI>
+</UL>
+
+</p>
+
+<pre> <code> 
+forth
+DEFINITIONS
+
+	: reset_rti 
+		bus_reset
+		bus_enable
+	;
+
+
+	: myblah ( stage  -- )
+		DUP 2 = IF
+			$1234 
+		THEN
+	;
+
+
+$02A00000           CONSTANT _#RTI1000_bus_base
+$00100000           CONSTANT _#RTI1000_bus_size
+
+$8000 CONSTANT _#RTI1000_interrupt_reset
+$C000 CONSTANT _#RTI1000_card_code
+$10000 CONSTANT _#RTI1000_address_range
+
+ram_variable %rti_finished
+
+$00002000           CONSTANT _#RTI1000_max_transfer_size
+
+$00003FF6           CONSTANT _#RTI1000_param4
+$00003FF8           CONSTANT _#RTI1000_param3
+$00003FFA           CONSTANT _#RTI1000_param2
+$00003FFC           CONSTANT _#RTI1000_param1
+$00003FFE           CONSTANT _#RTI1000_command
+
+
+$78000 CONSTANT _prom_kernel_size
+\ $2000 CONSTANT _prom_kernel_size
+       _#sdram0_base _#kernel_size +        	EQU _prom_dictionary_image_start
+
+
+ram_variable %image_areas _prom_kernel_size ram_allot
+%image_areas CONSTANT %TEST_IMAGE
+\ This area is read/write
+%image_areas _#kernel_size + CONSTANT %NEW_DICTIONARY_IMAGE 
+
+
+\	: init_test_image
+\		_prom_kernel_size 0 DO 
+\			I %TEST_IMAGE I + W! 
+\		2 +LOOP
+\	;
+
+    interrupt: new0rti_service
+			zero
+			[ _#RTI1000_bus_base
+			_#RTI1000_interrupt_reset +
+			] LITERAL W!
+	 		1 %rti_finished ! 		\ reset the flag
+	;interrupt
+
+	: install_rti_interrupt
+		new0rti_service $8F EXCEPTION
+	;
+
+	: rti_interrupt_and_wait
+		0 SLOT>BASE $4000 + W@       \ generate the interrupt
+		DROP
+		BEGIN
+			%rti_finished @ 
+			xpause
+		UNTIL
+	;
+
+
+	: rti_command ( n -- )
+		 0 SLOT>BASE _#RTI1000_command + W!           \ command_code  = cmd
+	;
+
+	: rti_param1 ( n -- )
+		 0 SLOT>BASE _#RTI1000_param1 + W!    
+	;
+
+	: rti_param2 ( n -- )
+		 0 SLOT>BASE _#RTI1000_param2 + W!    
+	;
+
+	: rti_param3 ( n -- )
+		 0 SLOT>BASE _#RTI1000_param3 + W!    
+	;
+
+	: rti_pararm4 ( n -- )
+		 0 SLOT>BASE _#RTI1000_param4 + W!    
+	;
+
+
+	: rti_set_transfer_address	( address -- )
+		DUP CR ." Reset the RTI Transfer on Stage2 to  " . CR
+		1   rti_command          \ command_code  = 1
+		    rti_param1           \ param1 = HIGH(transfer_start_address)
+		$0  rti_param2           \ param2 = LOW(transfer_start_address)
+		rti_interrupt_and_wait
+		EXIT
+
+	;
+
+	: rti_end_transfer ( -- )
+		CR ." End the RTI Transfer " CR
+		5   rti_command          \ command_code  = 5 ( end transfer)
+		rti_interrupt_and_wait
+	;
+	
+	: rti_stage2_mem_check ( -- )
+		7   rti_command          
+		rti_interrupt_and_wait
+	;
+
+	: rti_run_stage2 ( -- )
+		6   rti_command          \ command_code  = 6 
+		rti_interrupt_and_wait
+	;
+
+	: rti_transfer_long ( a size -- )
+ 		0 %rti_finished ! 	 \ reset the flag
+		3   rti_command          \ command_code  = 3 ( transfer 32 bit data )
+
+		DUP rti_param1           \ write the transfer length ( a size -- a size )
+		0   rti_param2           \ 
+		0 SLOT>BASE SWAP MOVE	 \ write the data  ( a size -- )
+		rti_interrupt_and_wait
+	;
+
+
+	: rti_stage1_command ( param3 param2 param1 -- )
+		CR ." Execute Command " CR
+		9   rti_command          \ command_code  = 6 ( execute command )
+		    rti_param1
+		    rti_param2
+		    rti_param3
+		rti_interrupt_and_wait
+	;
+
+: transfer_bvp_kernel ( stage -- )
+
+		0 SLOT>BASE 8000 0 FILL \ reset the dual port to all zeros
+\		init_test_image
+1 -
+IF
+		$000 rti_set_transfer_address	\ Reset the transfer to address 0
+ELSE
+		$4000 rti_set_transfer_address	\ Reset the transfer to address 0
+THEN
+\		rti_stage2_mem_check
+
+		." writing image to BVP560. Transfers take place in blocks of "  _#RTI1000_max_transfer_size . CR
+		." writing kernel ( size " _prom_kernel_size . ." ) to BVP560 Stage 2" CR 
+		_prom_kernel_size 0 DO
+			." ."
+			%NEW_IMAGE  I +  _#RTI1000_max_transfer_size  rti_transfer_long
+\			%TEST_IMAGE I +  _#RTI1000_max_transfer_size  rti_transfer_long
+		_#RTI1000_max_transfer_size +LOOP
+		CR 
+
+		." writing dictionary ( size " _#dictionary_image_size . ." ) to BVP560 Stage 2" CR 
+
+		_#dictionary_image_size 0 DO
+			." ."
+			%NEW_IMAGE I +  _prom_dictionary_image_start + _#RTI1000_max_transfer_size  rti_transfer_long
+		_#RTI1000_max_transfer_size +LOOP
+		CR 
+
+		rti_end_transfer
+\ DROP
+	;
+
+
+	: start_bvp ( stage -- )
+		." Copy the image across the RTI bus " CR
+		transfer_bvp_kernel ( stage -- )
+
+		xtest 40 xwait
+		
+		." Run the Coldforth kernel " CR
+
+		rti_run_stage2
+
+		CR CR .S CR 
+		." Finished " CR
+	;
+
+	HEX
+
+
+
+	CR ." About to start the kernel on the BVP560 " CR
+	." Install specialized interrupt handler " CR
+	install_rti_interrupt
+\	xtest 10 xwait        \ give it time to come up
+
+
+\	start_bvp
+
+</code> </pre>
+</body>
+</html>
+
+

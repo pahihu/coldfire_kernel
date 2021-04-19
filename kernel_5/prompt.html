@@ -1,0 +1,69 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	: .HEADING  ( --) 
+    	'HEADING @execute 
+    ;
+	</code> </pre>
+	<a name=".context"></a>
+	<h5>.context ( --)</h5>
+	<p>
+	Print the search order.
+	</p>
+	<pre> <code>
+
+	: .context ( --)
+		GET-ORDER zero ?DO
+			i' I - 1- ROLL   \ print the lowest first
+			[ _#voc_name> _#voc_wid - ]T LITERAL + @ ?DUP IF
+				name_count _#name_count_bits AND
+			ELSE 
+				S" Not_named" 
+			THEN
+			TYPE
+			SPACE
+		LOOP
+	;
+
+
+    : .task_name ( --)
+		_%task_name> @ _%task_name_count @ TYPE 
+	;
+    
+
+    : .prompt  ( --)
+		seal W@ IF
+    		.version SPACE .HEADING SPACE .task_name SPACE ." COMMAND>
+    	ELSE
+			.wd SPACE
+    		.HEADING 
+			SPACE 
+			.task_name
+			SPACE
+			.context 
+    		BASE @ DUP u>d
+			DECIMAL
+                        \ kernel is not to use the picture buffer
+                        \ so we can use &lt;#
+                        #picture_min get_buffer
+                        buffer #picture_min [# # # #] TYPE
+                        kill_buffer
+			BASE !
+[ #rti1000_master [IF] ]T
+    		[CHAR] > EMIT
+[ [ELSE] ]T
+                [CHAR] ] EMIT
+[ [THEN] ]T
+    	THEN   
+    ;
+	</code> </pre>
+</body>
+</html>

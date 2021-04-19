@@ -1,0 +1,265 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h5>io_protocol_common</h5>
+<p>
+Add to io_common those methods a protocol needs
+</p>
+	<pre> <code>
+	io_common class
+		\ priority you want datagrams sent at.
+		\ if you don't play the priority game it will
+		\ be sent as zero. Most of the internet
+		\ ignores the prioroity so don't let it worry you.
+		cell% instance_variable %%priority
+		cell% instance_variable %%local_machine
+		cell% instance_variable %%remote_machine
+
+
+		cell% instance_variable %%datagram_discards
+		cell% instance_variable %%datagrams_received
+
+		_#ip_priority_levels CONSTANT _#udp_priority_levels
+		$40 CONSTANT _#udp_queue_depth
+		_#udp_priority_levels #queue_list_length_asl LSHIFT #queue_data_length +
+		bytes% instance_variable %%pep_queue
+
+
+		\ active_pep is set and data is extracted from the active pep 
+		\ by <i>:read</i> and <i>:read_line</i>
+		cell% instance_variable %%active_pep
+		cell% instance_variable %%active_pointer
+		cell% instance_variable %%active_count
+
+
+
+		m: ( parent --)
+			this [parent] :construct
+			
+			zero %%priority !
+			zero %%local_machine !
+			zero %%remote_machine !
+
+			zero %%datagram_discards !
+			zero %%datagrams_received !
+
+			zero %%active_pep !
+			zero %%active_count !
+
+			\ udp_demux will call :consume_port in the hope that
+			\ the packet will end up in this queue.
+			\ Please note priorities are honored and high priority packets
+			\ will be delivered first.
+			_#udp_queue_depth _#udp_priority_levels %%pep_queue queue_init
+
+		; overrides :construct
+
+
+		: _return_unread_peps ( --)
+			BEGIN
+				%%pep_queue dequeue DUP not IF
+					DROP
+					EXIT
+				THEN
+				kill_free_buffer
+			AGAIN
+		;
+
+		m: ( --)
+			\ the unread peps have to be returned.
+			_return_unread_peps
+			%%active_pep @ ?DUP IF
+				0 %%active_pep !
+				kill_free_buffer
+			THEN
+			this [parent] :destruct
+		; overrides :destruct
+
+
+
+
+		\ method support word
+		: _read_from_active_pep ( addr len -- len )
+			\ two cases buffer too small and buffer big enough
+			%%active_count @ OVER > IF
+				\ will not all fit
+				%%active_pointer @ -rot
+				\ pointer addr n (-- 
+				DUP NEGATE %%active_count +!
+				DUP %%active_pointer +!
+				DUP >R
+				MOVE
+				R>
+			ELSE
+				\ all will fit
+				\ addr n (--
+				DROP
+				%%active_pointer @ SWAP %%active_count @ MOVE
+				\ take note that if you use :read_udp_pep returning the 
+				\ pep is the applications problem. We only deal with it if
+				\ :read is used to get the data
+				%%active_pep @ kill_free_buffer
+				zero %%active_pep !
+				%%active_count @
+			THEN  
+		;
+
+	</code> </pre>
+<p>
+The tcp/ip protocol deals in pep's, these are buffers will a defined structure. If a common_io
+class is to receive pep's it needs to have a :consume_port method defined. This is the method
+that will be called by <a HREF="./tcp/udp_demux.html#:proto_demux">:proto_demux</a>. The
+method should queue the packet for the i/o object to use at it's conveniance, or if
+overleoad return the packet to the free buffer pool.
+</p>
+<p> 
+words common to UDP ICMP and TCP protocol are defined here
+</p>
+		<pre> <code>
+		m: ( variable %pep -- )
+			\ the pep is not ours to destroy.
+			TRUE ABORT" :setup_protocol not overrriden"
+		; method :setup_protocol
+
+		m: ( %pep_in variable %pep_out --  )
+			\ the pep is not ours to destroy.
+			TRUE ABORT" :setup_protocol_from_pep not overrriden"
+		; method :setup_protocol_from_pep 
+
+		m:  ( --pep addr n )
+			TRUE ABORT" :read_protocol not overrriden"
+		; method :read_protocol
+
+
+		\ write the data pointed to by addr and n to the pep and queue
+		m: ( addr n pep --)
+			kill_free_buffer
+			2DROP
+			TRUE ABORT" :write_protocol not overridden"
+		; method :write_protocol
+
+
+		\ write buffered data to storage
+		m:  \ compile time ( --xt)
+			\ runtime ( --)
+			%%type_buffer_count @ [ ep_data ip_options udp_data + + ]T LITERAL + get_free_buffer
+			DUP this :setup_protocol 
+			\ addr(--
+			%%type_buffer> @ %%type_buffer_count @ ROT
+			this :write_protocol
+			zero %%type_buffer_count !
+			\ will run or set things up to run the ip routing level.
+			run_tcp
+		; overrides :flush_file
+
+		\ keep going around until count is zero, each time 
+		\ around we send a little more data
+		: _data>type_buffer ( addr count -- false|addr count true)
+			%%type_buffer> @ not IF
+				\ this is the default buffer size nothing more
+				\ see :buffer_size!
+				%%type_buffer_size @ get_free_buffer
+				%%type_buffer> !
+				zero %%type_buffer_count !
+			THEN	
+			%%type_buffer> @ buffer_size %%type_buffer_count @ - 
+			\ addr num left(--
+			2DUP > IF ( will not all fit)
+				\ addr count amount_to_fit(--
+				\ make sure we have a type buffer
+				>R \ addr count (--
+				OVER %%type_buffer> @  %%type_buffer_count @ + R@ MOVE \ put in as much as we can
+				\ addr count(--
+				SWAP R@ + SWAP R@ -   \ update send data to reflect what has been sent
+				\ addr_new count_new(--
+				R> %%type_buffer_count +!
+				FALSE                  \ tell :write to send the packet
+				                       \ and come back again
+				EXIT
+			THEN
+			\ data will fit in the buffer
+			DROP
+			\ character we are up to since last record ( eol ).
+			%%type_buffer> @  %%type_buffer_count @ + SWAP \ addr to count(--
+			\ update %%type_buffer_count after you have done the address calculations
+			DUP %%type_buffer_count +!
+			MOVE
+			TRUE
+		;
+
+		m: ( addr num--)
+			DUP IF  \ There is some data
+					BEGIN 
+						_data>type_buffer IF \ return true if all ok
+							EXIT
+						THEN
+						\ sent the data to the device to clear the buffer
+						this :flush_file
+					AGAIN
+			ELSE 
+				2DROP 
+			THEN 
+		; overrides :write
+
+		</code> </pre>
+<p>
+The tcp/ip protocol deals in pep's, these are buffers will a defined structure. If a 
+<i>io_common</i>
+class is to receive pep's it needs to have a :consume_port method defined. This is the method
+that will be called by <a HREF="./tcp/udp_demux.html#:proto_demux">:proto_demux</a>. The
+method should queue the packet for the i/o object to use at it's conveniance, or if
+overload return the packet to the free buffer pool. It should not block, as doing so will
+stop all tcp/ip reception.
+</p>
+		<pre> <code>
+		m: ( pep --)
+		DUP %%pep_queue OVER _pep>ip_priority enqueue_try IF
+			kill_free_buffer
+			1 %%datagram_discards +!
+			EXIT
+		THEN
+		1 %%datagrams_received +!
+		DROP
+		; method :consume_port
+
+
+		\ communication code needs to be able to abort the connection. This
+		\ is called from a thread of execution other than the one that ownes the 
+		\ I/O object. Aborting is not an option.
+		m: ( $ pep--)
+			kill_free_buffer
+			DROP
+		; method :abort_connection
+
+		\ called by timeout routine in attempt to stop timeout.
+		m: ( --)
+		; method :hay_you_there
+		
+		\ tcp server can do a listen
+		m: ( --addr)
+			TRUE ABORT" Can't listen using this driver"
+		; method :listen
+
+		\ tcp server has to be able to ask a tcp_client to init isself
+		m: ( local_machine local_port tos pep addr --)
+			TRUE ABORT" :client_int wrong driver"
+		; method :client_init
+
+		m: ( indent --)
+			." io_protocol_common | This method should be overrides"
+			DROP
+			send
+		; overrides :print
+
+	end_class io_protocol_common
+
+	</code> </pre>
+
+</body>
+</html>

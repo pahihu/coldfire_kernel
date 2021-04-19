@@ -1,0 +1,1118 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Ideas taken from Bernt Paysen's paper presented at the Forth Tagung 2000 conference in Hamberg
+<a href="http:www.jwdt.com/~paysan/httpd-en.html">link</a>. It has however been restructure.
+</p>
+<pre> <code>
+
+
+\ Supported words for outputting html data. It is assumed the tcp port is installed
+\ as the output device.
+\ addr and n give the title
+
+\ Tell rest of system we are defined.
+TRUE EQU #html_server
+
+
+\ these contain the address of string objects if the request sets them
+ucreate %html_start
+\ the supplied url
+uvariable %html_url
+\ the arguments sent with the URL after the ?
+uvariable %html_url_args
+\ the html protocol sent after the URL
+uvariable %html_protocol
+
+
+uvariable %html_user_agent
+uvariable %html_pragma
+uvariable %html_host
+uvariable %html_accept
+uvariable %html_accept_encoding
+uvariable %html_accept_language
+uvariable %html_accept_charset
+uvariable %html_via
+uvariable %html_x_forward_for
+uvariable %html_cache_control
+uvariable %html_connection
+uvariable %html_referrer
+uvariable %html_content_type
+uvariable %html_content_length
+ucreate %html_end
+
+
+| : string! ( addr n addr --)
+        DUP @ ?DUP IF
+                \ addr n addr 0bject(--
+                zero jump !
+                heap_object_free
+        THEN
+        &gt;R string_class heap_object R&gt; !
+;
+
+\ this is need for applications.
+\ If you execute this word the TCP link will be closed after the sending of the application data
+\ You must execute this word if you don't spec the size of the data that is to be sent in the heading.
+: html_close ( -- )
+             S" close" %html_connection string!
+;
+
+: .html_header ( $ --)
+        ." &lt;HTML&gt;&lt;HEAD&gt;&lt;TITLE&gt;"  $type ." &lt;/TITLE&gt;&lt;/HEAD&gt;"
+        ." &lt;BODY&gt;"
+;
+
+: .html_trailer ( --)
+        ." &lt;/BODY&gt;&lt;/HTML&gt;"
+;
+
+: .html_server ( --)
+        ." Server: Coldforth HTML server version 0.0" CR
+;
+
+
+: .html_ok ( --)
+        ." HTTP/1.1 200 OK" CR
+        .html_server
+;
+
+
+: .html_no_content ( --)
+        ." HTTP/1.1 204 No Content" CR
+        .html_server
+;
+
+
+: .html_not_implemented ( $ --)
+        ." HTTP/1.1 501 Not Implemented" CR
+        .html_server
+        ." Allow: GET, HEAD, POST" CR
+        ." Connection: close" CR
+        ." Content-Type: text/html"
+
+        CR
+        CR
+
+        $" 501 Not Implemented" .html_header
+        ." &lt;h1&gt;Not Implemented&lt;/h1&gt;"
+        ." &lt;p&gt;" $type ." &lt;/p&gt;"
+        .html_trailer
+        CR
+        html_close
+;
+
+: .html_nofile ( $ --)
+        ." HTTP/1.1 404 Not Found" CR
+        .html_server
+        ." Connection: close" CR
+        ." Content-Type: text/html"
+
+        CR
+        CR
+
+        $" 404 Not Found" .html_header
+        ." &lt;h1&gt;404 Not Found&lt;/h1&gt;"
+        ." &lt;p&gt;" $type ." &lt;/p&gt;"
+        .html_trailer
+        CR
+
+        html_close
+;
+
+
+: .html_not_allowed ( $ --)
+        ." HTTP/1.1 405 Not Allowed" CR
+        .html_server
+        ." Connection: close" CR
+        ." Content-Type: text/html"
+
+        CR
+        CR
+
+        $" 405 Not Allowed" .html_header
+        ." &lt;h1&gt;405 Not Allowed&lt;/h1&gt;"
+        ." &lt;p&gt;" $type ." &lt;/p&gt;"
+        .html_trailer
+        CR
+
+        html_close ( -- )
+;
+
+
+| CREATE #$internal_error ," 500 Internal Server Error"
+: .html_error ( $ --)
+        ." HTTP/1.1 "  #$internal_error $type CR
+        .html_server
+        ." Connection: close" CR
+        ." Content-Type: text/html"
+
+        CR
+        CR
+
+        #$internal_error .html_header
+        ." &lt;h1&gt;" #$internal_error $type ." &lt;/h1&gt;"
+        ." &lt;p&gt;" $type ." &lt;/p&gt;"
+        .html_trailer
+        CR
+
+        html_close
+
+;
+
+| CREATE #$too_long ," 414 Request-URL Too Long"
+: .html_url_too_long ( $ --)
+        ." HTTP/1.1 "  #$too_long $type CR
+        .html_server
+        ." Connection: close" CR
+        ." Content-Type: text/html"
+
+        CR
+        CR
+
+        #$too_long .html_header
+        ." &lt;h1&gt;" #$too_long $type ." &lt;/h1&gt;"
+        ." &lt;p&gt;" $type ." &lt;/p&gt;"
+        .html_trailer
+        CR
+
+        html_close
+;
+
+tcp_client class
+
+                cell% instance_variable %%previous_character2
+                cell% instance_variable %%fwd_char_active
+                cell% instance_variable %%fwd_char
+
+
+		m:
+			this [parent] :construct
+                        zero %%previous_character2 !
+                        zero %%fwd_char_active !
+                        zero %%fwd_char !
+                        \ gives the required CR, that is #cr#lf
+                        ansi_class this :!terminal
+		; overrides :construct
+
+		m:
+			this [parent] :destruct
+		; overrides :destruct
+
+                \ According to the standard the line terminator has to be crlf
+                \ If we don't make some assumption it is difficult to find the end of the
+                \ head.
+                \ We assume the trerminator is two characters.
+                \ We will use crxxsp and crxxht as a space
+                \ crxxother as a cr
+
+                | : _store_html_char { ( addr num char --addr num flag ) }{
+                        variable %flag }
+                        FALSE %flag !
+                        \ the forward stored character has been converted it
+                        \ does not have to be converted again.
+                        %%fwd_char_active @ IF
+                                FALSE %%fwd_char_active !
+                                DUP #cr = IF
+                                        TRUE %flag !
+                                THEN
+                        ELSE
+                                \ deal with #cr#lf
+                                %%previous_character @
+                                OVER %%previous_character !
+                                OVER #cr = IF
+                                        \ storing as previous is all that is required
+                                        2DROP
+                                        FALSE
+                                        EXIT
+                                THEN
+                                \ old is #cr
+                                DUP #cr = IF
+                                        2DROP
+                                        #cr #cr
+                                THEN
+                                DROP
+                                \ if new is #lf then it is #lf#cr
+                                \ because #cr#lf has been converted to #cr
+                                DUP #lf = IF
+                                        #cr %%previous_character !
+                                        2DROP
+                                        FALSE
+                                        EXIT
+                                THEN
+
+                                \ if previous character is a carriage return
+                                \ then it was not saved in the output as we had to look further ahead.
+                                %%previous_character2 @
+                                OVER %%previous_character2 ! #cr = IF
+                                        \ previous character was a #cr
+                                        DUP BL = OVER #tab = OR IF
+                                                \ this has converted a #cr#sp to a #sp
+                                                DROP BL
+                                        ELSE
+                                                TRUE %%fwd_char_active !
+                                                %%fwd_char !
+                                                #cr
+                                                TRUE %flag !
+                                        THEN
+                                ELSE
+                                        \ #cr is now saved as a previous character
+                                        \ we don't save in output until we see what is coming
+                                        DUP #cr = IF
+                                                DROP
+                                                FALSE
+                                                EXIT
+                                        THEN
+                                THEN
+                        THEN
+                        \ addr n char(--
+			jump char!
+			SWAP
+			1 CHARS +
+			SWAP
+			1 -
+                        %flag @
+		;
+
+		: _get_html_data { ( -- term true | char false) }{
+                        variable %buffer }
+                        \ #cr#lf#sp is one character
+                        \ #cr#lfother is two characters. The second character has to be picked up
+                        \ here.
+                        %%fwd_char_active @ IF
+                                 %%fwd_char @ FALSE
+                                EXIT
+                        THEN
+                        %buffer 1 _read_tcp
+                        \ 0 = end of stream; 1 = read character
+                        IF
+                                %buffer char@
+                                DUP panic_emit
+                                FALSE
+                        ELSE
+                                #end_eof
+                                DUP panic_emit
+                                TRUE
+                        THEN
+                ;
+
+
+
+		| : _read_html_stream { ( addr1 num1 -- addr2 num2 ) }
+			BEGIN
+				\ addr1 num(--
+				\ if the count is one of the termination count
+				\ we cannot use it, we have to leave room for the
+				\ terminator that indicates we ran out of room.
+				\ addr num(--
+				_get_html_data
+                               IF
+					\ a read terminator
+					_store_a_char
+					EXIT
+				THEN
+ 				\ addr num char(--
+				_store_html_char IF
+                                        \ a line terminator
+                                        EXIT
+                                THEN
+				\ leave room for terminator
+				DUP 2 &lt; IF 
+					\ addr num (--
+					DUP IF
+						#end_count _store_a_char
+					THEN
+					EXIT
+				THEN
+			AGAIN
+		;
+
+                \ flag is false if eof.
+                \ len is zero at the end of the header
+		m:  { ( addr len -- len flag) }{
+				variable %len
+				variable %addr }
+			\ zero is a problem as we need room to store the terminator
+			DUP not IF
+				2DROP zero TRUE
+			THEN
+
+			DUP %len !
+			OVER %addr !
+
+			\ addr len(--
+			_read_html_stream
+  			\ addr1 len1(--
+			NIP %addr @ SWAP
+			\ addr len1(--
+			%len @ SWAP -
+			\ addr len3(--
+                        2DUP 1- + char@
+			\ driver specific
+			#end_eof = IF
+				NIP 1- FALSE
+			ELSE
+                                NIP 1- TRUE
+                        THEN
+ 		; overrides :read_line
+
+
+
+		m: ( indent --)
+			CR DUP SPACES ." html | " ." Object: " this .h
+			DROP send
+                        DUP this [parent] :print
+		; overrides :print
+
+
+
+target_also
+&drivers
+target_definitions
+
+end_class html_client
+
+target_previous_definitions
+target_previous
+
+
+
+\ used on task entry to make sure all is clean
+: _init_html_values ( --)
+        %html_start [ %html_end %html_start - ]T LITERAL ERASE
+;
+
+\ used on task exit to return all the string objects created.
+: _return_html_values ( --)
+        %html_start
+        [ %html_end %html_start - CELL / ]T LITERAL zero DO
+                DUP @ IF
+                        DUP @ heap_object_free
+                        zero OVER !
+                THEN
+                cell +
+        LOOP
+        DROP
+;
+
+
+\ convert to lower case and store.
+\ use lowercase strings for compare and the net result is a
+\ case insensitive compare with one case conversion
+: lowercase_string! ( addr n addr --)
+        DUP
+        &gt;R string! R&gt; @ :string@
+        lowercase
+;
+
+: _abort_the_task ( --)
+        ['] end_task 'abort ! ABORT
+;
+
+
+\ define the vocabulary here as we don't need it if html server is not included
+WORDLIST
+DUP name_wordlist ~html_values
+all_vocabulary &html_values
+
+target_also
+&html_values
+target_definitions
+
+\ sfind is case insensitive if the word is defined lowercase
+: user-agent ( addr n "rest" --)
+        %html_user_agent lowercase_string! ;
+: pragma ( addr n "rest" --)
+        %html_pragma lowercase_string! ;
+: host ( addr n "rest" --)
+        %html_host lowercase_string! ;
+: accept ( addr n "rest" --)
+        %html_accept lowercase_string! ;
+: accept-encoding ( addr n "rest" --)
+        %html_accept_encoding lowercase_string! ;
+: accept-language ( addr n "rest" --)
+        %html_accept_language lowercase_string! ;
+: accept-charset ( addr n "rest" --)
+        %html_accept_charset lowercase_string! ;
+: via ( addr n "rest" --)
+        %html_via lowercase_string! ;
+: X-forwarded-for ( addr n "rest" --)
+        %html_x_forward_for lowercase_string! ;
+: cache-control ( addr n "rest" --)
+        %html_cache_control lowercase_string! ;
+: connection ( addr n "rest" --)
+        %html_connection lowercase_string! ;
+: referrer ( addr n "rest" --)
+        %html_referrer lowercase_string! ;
+: content-type ( addr n "rest" --)
+        %html_content_type lowercase_string! ;
+: content-length ( addr n "rest" --)
+        %html_content_length lowercase_string! ;
+
+target_previous_definitions
+target_previous
+
+\ 1) because we use refill the maximum input string is limited to #$buffer
+\ unrecognized request headers should be treated as entity headers
+\ unrecognized entity headers should be ignored.
+
+: _get_values ( --)
+        BEGIN
+                REFILL
+        WHILE
+                \ blank line at the end of the header
+                \ terminate the header
+                #TIB @ not IF
+                        \ the blank line at the end of the request
+                        EXIT
+                THEN
+                \ 1) the header keywords are case insensitive
+                \ 2) The divider is :
+                TIB #TIB @ ':' left_split \ word_addr word_count rest_addr rest_count.
+                ':' remove_leading        \ remove the split character
+                -leading                  \ remove LWS
+                -TRAILING                 \ remove LWS
+                2SWAP
+                ~html_values 1 SET-ORDER sfind
+                IF
+                        \ we are searching the &html_value vocabulary
+                        \ words in this vocabulary are expected to
+                        \ consume the start addr n(--
+                        \ where addr and n give the address of the string to consume.
+                        EXECUTE
+                ELSE
+                        2DROP
+                THEN
+        REPEAT
+        \ if we get here the  TCP/IP connection has closed
+        \ no use trying to send back a responce
+        _abort_the_task
+;
+
+
+\ the address that contains the address of the  object to be reworked is stored at %addr1.
+\ The address where the address of the where the second object is to be stored is contained in addr2
+\ The string stored there is to be left split, the left portion is to be
+\ in the first object, the right portion is to go to the second object.
+: string_left_split { variable %addr1 variable %addr2  variable %char -- }
+   %addr1 @ @ :string@ %char @ left_split
+   %char @ remove_leading
+   %addr2 @ string!
+   %addr1 @ @ :string!
+;
+
+\ convert %nn to character value and store.
+: _rework_%  { variable %addr -- }{
+                variable %new_offset
+                variable %old_length
+                variable %loop_inc }
+        BASE @ &gt;R HEX
+        zero %new_offset !
+        %addr @ @ :string@ \ addr n
+        DUP %old_length !
+        DUP get_buffer
+        zero ?DO
+                DUP I + char@ '%' = IF
+                        DUP I + 1+ %old_length @ I - 2 MIN
+                        DUP 1+ %loop_inc !
+                        Snumber
+                ELSE
+                        1 %loop_inc !
+                        DUP I + char@
+                THEN
+                buffer %new_offset @ + char!
+                1 %new_offset +!
+        %loop_inc @ +LOOP
+        buffer %new_offset @ %addr @ @ :string!
+        kill_buffer
+        R&gt; BASE !
+;
+
+
+
+\ save the rest of the line as a string object pointed to by addr
+: _!rest ( addr --)
+        SOURCE &gt;IN @ /STRING ROT string!
+;
+
+\ save the next word as a string object pointed to by addr
+: _!word ( addr --)
+        BL (word) ROT string!
+;
+
+\ If the file is  / convert to /index.html
+: _fix_url ( -- )
+        %html_url @ :string@
+        '/' remove_leading NIP not IF
+                S" /index.html" %html_url @ :string!
+        THEN
+;
+\ add base directory.
+: add_url_base ( -- )
+         S" flash/html" 0 %html_url @ :string_insert
+;
+
+: _get_command_data ( --)
+        %html_url _!word
+        %html_protocol _!rest
+        %html_url %html_url_args '?' string_left_split
+        %html_url _rework_%
+        _fix_url
+        _get_values
+;
+
+\ The shtml and .4th files have to create the head.
+\
+0 CONSTANT #post
+1 CONSTANT #head
+2 CONSTANT #get
+ram_variable %last_post
+
+\ this word list the user adds words to to serve documents.
+WORDLIST
+DUP name_wordlist ~html_words
+all_vocabulary &html_words
+
+target_also
+&html_words
+target_definitions
+
+\ demonstration word. This lists all the *.4th words that can be called.
+\ It is provided to demostrate the structure of the word.
+: index.4th ( length code--)
+        \ have to generate error message for post
+        DUP #post = IF
+                $" Can't POST to this url" .html_not_allowed \ 405
+                2DROP
+                EXIT
+        THEN
+
+        \ word has to create header
+        .html_ok
+        ." Connection: close" CR
+        ." Content-Type: text/html" CR
+
+        \ terminate the header
+        CR
+        #get = IF
+                \ start the html page
+                $" Index of callable forth words" .html_header
+                \ my html content.
+                TRUE %words_html !
+                TRUE %word_link !
+                \ the html_words vocabulary is already selected
+                WORDS
+                \ end the html text.
+                .html_trailer
+                \ have no idea how long it is.
+                \ so the link has to be closed
+        THEN
+        html_close
+        \ get rid of the count
+        DROP
+;
+
+
+\ demonstration word. This lists all the *.4th words that can be called.
+\ It is provided to demostrate the structure of the word.
+: words.4th ( length code--)
+        \ have to generate error message for post
+        DUP #post = IF
+                $" Can't POST to this url" .html_not_allowed \ 405
+                2DROP
+                EXIT
+        THEN
+
+        \ word has to create header
+        .html_ok
+        ." Connection: close" CR
+        ." Content-Type: text/html" CR
+
+        \ terminate the header
+        CR
+        #get = IF
+                \ start the html page
+                $" forth words" .html_header
+                \ my html content.
+                TRUE %words_html !
+                ONLY FORTH
+                WORDS
+                \ end the html text.
+                .html_trailer
+                \ have no idea how long it is.
+                \ so the link has to be closed
+        THEN
+        html_close
+        \ get rid of the count
+        DROP
+;
+
+</code>
+\ demonstration word. An example post word.
+\ IE is too smart for it's own good, it won't let you do a get
+\ from a posted address, so one whould use a differnet url for the get.
+\ Bloody crazy.
+
+: post.4th ( length code--)
+        \ read post
+        DUP #post = IF
+                \ n code(--
+                DROP DUP $40000 &gt; IF
+                        \ If you close the connection you don't have to
+                        \ read it.
+                        html_close
+                        EXIT
+                ELSE
+                      DUP get_buffer
+                      buffer OVER 'input_file @ :read
+                      buffer SWAP %last_post string!
+                      kill_buffer
+                THEN
+                panic" sending reply"
+                \ .html_no_content
+                \ ." Content-Length: " 0 0 .R CR
+                \ ." Connection: Keep-Alive" CR
+                \ ." Content-Type: text/html" CR
+                .html_ok
+                ." Connection: close" CR
+                ." Content-Type: text/html" CR
+                CR
+                $" Reply to post" .html_header
+                ." Thankyou"
+                .html_trailer
+                html_close
+                EXIT
+         ELSE
+                \ word has to create header
+                .html_ok
+                ." Connection: close" CR
+                ." Content-Type: text/html" CR
+
+                \ terminate the header
+                CR
+                #get = IF
+                        \ start the html page
+                        $" Index of callable forth words" .html_header
+                        %last_post @ IF
+                                %last_post @ :string@ TYPE
+                        ELSE
+                                ." No post"
+                        THEN
+                       .html_trailer
+                        \ have no idea how long it is.
+                        \ so the link has to be closed
+                THEN
+                html_close
+                \ get rid of the count
+                DROP
+        THEN
+;
+
+: post_read.4th ( length code--)
+        \ read post
+         \ have to generate error message for post
+        DUP #post = IF
+                $" Can't POST to this url" .html_not_allowed \ 405
+                2DROP
+                EXIT
+        THEN
+        \ word has to create header
+        .html_ok
+        ." Connection: close" CR
+        ." Content-Type: text/html" CR
+
+        \ terminate the header
+        CR
+        #get = IF
+                \ start the html page
+                $" Index of callable forth words" .html_header
+                %last_post @ IF
+                        %last_post @ :string@ TYPE
+                ELSE
+                        ." No post"
+                THEN
+                .html_trailer
+                \ have no idea how long it is.
+                \ so the link has to be closed
+        THEN
+        html_close
+        \ get rid of the count
+        DROP
+;
+<code>
+target_previous_definitions
+target_previous
+
+\ the extension is on the end and
+\ has the form xxx.ext
+\
+: url_extension ( -- addr n )
+        %html_url @ :string@
+        \ addr n
+        '.' right_split  \ addr n addr_ext n_ext
+        2SWAP 2DROP
+;
+
+: url_file ( -- addr n )
+        %html_url @ :string@
+;
+: .html_connection ( --)
+        ." Connection: " %html_connection @ :string@ TYPE CR
+;
+
+\ abort if failed
+: .html_file_header ( handle --)
+        FILE-SIZE
+        $ABORT
+        .html_ok
+        D&gt;S
+        ." Content-Length: " 0 .R CR
+        .html_connection
+        ." Content-Type: text/html" CR
+        CR
+;
+
+: .html_file ( handle --)
+        $400 get_buffer
+        BEGIN
+                buffer DUP buffer_size jump :read
+        DUP WHILE
+                buffer SWAP TYPE
+        REPEAT
+        kill_buffer
+        DROP
+;
+
+\ This wordlist contains &lt;HTML&gt; and $&gt;, it for shtml scanning
+WORDLIST
+DUP name_wordlist ~html_scan
+all_vocabulary &html_scan
+
+target_also
+&html_scan
+target_definitions
+: $&gt; ( --)
+        BEGIN
+                SOURCE &gt;IN @ /STRING
+                S" &lt;$" SEARCH
+                0=
+        WHILE
+                TYPE
+                CR
+                REFILL not IF
+                        EXIT
+                THEN
+        REPEAT
+        \ addr n(--
+        \ have to type up to
+        NIP
+        \ n
+        SOURCE
+        \ n addr n1(--
+        &gt;IN @ /STRING
+        \ n addr n2(--
+        ROT -
+        \ addr n3(--
+        \ addr_base n_to
+        DUP 2 + \ skip $&lt;
+        &gt;IN +! TYPE
+;
+
+: &lt;HTML&gt; ( --)
+        ." &lt;HTML&gt;" $&gt; ;
+
+: &lt;html&gt; ( --)
+        ." &lt;html&gt;" $&gt; ;
+
+\ if standard words are used to generate the html headers then you html code will start
+\ at &lt;body&gt;
+
+: &lt;body&gt; ( --)
+        ." &lt;body&gt;" $&gt; ;
+
+: &lt;BODY&gt; ( --)
+        ." &lt;BODY&gt;" $&gt; ;
+target_previous_definitions
+target_previous
+
+\ not we have added forth to the search order.
+\ It is the applications responsibility not to mess up security.
+: _scan_shtml ( n code addr n --)
+        FORTH-WORDLIST ~html_scan 2 SET-ORDER
+        \ n code(--
+        INCLUDED
+;
+
+\ This wordlist contains a action word for each file extension
+\ If you want to add different mime types add them here.
+WORDLIST
+DUP name_wordlist ~html_mime
+all_vocabulary &html_mime
+
+target_also
+&html_mime
+target_definitions
+
+
+\ n will be zero for head and get, for put n will give the data length to expect.
+: 4th ( n code --)
+        \ n code(--
+        panic" in 4th"
+        ~html_words 1 SET-ORDER
+        url_file
+        '/' remove_leading
+        sfind IF
+        \ n code xt(--
+                ['] EXECUTE CATCH ?DUP IF
+                        &gt;R
+                        \ n code xt(--
+                        DROP
+                        2DROP
+                        R&gt;
+                        \ about on accepting post
+                        .html_error
+                THEN
+        ELSE
+                \ n code(--
+                2DROP
+                $" Not found" .html_nofile
+        THEN
+;
+
+\ The scan file stack description is ( n code --)
+\ The file has to contain the code &lt;$ 2DROP $&gt; at least.
+: shtml ( n code --)
+        add_url_base
+        url_file \ n code addr n(--
+        ['] _scan_shtml CATCH
+        ?DUP IF
+                &gt;R
+                \ n code addr n
+                4drop
+                R&gt; .html_error
+        THEN
+;
+
+
+\ this has been written assuming the code can only take three values
+\ #post #head and #get.
+\ The dafault behavior is #head.
+: html ( n code --)
+        DUP #post = IF
+                $" Can't POST to html files" .html_not_allowed \ 405
+                2DROP
+                EXIT
+        THEN
+        NIP \ don't need count
+        add_url_base
+        url_file R/O ['] Sopen CATCH ?DUP IF
+                &gt;R
+                \ code add n mode(--
+                4drop
+                R&gt;
+                .html_nofile
+        ELSE
+                \ code handle(--
+                DUP &gt;R
+                ['] .html_file_header CATCH ?DUP IF
+                        \ code(--
+                        &gt;R
+                        DROP
+                        R&gt; .html_nofile
+                        R&gt; close
+                        EXIT
+                THEN
+                \ content also
+                #get = IF
+                        R@ ['] .html_file CATCH ?DUP IF
+                                \ handle(--
+                                &gt;R
+                                DROP
+                                R&gt; .html_error
+                                R&gt; close
+                                EXIT
+                        THEN
+                THEN
+                R&gt; close
+        THEN
+;
+
+target_previous_definitions
+target_previous
+
+
+: _process ( n code --)
+        panic" in process"
+        url_extension
+        ~html_mime 1 SET-ORDER
+        sfind IF \ n code xt(--
+                ['] EXECUTE CATCH ?DUP IF
+                        &gt;R
+                        \ n code xt(--
+                        DROP
+                        2DROP
+                        R&gt;
+                        \ abort on file extension
+                        .html_error
+                THEN
+        ELSE
+                \ n code(--
+                2DROP
+                $" Not found" .html_nofile
+        THEN
+;
+
+: _get_post_length ( --n)
+        %html_content_length @ :string@
+        \ add n(--
+        Snumber
+;
+
+\
+\ define the vocabulary here as we don't need it if html server is not included
+WORDLIST
+DUP name_wordlist ~html_commands
+all_vocabulary &html_commands
+
+target_also
+&html_commands
+target_definitions
+\ these consume data and send the requested data; they exit when command is complete.
+: GET ( --)
+        panic" In get"
+        _get_command_data
+        zero #get _process
+ ;
+
+: POST ( --)
+        _get_command_data
+        _get_post_length
+        #post _process
+ ;
+
+: HEAD ( --)
+        _get_command_data
+        zero #head _process
+;
+target_previous_definitions
+target_previous
+
+\ has to look at the contents of the %html_connection string.
+\ flag is zero if equal
+: ?close_connection ( --flag)
+        %html_connection @ :string@  panic" connection: " 2DUP panic panic_cr
+        S" keep-alive" COMPARE
+;
+
+:  _process_commands ( --)
+        _init_html_values
+        \ once around for each request from the server.
+        BEGIN
+                S" /nosuchfile.html" %html_url string!
+                S" HTTP/1.0" %html_protocol string!
+                \ the default is to close the connection after the reply.
+                \ The server must send Keep-Alive int the header to keep going.
+                \ TCP/IP timeout only occures if the client can't be contacted no more.
+                \ See _tcp_timeout if you want to look at that game.
+                html_close
+                 ~html_commands 1 SET-ORDER
+                 \ we skip empty lines
+                BEGIN
+                        REFILL
+                        panic" Done refill" #TIB @ .panic panic_cr
+                        TIB 10 panic_dump   panic_cr
+
+                        not IF
+                           panic" finished process"
+                           \ connection has closed
+                           _return_html_values
+                           EXIT
+                        THEN
+
+                #TIB @
+                UNTIL
+
+
+                #TIB @ 4 + TIB buffer_size &gt; IF
+                        $" Greater than 1k, come on be reasonable." .html_url_too_long
+                        _return_html_values
+                        EXIT
+                THEN
+
+                ['] scan CATCH ?DUP
+
+                IF
+                         $" failed to under understand command" .html_not_implemented
+                         _return_html_values
+                         EXIT
+                THEN
+                send
+                ?close_connection
+                _return_html_values
+          UNTIL
+          panic" closing connection"
+;
+
+: html_action (  handle --)
+
+        DUP 'output_file !
+        DUP 'input_file !
+        'abort_file !
+        \ (--
+        \ make the maximum line very long as it can be.
+        $400 get_buffer
+        buffer %tib !
+        ['] _process_commands CATCH
+        0 %tib !
+        kill_buffer
+        $ABORT
+        'output_file @
+         0 'output_file !
+         0 'input_file !
+         0 'abort_file !
+         close
+        _abort_the_task
+
+;
+
+
+| CREATE $html_child ," html"
+
+\ This really is neat, the one gives the number of stack items transfered to
+\ the child, this is followed by the word to be executed. A lot better than
+\ a UNIX fork.
+
+| : start_task  ( client --)
+	one ['] html_action #clock_low $html_child child_task
+;
+
+\ server object address stored here
+\ This is only done for debugging
+ram_variable %tcp_html_server
+
+#clock_low task: html_server
+	$" tcp_server/#80" 0 $open
+	\ change the generated client to a html client
+	[ html_client ]T LITERAL OVER :client!
+	%tcp_html_server !
+	BEGIN
+		%tcp_html_server @ :listen
+		start_task
+	AGAIN
+	;task
+
+
+	</code> </pre>
+
+</body>
+</html>
+

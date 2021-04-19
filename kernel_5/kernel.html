@@ -1,0 +1,644 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+	<body>
+	<a HREF="./license.html">license</a>
+	<h5>The cross compiler</h5>
+	<pre><code>
+\ tidy up from previous compile
+ONLY FORTH
+defined empty [IF]
+        .( Type empty before compiling) ABORT
+[THEN]
+MARKER empty
+
+
+\ set to zero for no debug printout.
+ram_variable %xdebug
+3 %xdebug !
+
+: #GPL ;
+\ check that we have the right licence
+include ./license.html \ <a HREF="./licence.html">link</a>
+
+include ./xcom.html  \ <a HREF="./xcom.html">link</a>
+
+        </code></pre><p>
+        <a name="card_select"></a>
+	Change these flags to get what you want all cards
+	are supported under one source tree.
+	Its too hard maintaining seperate version.
+	</p><pre><code>
+
+	HEX
+	\ H 5307 mask, this version is no longer maintained
+	FALSE     EQU #BCM550h
+	\ J 5307 mask
+	FALSE     EQU #BCM550j
+
+      \ dictionary and kernel in static used for hardware fault finding.
+	FALSE	EQU #BVP5552_static   
+	FALSE	EQU #BVP5551_static
+	FALSE 	EQU #BVP555x_dp_test		\ test the dp ram during init.
+
+      \ dictionary and kernel in dram
+	TRUE	EQU #BVP5552_dram
+	FALSE EQU #BVP5551_dram
+
+	FALSE  EQU #BVP6551
+	FALSE  EQU #BVP6552
+
+        FALSE EQU #ECM160
+
+
+        #BVP5552_static #BVP5552_dram + [IF]
+                TRUE CONSTANT #BVP5552
+       [ELSE]
+                FALSE CONSTANT #BVP5552
+       [THEN]
+
+       #BVP5551_static #BVP5551_dram + [IF]
+                TRUE CONSTANT #BVP5551
+       [ELSE]
+                FALSE CONSTANT #BVP5551
+       [THEN]
+
+#BCM550h [IF]
+	CREATE $card ," ./BCM550h/"
+[THEN]
+#BCM550j [IF]
+	CREATE $card ," ./BCM550j/"
+[THEN]
+#BVP5551 [IF]
+	CREATE $card ," ./bvp5551/"
+[THEN]
+#BVP5552 [IF]
+	CREATE $card ," ./bvp5552/"
+[THEN]
+#BVP6551 [IF]
+	CREATE $card ," ./bvp6551/"
+[THEN]
+#BVP6552 [IF]
+	CREATE $card ," ./bvp6552/"
+[THEN]
+#ECM160 [IF]
+	CREATE $card ," ./ecm160/"
+[THEN]
+
+
+</code>
+</pre>
+<h3>sub directory to use</h3>
+<p>
+All data relevent to a card is kept in a sub directory for that card.
+This results in duplication of files but a system that is lot simpler to follow.
+To change the files used you change the definition of $CARD. To add a card you
+add a directory for that card, copy the files closest to the card you are
+creating alter as required, add a uncommented card definition to this list,
+comment out the one you are not using. And that is it.
+</p>
+<h5>Support for loading card specific sub directories</h5>
+<pre>
+<code>
+\ word added to forth to load the card specific files.
+forth : include_card ( --)
+	#$buffer get_buffer
+	$card BL WORD buffer #$buffer $+
+	CR
+	%xdebug @ IF
+		DEPTH IF
+			.S ." stack on entry to "
+		THEN
+	THEN
+	buffer COUNT type
+	buffer COUNT included
+	CR
+	%xdebug @ IF
+		DEPTH IF
+			.S ." stack on exit from "
+		THEN
+	THEN buffer COUNT type
+	kill_buffer
+;
+\ check the licence
+include_card license.html
+
+
+	TRUE     EQU #USE_MAC
+
+	\ add floating point package
+	\ The H mask doesn't support the fractional mult.
+	#BCM550h [IF]
+		FALSE EQU #FLOAT
+	[ELSE]
+ 		#BVP6551 #BVP6552 + #ECM160 + [IF]
+
+                	TRUE 	EQU #HFLOAT  	\ use hardware FPU.
+                 	TRUE 	EQU #FLOAT  	\ **** may need to fix later
+   		[ELSE]
+
+			TRUE 	EQU #FLOAT  	\ use software FP
+   			FALSE	EQU #HFLOAT
+ 		[THEN]
+	[THEN]
+
+\ based on card type define type of processor
+#BCM550h #BCM550j + [IF]
+	TRUE  EQU #5307
+	FALSE EQU #5407
+	FALSE EQU #5474
+	assembler
+	#5300 !CPU
+	HOST
+[THEN]
+
+#BVP5552 #BVP5551 + [IF]
+	FALSE EQU #5307
+	TRUE EQU #5407
+	FALSE EQU #5474
+	assembler
+	#5400 !CPU
+	HOST
+[THEN]
+
+#BVP6551 #BVP6552 + #ECM160 + [IF]
+	FALSE EQU #5307
+	FALSE EQU #5407
+	TRUE EQU #5474
+	assembler
+	#5400 !CPU
+	HOST
+[THEN]
+
+
+#BCM550h #BCM550j + #ECM160 + [IF]
+        TRUE EQU #rti1000_master
+[ELSE]
+        FALSE EQU #rti1000_master
+[THEN]
+
+#BCM550h #BCM550j +  #BVP5552 + #BVP6552 + [IF]
+        TRUE EQU #rti1000_slave
+[ELSE]
+        FALSE EQU #rti1000_slave
+[THEN]
+
+#BCM550h #BCM550j + #BVP5551_dram + #BVP5552_dram +
+\ ##temp #BVP6551 + #BVP6552 +
+#ECM160 +
+[IF]
+\        TRUE EQU #tcp/ip_included
+FALSE EQU #tcp/ip_included		\ ##temp
+        TRUE EQU #editor_included
+[ELSE]
+        FALSE  EQU #tcp/ip_included
+        FALSE  EQU #editor_included
+[THEN]
+
+
+#BCM550h #BCM550j + #BVP5551_dram + #BVP5552_dram + [IF]
+	\ describe the boot prom, this address is the start of SRAM
+	$10000000 EQU _prom_kernel_start
+        $78000 EQU _prom_kernel_size
+        \ #kernel_size in set in XCOM
+	_prom_kernel_start _prom_kernel_size +       EQU _prom_kernel_end    ( End of prom area)
+      	$400 EQU _vector_gap				\ interrupt vectors
+[THEN]
+
+
+#BVP6551 #BVP6552 + #ECM160 + [IF]
+	\ describe the kernel code
+	$00000 EQU _prom_kernel_start
+        $78000 EQU _prom_kernel_size
+        \ #kernel_size in set in XCOM
+	_prom_kernel_start _prom_kernel_size +       EQU _prom_kernel_end    ( End of prom area)
+     	$1004 EQU _vector_gap    		\ includes boot loader stuff, int vectors and start address.
+        _vector_gap 4- EQU _save_gap		\ not included in save of image.
+[THEN]
+
+
+#BVP5552_static #BVP5551_static + [IF]
+	\ describe the boot prom, this address is the start of SRAM
+	$4000000 EQU _prom_kernel_start
+        $40000 EQU _prom_kernel_size
+        \ #kernel_size in set in XCOM
+	_prom_kernel_start _prom_kernel_size +       EQU _prom_kernel_end    ( End of prom area)
+     	$400 EQU _vector_gap  				\ interrupt vectors
+[THEN]
+
+</code>
+</pre>
+<p>
+Code to save compiled image to file, this code is compiled into host.
+It is used at the end of the cross compile, how we save depends on the 
+card being cross compiled.
+</p>
+<pre>
+<code>
+
+	include ./image_save.html \ <a HREF="./image_file_save.html">link</a>
+ 
+	include ./setup_xcom.html \ <a HREF="./setup_xcom.html">link</a>
+
+
+</code></pre><p> We can now add code to image </p><pre><code>
+
+forth
+        ' _target_save_input$ (save_input$) !
+        ' _target_restore_input$ (restore_input$) !
+        \ execute to get things started.
+        _target_save_input$
+HOST
+
+	include ./constants.html    \ <a HREF="./constants.html">link</a>
+	include_card fpga_constants.html \ <a HREF="./BVP6552/fpga_constants.html">link</a>
+	include_card constants.html \ <a HREF="./BCM550h/constants.html">link</a>
+
+
+	\ target dictionary pointer, see dictionary_here
+	_#dictionary_start 'dictionary !
+	\ base address of the dictioanry image area
+	\ used in XCOM
+	_#dictionary_start _dictionary0 !
+    
+    
+		</code></pre><p> Run time action for various words. </p><pre><code>
+	include ./_do_code.html \ <a HREF="_do_code.html">link</a>
+	include ./ansi_code_words.html \ <a HREF="./ansi_code_words.html">link</a>
+	include ./code_words.html \ <a HREF="./code_words.html">link</a>
+     
+		</code></pre><h3>load rest of cross compiler</h3>
+		<p>
+		The cross compiler needs to know where some of the words are in the kernel.
+		There are two ways of dealing with this, allow forward referencing in the 
+		cross compiler, or define the words and load the rest of the cross compiler.
+		This version uses the latter approach. Can't argue in favour of either solution.
+		</p><pre><code>
+	include ./xcomp2.4th \ <a HREF="./xcomp2.4th">link</a>
+	include ./start_application_dict.html \ <a HREF="./start_application_dict.html">link</a>
+	include ./colon_words_used_by_ansi.html \ <a HREF="./colon_words_used_by_ansi.html">link</a>
+	include ./ansi_colon_words.html \ <a HREF="./ansi_colon_words.html">link</a>
+	include ./colon_words.html \ <a HREF="./colon_words.html">link</a>
+	include ./word_head.html \ <a HREF="./word_head.html">link</a>
+	include ./initial_abort.html \ <a HREF="./initial_abort.html">link</a>
+	include ./link_lists.html \ <a HREF="./link_lists.html">link</a>
+	include ./user_variables.html \ <a HREF="./user_variables.html">link</a>
+
+
+	</code></pre><p>
+		Fast memory defined before this is not cleared on startup.
+	</p><pre><code>
+		
+	fast_here CONSTANT _%fast_clear_start
+
+	</code> </pre>
+<p>
+dynamic ram memory defined before this is not cleared on startup.
+</p>
+	<pre> <code>
+	
+	ram_here  CONSTANT _%ram_clear_start
+
+#BVP5552 #BVP5551 + [IF]
+	</code> </pre>
+<p>
+Static memory defined before this is not cleared on startup.
+</p>
+	<pre> <code>
+	static_here CONSTANT _%static_clear_start
+[THEN]
+
+
+   
+	</code> </pre>
+
+
+<p>
+The kernel checksum is contained in prom, the application in flash. The application will
+only run if it was compiled on the same kernel. To this end the kernel checksum
+is saved with the application. Before the application is loaded the current
+kernel checksum is compare with the saved checksum and tha application loaded if 
+the two checksums are the same.
+</p>
+<p>
+An offset is used to find the checksum in the flashed application image.
+</p>
+ 	<pre> <code>
+    dictionary_here _#dictionary_start  - CONSTANT _#kernel_checksum_offset   
+    dictionary_variable _%kernel_checksum ( value copied when promming)
+
+
+	include ./user_using_words.html \ <a HREF="./user_using_words.html">link</a>
+	include ./memory_allocation.html \ <a HREF="./memory_allocation.html">link</a>
+	include ./vocabulary.html \ <a HREF="./vocabulary.html">link</a>
+	include ./checksum.html \ <a HREF="./checksum.html">link</a>
+	include ./xwords.html \ <a HREF="./xwords.html">link</a>
+	include ./task_loops.html \ <a HREF="./task_loops.html">link</a>
+
+	include ./basic_io.html \ <a HREF="./basic_io.html">link</a>
+	\ code to print out messages before serial port can be opened.
+	\ Selected option must be able to work in interrupt routines.
+	include_card panic.html \ <a HREF="./BCM520j/panic.html">link</a>
+
+	include ./heap_control.html \ <a HREF="./heap_control.html">link</a>
+	include ./find.html \ <a HREF="./find.html">link</a>
+
+        include ./words_using_heap.html \ <a HREF="./words_using_heap.html">link</a>
+	include ./wordlists.html \ <a HREF="./wordlists.html">link</a>
+	</code> </pre>
+
+		
+<p>
+sort out the root voacubulary. The minimum search order is SET-ORDER
+and FORTH-WORDLIST. To get into forth the code would be
+<samp>
+FORTH-WORDLIST 1 SET-ORDER
+</samp>
+We will add the word FORTH.
+</p>
+
+	<pre> <code>
+	target_also &root 
+	target_definitions
+
+	: FORTH  FORTH ;
+	: FORTH-WORDLIST FORTH-WORDLIST ;
+	: SET-ORDER SET-ORDER ;	
+
+	target_previous_definitions
+	target_previous
+
+    
+  
+ 
+  
+	include ./cache_managment.html \ <a HREF="./cache_managment.html">link</a>
+
+	include ./number_output.html \ <a HREF="./number_output.html">link</a>
+	include ./abort.html \ <a HREF="./abort.html">link</a>
+	include ./ass.html \ <a HREF="./ass.html">link</a>
+	include ./word.html \ <a HREF="./word.html">link</a>
+	</code> </pre>
+<p>
+Convert invisible caracters to ~	
+</p>
+	<pre> <code>
+	: ~TYPE ( addr num --)
+		DUP IF   
+			$buffer
+				TUCK			\ num addr num (--
+				buffer visible		
+			    buffer SWAP     \ addr num (--
+				TYPE
+			kill_buffer
+		ELSE 
+			2DROP 
+			xpause 
+		THEN 
+	;
+
+	: ^C ( --)
+		user_base activation_^c_set W@ IF
+			FALSE user_base activation_^c_set W! 
+			TRUE ABORT" ^C detected." 
+		THEN 
+	;
+
+	include ./more_ansi_colon_words.html \ <a HREF="./more_ansi_colon_words.html">link</a>
+	include ./compile.html \ <a HREF="./compile.html">link</a>
+	include ./string_literals.html \ <a HREF="./string_literals.html">link</a>
+	include ./number.html \ <a HREF="./number.html">link</a>
+	include ./random.html \ <a HREF="./random.html">link</a>
+
+	#FLOAT [IF]
+		03 CONSTANT _#initial_q_digits
+		include ./float.html \ <a HREF="./float.html">link</a>
+		include ./cordic_trig.html \ <a HREF="./cordic_trig.html">link</a>
+  	[THEN]
+	#FLOAT #HFLOAT + not [IF]
+		include ./q_numbers.html \ <a HREF="./q_numbers.html">link</a>
+	[THEN]
+	include ./version.html \ <a HREF="./version.html">link</a>
+	include ./more_forth.html \ <a HREF="./more_forth.html">link</a>
+	include ./struct.html \ <a HREF="./struct.html">link</a>
+	include ./objects.html \ <a HREF="./objects.html">link</a>
+	include ./terminal_class.html \ <a HREF="./terminal_class.html">link</a>
+	include ./link_class.html \ <a HREF="./link_class.html">link</a>
+	include ./cleanup_class.html \ <a HREF="./cleanup_class.html">link</a>
+
+	include ./string_class.html \ <a HREF="./string_class.html">link</a>
+
+	include ./parented_object.html \ <a HREF="./parented_object.html">link</a>
+	include ./inode.html \ <a HREF="./inode.html">link</a>
+	include ./io_common.html \ <a HREF="./io_common.html">link</a>
+	include ./root.html \ <a HREF="./root.html">link</a>
+	include ./file_class.html \ <a HREF="./file_class.html">link</a>
+	include ./input_output.html \ <a HREF="./input_output.html">link</a>
+	include ./ws60.html \ <a HREF="./ws60.html">link</a>
+	include ./prompt.html \ <a HREF="./prompt.html">link</a>
+	include ./if_then_else.html \ <a HREF="./if_then_else.html">link</a>
+	include ./htmltags.html \ <a HREF="./htmltags.html">link</a>.
+	include ./quit_interpret_etc.html \ <a HREF="./quit_interpret_etc.html">link</a>
+	include ./queue.html \ <a HREF="./queue.html">link</a>
+	include_card flash.html \ <a HREF="./BCM550j/flash.html">link</a>
+	include ./local_variables.html \ <a HREF="./local_variables.html">link</a>
+#BCM550h #BCM550j +  #BVP5552 + #BVP5551 +  #BVP6551 + #BVP6552 + #ECM160 + [IF]
+	: interrupt_master ( --)
+		zero _#set_rti1000_interrupt C!
+	;
+
+	include ./dual_port_memory.html \ <a HREF="./dual_port_memory.html">link</a>
+[THEN]
+	include ./system_rte.html \ <a HREF="./system_rte.html">link</a>
+	include ./interrupt_colon.html \ <a HREF="./interrupt_colon.html">link</a>
+	include ./tyx.html \ <a HREF="./tyx.html">link</a>
+	include ./config.html \ <a HREF="./config.html">link</a>
+	include ./real_time_clock.html \ <a HREF="./real_time_clock.html">link</a>
+#editor_included [IF]
+	include ./editor.html \ <a HREF="./editor.html">link</a>
+[THEN]
+
+	include ./date1900.html \ <a HREF="./date1900.html">link</a>
+
+\	include ./form.html \ <a HREF="./form.html">link</a>
+\	include ./message.html
+
+	include ./_cvs_decode.html \ <a HREF="./_cvs_decode.html">link</a>
+
+\ same structure as rtidual port
+#BVP5552 #BVP6552 + [IF]
+	include ./bank_memory.html
+[THEN]
+
+#BVP6551 #BVP6552 + [IF]
+	include_card vga_driver.html \ <a HREF="./vga_driver.html">link</a>
+[THEN]
+	include ./tube.html \ <a HREF="./tube.html">link</a>
+
+\ on the bvp the first cpu defines the dual port between cou1 and 2 as the port memory.
+\ the second cpu ( the one near the rti bus) defines cpu1 and cpu2 dual port as bank memeory.
+#BCM550h #BCM550j +  #BVP5552 + #BVP5551 + #BVP6551 + #BVP6552 + #ECM160 + [IF]
+	include ./port_tube.html \ <a HREF="./port_tube.html">link</a>
+[THEN]
+
+	include ./task_stuff.html \ <a HREF="./task_stuff.html">link</a>
+	include ./marker.html \ <a HREF="./marker.html">link</a>
+	include ./print_system_data.html \ <a HREF="./print_system_data.html">link</a>
+	include ./words.html \ <a HREF="./words.html">link</a>
+	include ./operator_task_table.html \ <a HREF="./operator_task_table.html">link</a>
+	include ./show.html \ <a HREF="./show.html">link</a>
+	include ./fault_data.html \ <a HREF="./fault_data.html">link</a>
+
+	include_card watchdog.html \ <a HREF="./BCM520j/watchdog.html">link</a>
+	include ./watchdog.html \ <a HREF="./watchdog.html">link</a>
+
+	include_card ./traps.html \ <a HREF="./BCM550j/traps.html">link</a>
+	include ./traps.html \ <a HREF="./traps.html">link</a>
+	include_card ./buss_error.html \ <a HREF="./BCM550j/buss_error.html">link</a>
+
+#rti1000_master [IF]
+	include ./cards.html \ <a HREF="./cards.html">link</a>
+[THEN]
+
+\	include ./printing.html \ <a HREF="./printing.html">link</a>
+
+#rti1000_master [IF]
+        include ./rlogon.html \ <a HREF="./rlogon.html">link</a>
+[THEN]
+
+.S .( out rlogon.html) send
+#rti1000_master #rti1000_slave + #BVP5551 + #BVP6551 + [IF]
+	include ./rti_files_common.html \ <a HREF="./rti_files_common.html">link</a>
+[THEN]
+#rti1000_master [IF]
+ 	include ./rti1000_interrupt.html \ <a HREF="./rti1000_interrupt.html">link</a>
+[THEN]
+
+#BCM550h #BCM550j + [IF]
+	include ./digital_interrupt.html \ <a HREF="./digital_interrupt.html">link</a>
+[THEN]
+
+\ send a request to the file server
+#rti1000_slave #BVP5551 + #BVP6551 + [IF]
+	include ./rti.html \ <a HREF="./rti.html">link</a>
+[THEN]
+
+\ Useing these two services allows us to provide disk services to multicpu systems
+\ without getting involved in TCP/IP gateways.
+\ takes file requests from the rti bus and serves them using the masters file system
+#rti1000_master [IF]
+        include ./rti_file_server.html \ <a HREF="./rti_file_server.html">link</a>
+[THEN]
+
+\ provide terminal services without getting involved in tcp/ip.
+\ Provide file service to cpu1
+#BVP5552  #BVP6552  + [IF]
+        include ./bank_server.html \ <a HREF="./bank_code.html">link</a>
+        include ./bank_logon.html \ <a HREF="./bank_logon.html">link</a>
+[THEN]
+
+
+	include ./bye_restart_etc.html \ <a HREF="./bye_restart_etc.html">link</a>
+
+	include ./dma.html \ <a HREF="./dma.html">link</a>
+
+
+       include ./ansi.html         \ <a HREF="./ansi.html">link</a>
+	.S .( start tcpset)
+#tcp/ip_included [IF]
+	include ./tcp/pep_h.html \ <a HREF="./tcp/pep_h.html">link</a>
+	include ./tcp/icmp_h.html \ <a HREF="./tcp/icmp_h.html">link</a>
+	include ./tcp/routing_h.html \ <a HREF="./tcp/routing_h.html">link</a>
+	include ./tcp/tcp_h.html \ <a HREF="./tcp/tcp_h.html">link</a>
+	include ./tcp/print_pep.html \ <a HREF="./tcp/print_pep.html">link</a>
+
+	\ must be defined now as used in icmp_demux
+	include ./tcp/interface_common.html \ <a HREF="./tcp/interface_common.html ">link</a>
+	include ./tcp/ip_setup.html \ <a HREF="./tcp/ip_setup.html">link</a>
+	include ./tcp/io_protocol_common.html \ <a HREF="./tcp/io_protocol_common.html">link</a>
+
+	\ these have to be defined before the interface classes derived because
+	\ the :!ip words and :!netmask words have to
+	\ add and remove routes.
+	include ./tcp/routing.html \ <a HREF="./tcp/routing.html">link</a>
+	include ./tcp/interface_local.html \ <a HREF="./tcp/interface_local.html">link</a>
+	\ defined before proto.html as used there
+	include ./tcp/demux.html \ <a HREF="./tcp/demux.html">link</a>
+	include ./tcp/demux_socket.html \ <a HREF="./tcp/demux_socket.html">link</a>
+	\ defined before interface_loopback as interface_loopback
+	\ has to call the :proto_checksum method
+	include ./tcp/proto.html \ <a HREF="./tcp/proto.html">link</a>
+	include ./tcp/interface_loopback.html \ <a HREF="./tcp/interface_loopback.html">link</a>
+
+#BCM550h #BCM550j + #ECM160 + [IF]
+	include ./tcp/ethernet_h.html
+	include ./tcp/interface_nice.html
+[THEN]
+
+	include ./tcp/udp_demux.html \ <a HREF="./tcp/udp_demux.html">link</a>
+	include ./tcp/tcp_demux.html \ <a HREF="./tcp/tcp_demux.html">link</a>
+	include ./tcp/icmp_demux.html \ <a HREF="./tcp/icmp_demux.html">link</a>
+	include ./tcp/udp.html \ <a HREF="./tcp/udp.html">link</a>
+	include ./tcp/icmp_echo.html \ <a HREF="./tcp/icmp_echo.html">link</a>
+	include ./tcp/timestamp.html \ <a HREF="./tcp/timestamp.html">link</a>
+
+
+        include ./tcp/tcp_client.html \ <a HREF="./tcp/tcp_client.html">link</a>
+	include ./tcp/tcp_server.html \ <a HREF="./tcp/tcp_server.html">link</a>
+	include ./tcp/rpc.html      \ <a HREF="./tcp/rpc.html">link</a>
+	include ./tcp/nfs.html      \ <a HREF="./tcp/nfs.html">link</a>
+
+	include ./tcp/telnet_server.html \ <a HREF="./tcp/telnet_server.html">link</a>
+	include ./tcp/html_server.html \ <a HREF="./tcp/html_server.html">link</a>
+[THEN]
+	include ./kernel_tasks.html \ <a HREF="./kernel_tasks.html">link</a>
+
+
+	include_card vectors.html \ <a HREF="./BCM550j/vectors.html">link</a>
+	include ./init.html \ <a HREF="./init.html">link</a>
+
+	include_card boot_to_ram.html \ <a HREF="./BCM550j_boot_to_ram.html">link</a>
+
+	include ./locate.html \ <a HREF="./locate.html">link</a>
+	include ./glossary.html \ <a HREF="./glossary.html">link</a>
+
+\	include ./print_source.html
+
+	include ./op_function_vectors.html \ <a HREF="./op_function_vectors.html">link</a>
+	include ./environment.html \ <a HREF="./environment.html">link</a>
+
+
+\ here we end the source file link
+forth %input_files @ HOST kernel_input_files t!
+
+DECIMAL
+
+	include ./end.4th \ <a HREF="./end.4th">link</a>
+	
+forth
+
+\ these words were defined at the start of the cross compile in the 
+\ file image_save
+.S .( About to save image, this may be to a file or to flash.)
+save_image
+
+
+.S .( About to test for same.)
+?same_image
+
+.S  .( finished)
+
+
+</code>
+</pre>
+</body>
+</html>
+
+
+

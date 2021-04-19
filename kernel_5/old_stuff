@@ -1,0 +1,67 @@
+    ??HEX
+	</code> </pre>
+<p>
+If we get this far we are happy that the flash contains a valid application and we
+copy it to the dictionary.
+</p>
+	<pre> <code>
+	\ System is locked when this is called
+	| : _move_flash>dictionary
+		[ _#dictionary_flash_base ]T LITERAL [ _#dictionary_start ]T LITERAL   \ from to (--
+		[ _#dictionary_flash_base CELL+ ]T LITERAL @  2 CELLS +                \ from to count(--
+		[ _#dictionary_end _#dictionary_start - _#dictionary_flash_size MIN ]T LITERAL MIN
+		MOVE  \ (--
+	;
+	</code> </pre>
+<p>
+Makes sure the saved application was compiled on the current kernel,
+it won't work if it isn't.
+</p>
+	<pre> <code>
+        | : _?same_kernel ( --flag)
+		[ _prom_kernel_checksum ]T LITERAL @
+		[ _#dictionary_flash_base ]T LITERAL   _#kernel_checksum_offset + @ =
+	;
+
+ 	</code> </pre>
+<p>
+If the checksum is not valid then the prom doesn't contain a saved application.
+</p>
+	<pre> <code>
+	\ The first flash cell contains the checksum
+	\ The second flash cell contains the count, the count doesn't include
+	\ the checksum or count cell.
+	| : _?dictionary_flash_checksum ( --flag)
+		[ _#dictionary_flash_base #app_start_offset + ]T LITERAL
+		[ _#dictionary_flash_base CELL+ ]T LITERAL @               \ addr count(--
+		[ _#dictionary_flash_size ]T LITERAL MIN
+		checksum
+		[ _#dictionary_flash_base ]T LITERAL @ =
+	;
+   	</code> </pre>
+<p>
+This has no value as a headed word, the only why to have it happen is to do a restart.
+We do some consistancey checks on the application and if ok copy it to the dictionary.
+</p>
+	<pre> <code>
+        .prompt
+	| : flash>dictionary  ( -- )
+		_?same_kernel               not ABORT" << Different kernal >>"
+		_?dictionary_flash_checksum not ABORT" << Bad flash checksum >>"
+		_move_flash>dictionary
+	;
+
+
+	HEX
+	\ normal we copy the application
+	: check_application ( --flag)
+		_application_count @
+		[ _#dictionary_end ]T LITERAL _application_start - U> IF
+			FALSE
+			EXIT
+		THEN
+		_application_start _application_count @
+		checksum
+		_application_checksum @ =
+	;
+

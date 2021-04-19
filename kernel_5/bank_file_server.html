@@ -1,0 +1,413 @@
+<html>
+
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h5>base rti file operations</h5>
+<a HREF="./license.html">license</a>
+<pre> <code>
+	: interrupt_master ( --)
+		zero _#set_rti1000_interrupt C!
+	;
+
+: rti_check_error { -- }
+	%port_file_table #flbus_count + W@ IF
+		\ a word operation will work against the dual port
+		\ memory.
+		%port_buffer W@ $FF00 AND [ #error_ilan 8 LSHIFT ]T LITERAL  = IF
+			\ move the data into a buffer
+			%port_file_table #flbus_count + W@ 3 + -4 AND DUP get_buffer
+			%port_buffer buffer ROT MOVE
+			buffer 1+ $error #$buffer $move
+			kill_buffer
+			$error $ABORT
+		THEN
+	THEN
+;
+
+
+( flag is true if fault)
+: perform_file_op ( addr count -- )
+	TUCK 3+ -4 AND 
+	%port_buffer SWAP MOVE
+	\ count(--
+	( pointer to table)
+	%port_file_table %port_(file_table) !
+	%port_buffer %port_file_table #flbus_buffer + !
+	%port_file_table #flbus_count + W!
+	user_base activation_status %port_file_table #flbus_facility + !
+	TRUE %port_i_file W!
+	xtest
+	interrupt_master
+	\ #### temp
+	#2sec 100 *	xwait
+	xtimeout? IF
+		TRUE ABORT" Master didn't process file request"
+	THEN
+	rti_check_error 
+;
+
+
+ram_create rti_facility #facility_length ram_allot 
+
+
+: close_rti ( file_code --)
+	[ #ilan_close_header_length 3+ -4 AND ]T LITERAL  get_buffer  
+	rti_facility get
+	#close_ilan #ilan_disk_code buffer + C!
+	#ilan_disk_i/o_id buffer  + unaligned!
+	buffer [ #ilan_close_header_length 3+ -4 AND ]T LITERAL 
+	['] perform_file_op CATCH
+	?DUP IF
+		kill_buffer
+		rti_facility release
+		$ABORT
+	THEN 
+	rti_facility release
+	kill_buffer 
+;
+
+
+#$count_length 1 ??=
+
+: open_rti ( add n mode file_code --)
+	rti_facility get
+	jump [ #$count_length #ilan_open_header_length + ]T LITERAL + get_buffer 
+
+	#open_ilan #ilan_disk_code buffer + C!
+	#ilan_disk_i/o_id buffer + unaligned!
+	#ilan_disk_mode buffer + unaligned!
+	\ add n(--
+	TUCK
+	\ ###
+	\ convenient to use $make here but isn't correct.
+	\ The string structure is set by a protocol structure not by
+	\ the FORTH spec. If the structure of $ changes this will be wrong
+	buffer #ilan_open_header_length + $make
+	\ length(--
+	buffer SWAP #ilan_open_header_length + #$count_length +
+	['] perform_file_op CATCH
+	?DUP IF
+		kill_buffer
+		rti_facility release
+		$ABORT
+	THEN 
+	kill_buffer
+	rti_facility release
+;
+
+: read_rti ( addr n seek_pointer file_code -- n )
+	rti_facility get
+	#ilan_disk_header_length get_buffer
+
+	4dup
+	#read_ilan #ilan_disk_code buffer  + C!
+	#ilan_disk_i/o_id buffer  + unaligned!
+	#ilan_disk_where buffer  + unaligned!
+	#ilan_disk_length buffer  + unaligned!
+	DROP
+	\ addr n seek_pointer file_code(--
+	buffer #ilan_disk_header_length
+	['] perform_file_op CATCH
+	?DUP IF
+		kill_buffer
+		rti_facility release
+		$ABORT
+	THEN 
+	kill_buffer
+
+	\ The requested data is now in %port_buffer
+	%port_file_table #flbus_count + W@ #ilan_disk_header_length < IF \   >
+		rti_facility release
+		$command_length_wrong $ABORT
+	THEN
+
+	\ The memory operations that can be done against dual port memory are limited
+	\ as we will be writing the data to a user I/O area we cannot force long word
+	\ operation so we need to copy to buffer.
+	%port_file_table #flbus_count + W@ 3 + -4 AND get_buffer
+	%port_buffer buffer %port_file_table #flbus_count + W@ 3 + -4 AND MOVE	 
+
+	buffer #ilan_disk_code + C@ #read_ilan <> IF
+		rti_facility release
+		$strange_command $ABORT
+	THEN
+	buffer #ilan_disk_i/o_id + unaligned@ 
+	<> IF
+		rti_facility release
+		$wrong_file $ABORT
+	THEN
+	buffer #ilan_disk_where + unaligned@ <> IF
+		rti_facility release
+		$wrong_file_pointer $ABORT
+	THEN
+	buffer #ilan_disk_length + unaligned@ TUCK
+	\ addr n_in n_out n_in(--
+	< IF   \ >
+		rti_facility release
+		$wrong_length $ABORT
+	THEN
+	\ addr n_in(--
+	DUP 
+	%port_file_table #flbus_count + W@ #ilan_disk_header_length - 
+	<> IF
+		rti_facility release
+		$?data_length $ABORT
+	THEN
+	\ addr n_in(--
+	TUCK
+
+	\ The count may be byte aligned and we have to respect it
+	buffer #ilan_disk_header_length +
+	-rot MOVE
+	kill_buffer
+	rti_facility release
+;
+	 
+
+
+: write_rti ( addr n seek_pointer file_code--)
+	rti_facility get
+	jump  #ilan_disk_header_length + get_buffer
+	#write_ilan #ilan_disk_code buffer + C!
+	#ilan_disk_i/o_id buffer + unaligned!
+	#ilan_disk_where buffer  + unaligned!
+	DUP #ilan_disk_length buffer + unaligned!
+	TUCK
+	\ n add n (--
+	buffer #ilan_disk_header_length + SWAP 3 + -4 AND MOVE
+	\ n (--
+	#ilan_disk_header_length + buffer SWAP
+	['] perform_file_op CATCH
+	?DUP IF
+		kill_buffer
+		rti_facility release
+		$ABORT
+	THEN 
+	kill_buffer
+	rti_facility release
+;
+
+	io_common class
+
+\		inode_interface implementation
+		 
+		protected
+
+		
+		\ all openings are liked into here, this includes openings
+		\ of devises and files on the device.
+
+		ram_variable _%opened_files
+			
+		ram_create _%device_facility  #facility_length  ram_allot
+
+
+		\ all opened inodes are liked into here
+		ram_variable _%opened_inodes
+
+
+		public
+
+	\	: get_filecode ( --code)
+	\		this :@name checksum 
+	\	;
+
+
+
+		\ rti
+		\
+		m:  ( parent_ihandle -- )
+			\ If you want to change the root directory you open it, claim it and
+			\ see that no one else has it. For this to work the open has to
+			\ claim the device also.
+			this :facility grab
+				this [parent] :construct
+			this :facility release
+		; overrides :construct
+
+		\ on object descruct get rid of file name.
+		\ The closing of the rti file is done by the inode.
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+
+		\ After the device is opened by Sopen, the device open method is used
+		\ to consume the reset of the open string.
+		\ As a result the only structure that is fixed is the requirment that
+		\ the open command starts with the driver name.
+		\ On entry this is a device object, here we store the file name
+		\ We make a inode object, this opens the file on the rti
+		\ with the device locked.
+		\ We then make a file object which we return
+
+		m: ( addr num mode-- handle )
+			this :!mode
+			DUP not IF
+				2DROP
+				this
+				EXIT
+			THEN
+			[CHAR] / remove_leading
+			this :!name
+			get_filecode
+			this :open_inode
+			\ inode_handle(-- 
+			this file_class heap_object  \ file_handle(--
+			DUP %%file_instance !
+		; overrides :file_open
+
+
+		m: ( --addr)
+			_%opened_files
+		; overrides :list_head
+
+
+		\ device_common
+		m: ( --addr)
+			_%device_facility 
+		; overrides :facility
+	
+
+		\ rti
+		\ ----------------------------------------------------------------------
+		\ functions to be overriden to have format work on different sized files
+		\ number of inodes		
+		\ total bytes in file system
+
+		\ this has to be exported for file as file has to know how many bytes in a block
+		\ when deblocking the data. We deal in 8k blocks		
+		m: 
+			$2000
+		; overrides :bytes_a_zone
+
+
+		\ ----------------------------------------------------------------------
+
+		\ The file offset and disk offset are one the same
+		m:  { ( file_offset ) variable _%inode -- ( disk_offset) }
+		; overrides :file_offset>device_offset
+
+		m: ( addr n -- n )
+			\ need to supply file_code this is supplied from the inode_handle
+			\ the pointer
+			\ addr and n
+			this :inode_instance :inode_code \ convert inode_handle to file_code
+			%%seek_pointer @
+			SWAP
+			\ addr n seek_pointer file_code(--
+			\ This is the device, when doing a read the device must be claimed 
+			\ You are allowed only one active read
+			this :facility grab
+			read_rti
+			this :facility release
+			DUP %%seek_pointer +!
+		; overrides :read
+		 
+		m: ( addr n --)
+			this :inode_instance :inode_code
+			%%seek_pointer @ 2DUP + >R
+			SWAP
+			\ addr n seek_pointer file_code(--
+			this :facility grab
+			write_rti
+			this :facility release
+			%%seek_pointer !
+		; overrides :write
+
+		\ opening a file makes it, just let this go by
+		m: ( addr n --)
+			2DROP
+		; overrides :make_file
+
+		\ head for the device	
+		m: ( --addr)
+			_%opened_inodes
+		; overrides :inode_head
+			
+		m: { variable _%inode ( -- ihandle) }
+			this :facility grab			
+			\ returns the head of the list
+			this :inode_head   
+			BEGIN
+				@
+			DUP WHILE
+				\ link(--
+				\ Following only works because all objects are children
+				\ of linked_objects so method is the same
+				DUP link>object \ object
+				\ link object(--
+				DUP :inode_code _%inode @ = IF
+					\ link object(--
+					\ This will increment the open count
+					DUP :use_increment
+					this :facility release
+					NIP
+					\ object(--
+					EXIT
+				THEN
+				DROP
+			REPEAT
+			DROP
+			this :@name this :@mode _%inode @ 
+			\ addr num mode code(--
+			['] open_rti CATCH
+			?DUP IF
+				this :facility release
+				$ABORT
+			THEN 
+			\ (--
+			_%inode @ this inode_class heap_object
+			this :facility release		
+		; overrides :open_inode
+
+		\ rti
+
+		m: ( inode_instance --)
+			\ claim the device 
+			this :facility grab
+			DUP :use_decrement IF
+				\ :close returns true if the node can be closed
+				DUP :inode_code  
+				\ inode_instance file_code(--
+				['] close_rti CATCH
+				?DUP IF
+					this :facility release
+				THEN
+				\ inode_instance
+				DUP heap_object_free
+			THEN
+			DROP
+			this :facility release	
+		; overrides :close_inode 
+
+
+		m: ( indent --)
+			CR DUP SPACES ." rti | " ." Object: " this .h  
+				SPACE ." file: " this :@name TYPE
+			CR DUP SPACES ." seek_value: " %%seek_pointer @ .h 
+				SPACE ." timeout: " %%timeout @ .h
+				." linked_objects: " this :number_of_links .h 
+
+			DROP send
+			; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+	end_class rti
+target_previous_definitions
+target_previous
+
+</code> </pre>
+
+</body>
+</html>

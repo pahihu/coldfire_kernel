@@ -1,0 +1,398 @@
+<html>
+<head>
+<title>CVS FORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>TCP/IP, DEVICE DRIVERS and OOP</h2>
+<h3>What is COLDFORTH</h3>
+<P>Colour Vision Systems builds fruit handling equipment. In that market 
+we build vision systems and supply reasonably complex distributed computing 
+systems. The real time computers have always been based on the 68k and 
+FORTH. The systems have been tied together using proprietary communication protocols.
+</P>
+<P>Two years ago Motorola brought the 68k family to an end. 
+They announced the 68060 would be the last.
+</P>
+<P>
+We had an OS that was tied to the 68k with over 50% of the code written in 
+68k assembler. For the first time in 14 years we had to look over the fence 
+and evaluate processor families offered by others, and worry about the OS.
+</P>
+<P>
+We looked hard at the option of abandoning our OS and moving 
+to a commercial solution. Unfortunately our applications require 
+preemptive multitasking so the solutions offered by the major FORTH 
+vendors were not suitable.
+</P>
+<P>
+We evaluated several C based solutions but concluded the development 
+model offered by FORTH had served us well. No one was looking forward 
+to developing their embedded code with emulators and remote debuggers.
+</P>
+<P>
+With our current system a service engineer can go to site and modify 
+the code of the most insignificant embedded processors without any 
+additional equipment. All subsystems are networked and all provide access 
+to the development task, with file services being provided by a central server.
+</P>
+<P>We reluctantly decided to rewrite our OS in FORTH, making it as 
+portable as possible.. We also decided to place the result under the 
+GPLL in the hope that others may find a use for the result. Colour Vision 
+Systems are not in the OS business. 
+</P>
+<P>
+The decision to write the entire OS in FORTH and the decision to GPLL 
+the code influenced the COLDFORTH design goals. 
+</P>
+
+<h3>COLDFORTH DESIGN GOALS</h3>
+
+<OL>
+<LI>Move from indirect threaded to subroutine threaded. You have to do this to 
+get the speed required if all the OS is to be written in FORTH. This has been done.</LI>
+<LI>Add compiler optimization. Design done, code to be written.</LI>
+<LI>Add reasonable heap control, this has been done, and has been 
+described in a separate paper.</LI>
+<LI>A well defined structure for drivers. Done and covered briefly 
+in the next section of this paper</LI>
+<LI>Move to the ANSI standard, but only if the standard doesn’t reduce 
+current functionality. This has been done, we have kept our own local
+variable standard as it is much more useful than the system 
+described by the ANSI standard. This was covered in a paper 
+I presented last year.</LI>
+<LI>All code included in the kernel had to be GPLL-able. I wanted 
+this rule relaxed so the development could move faster, but other 
+principals in the company where adamant that this was not an option.</LI>
+<LI>For the OS to be useful in the long term it had to support TCP/IP. 
+This is well on the way and the topic for this paper. </LI>
+<LI>Local multi user file support, to be specific, a file system that 
+uses flash to store the data. Done, the file system was modeled 
+on the Minux file system.</LI>
+</OL>
+
+<P>The code has all been written as HTML files. Making it a simple matter 
+to present it on the web. A CVS server will be put on line in the new year. </P>
+
+<h3>IO DRIVERS</h3>
+
+<P>An operating system should provide a framework that ties device drivers 
+together and a structure to manage resources.</P>
+
+<P>The two other papers presented this year discussed COLDFORTHs heap allocation 
+and task scheduling, both resource management issues. How COLDFORTH 
+device drivers are implemented heavily influences the COLDFORTH 
+TCP/IP stack and is discussed here.
+</P>
+
+<P>Basically COLDFIRE device drivers are objects and the whole system 
+has been designed around classes. Considerable time was spent evaluating 
+the various OOP models that have been developed for FORTH. We selected 
+Anton Ertl’s model, modifying it so that cross compile-able code could 
+be written. We also altered word names so they met our coding standards.</P>
+
+<P>Having used Anton’s model extensively we want to make several small 
+changes to it. I am hoping these changes are influenced by a consensus 
+as to what the ANSI standard OOP language should look like. 
+ANSI standard word do not conflict with our coding standard because 
+of rule one. No matter how irrational the ANSI standard word names is; 
+use it. ANSI standard words are in capital letter, non standard names 
+are in lower case. COLDFORTH is case sensitive.</P>
+<P>There is however one area where we are now very inflexible. 
+Polymorphism and late binding. It has to be fast. Searching for a name 
+match is not an option.</P>
+
+<h3>THE ANSI WORDS and DEVICE DRIVERS</h3>
+
+<P>Handling of devices can be broken down to one simple requirement. 
+A single function has to perform the same operation against completely different hardware. 
+The ANSI standard gives the names of suitable function for I/O operation, but no guidance 
+on how the functions are to be implemented. In fact without a bit of lateral thinking you may 
+not see that <samp>READ-FILE</samp> is a perfectly good word to read data from any 
+I/O device, be it serial or block orientated; local or remote; based on silicon or 
+rotating disk based.</P>
+<P>The COLDFORTH definition of <samp>READ-FILE</samp> is:</P>
+<samp> <pre>
+	: READ-FILE ( c-addr u1 fileid -- u2 ior )
+		['] :read CATCH DUP IF
+		&gt;R 2DROP zero R&gt;
+		THEN
+	; 
+</pre> </samp>
+<P>The definition is simple and it is almost all ANSI forth. The COLDFORTH 
+<I>fileid</I> is the base address of an object. 
+<samp>READ-FILE</samp> calls the<samp> :read</samp> method within the object. 
+We have to use <samp>CATCH</samp> as the COLDFORTH device standard allows the 
+device methods to abort on failure. The <samp>READ-FILE</samp> description 
+requires an <I>ior</I> code on error.  <samp>CATCH</samp> is an elegant solution.
+The abort is converted converted to a stack error. CATCH is a terrific idea.</P>
+
+<P>Defining methods that have different actions in derived classes is called 
+POLYMORPHISM. For some reason OOP programming has developed a jargon that 
+seems to aim to confuse.
+</P>
+<P>Obviously for the <samp>READ-FILE</samp> code to be efficient, runtime lookup 
+of the :read method has to be fast. This is the case for the OOP program model 
+presented by Anton.</P>
+<P>All the FORTH I/O words can be built up from methods implemented in the 
+standard COLDFORTH driver. The file words take the object address from the stack. 
+Words such as <samp>EXPECT</samp> and <samp>TYPE </samp>take their object address 
+from a user variable. For example the definition of <samp>TYPE</samp> is:</P>
+<pre> <samp> 
+	: TYPE ( addr num--)
+		'output_file @ :type
+	;
+</samp> </pre>
+<P><samp>‘output_file</samp> is the user variable where the address of the object 
+opened for output is stored. <samp>TYPE</samp> like the device methods is allowed 
+to ABORT on failure. This leads to a definition that is even cleaner than the 
+definition for <samp>READ-FILE</samp>. <samp>:type</samp> is defined for serial 
+devices and block devices, there is only one real difference between 
+<samp>TYPE</samp> and <samp>WRITE-FILE</samp>. <samp>TYPE</samp> takes its object 
+address from a user variable; <samp>WRITE-FILE</samp> takes it from the stack.</P>
+
+<h3>open action close</h3>
+
+<P>All COLDFORTH I/O operations follow the <I>open action close</I> paradigm. 
+<I>Open</I> provides the object address, the <I>operations</I> require the object 
+address and <I>close</I> destroys the object. In all cases the object is created 
+on the heap, and <I>close</I> returns the object to free heap memory.
+</P>
+<P>As is common with a lot of COLDFORTH I/O words, Open comes in three flavors:</P>
+<pre> <samp>
+	open ( "string" --object)
+	$open ( addr --object)
+	Sopen ( addr n --object)
+</samp> </pre>
+<p>The <I>open</I> string has the form:</p>
+<I><P>device/device_string</P></I>
+<P>The <I>open</I> function splits the string at the first / and uses the left 
+hand portion to search the device word list. If a word is found in the word 
+list, it is treated as a class and used to construct an object. The construction 
+process is given the address and count of the right portion of the string.</P>
+
+<P>For example: To open a file that is stored in flash memory you would use the code:</P>
+
+<pre><samp>open flash/directory_name/file_name</samp></pre>
+
+<P>To open a udp client talking to machine 192.168.255.1 port 07 you use the code:</P>
+
+<pre><samp>open udp_client/192.168.255.1/07</samp></pre>
+
+<P>Or if you want to bind to the port and leave the machine specification for later:</P>
+
+<pre><samp>open udp_client//07</samp></pre>
+
+<P>In all case data can be read from the device using <samp>READ-FILE</samp>.</P>
+
+<h3>Using classes and polymorphism to tame the TCP/IP jungle.</h3>
+
+<P>The tcp/ip protocol field is eight bits long, in practice only a few values have 
+meaning; you don’t however have to define all valid protocols at kernel 
+compile time. We define the required methods with a base class and derive 
+the different protocols from that class. Dispatching an ip datagram then 
+becomes an exercise in searching created protocol object and presenting 
+the incoming datagram to the right method in the object that handles the 
+selected protocol.</P>
+
+<P>Tcp/ip is about accepting datagram from different network interfaces, 
+routing them and passing them onto other network interfaces. The routing 
+routine doesn’t get involved in device details; it simply determines 
+which interface should get the datagram; extracts the interface's object 
+address and calls the :consume_interface method through the object, the 
+routing routine doesn’t get involved in the messy details.</P>
+
+<P>The UDP and TCP protocols requires the source address and destination address 
+to create the protocol checksum, the source address is dependent on the 
+interface over which the datagram is sent, the interface a datagram is sent 
+is dependent on the routing tables. The routing tables are a dynamic data 
+structure. If you use classes and methods the problem is simply solved, you 
+add the protocol object to the data structure describing the datagram and 
+have the interface object call the protocol checksum method just before 
+fragmentation.</P>
+
+<P>Classes and polymorphism have been used to break the tcp/ip stack up into 
+well defined sections with clean interfaces. Once again I will mention the 
+basic underlying requirement. Fast runtime binding of objects to methods.</P>
+
+<h3>A WALK THROUGH THE IP CODE.</h3>
+
+<h4>The routing task.</h4>
+<P>If a packet is placed on the ip queue it will be removed by the routing task. 
+The routing task doesn’t have to ask difficult questions or look for exceptions. 
+Its life is simple. Dequeue the ip packet, extract the destination, look up 
+the routing table entry for that destination. Call the 
+<samp>:consume_interface </samp>method of the object pointed to by the routing 
+table entry found.</P>
+<P>The routing table entries contain a flag that is true if the entry is for 
+a broadcast address; if it is true the <samp>:broadcast</samp> method is 
+called instead of the <samp>:consume_interface </samp>method.</P>
+<P>The <samp>:consume_inerface </samp>or<samp> :broadcast </samp>method will 
+take the packet and deal with it as required. </P>
+<P><IMG SRC="./routing_task.png" WIDTH=585 HEIGHT=256></P>
+<h3>The interfaces</h3>
+<P>Ip packets enter and exit the tcp/ip code through an interface. <I>Interface_common </I>
+is the base class. From <I>interface_common</I> we derive <I>interface_local </I>used 
+if the packet is destined for the local machine. <I>Interface_loopback</I>, is used 
+if the packet was sent to the loopback address. <I>interface_nice</I> is used to get 
+packets from and send packets to the ethernet, and <I>interface_rti</I> is used to 
+transfer packets across the rti backplane.</P>
+<h4>Ethernet interface</h4>
+<P>To send a packet from one machine to another on an ethernet link the ip address 
+has to be converted to a hardware address. The tcp/ip standard describes another 
+protocol referred to as arp ( address resolution protocol). The arp protocol is used 
+to request the mapping. The workings of this protocol are contained within the 
+<I>interface_nice</I> class as it has nothing to do with the rest of the system.</P>
+<P><IMG SRC="./interface_nice.png" width=634 height=310></P>
+<h4>rti interface</h4>
+<P>The ethernet interface is complex as the ip to hardware address translation 
+involves another protocol. The rti_interface uses the low low 4 bits of the ip 
+address to select a card. The rti bus being a sixteen bit bus that supports 
+up to 16 I/O cards.</P>
+<P><IMG SRC="./interface_rti.png" width=472 height=160></P>
+<h4>Loopback interface</h4>
+<P>The loopback interface is simpler again, it provides the method needed by 
+the routing task to get rid of a loopback packet ( <I>:consume_interface</I>) 
+performs the miscellaneous functions an interface is expected to do, such as 
+filling in the source address and checksumming the protocol. Loopback interface 
+then queues the packet onto the proto_queue. A loopback packet will not be 
+fragmented, so the loopback interface doesn't have to get involved in de-fragmenting.</P>
+<P><IMG SRC="./interface_loopback.png" width=312 height=156></P>
+<h4>local interface</h4>
+<P>ip packets destined for the local machine will be routed to the local interface. 
+The local interface puts together fragmented datagrams and queues reconstructed 
+datagrams onto the protocol queue. The protocol task takes packets from the protocol 
+queue, looks up the protocol table extracts the address of the object that looks 
+after the selected protocol and executes the :proto_demux method.</P>
+<P>The difference between the ip_queue and the proto_queue can be summarized with 
+one statement. The ip_queue sees all ip packets seen be the system. The 
+proto_queue sees only those packets that are routed to the local machine.</P>
+<P><IMG SRC="./interface_local.png" WIDTH=397 HEIGHT=247></P>
+
+<h4>And the beat goes on</h4>
+
+<P>The ip packet has arrived, it was destined for the local machine so it ended 
+up on the proto_queue. The protocol task has looked at the protocol field in 
+the ip header searched for a protocol demux table entry for the protocol and 
+called the relevant <samp>:prot_demux</samp> method. But the beat goes on. </P>
+
+<P>In the TCP/IP suit three protocols are significant, ICMP (internet control 
+message protocol), UDP (User datgram protocol) and TCP (Reliable Stream 
+Transport Service). </P>
+
+<P>At this level ICMP is the most difficult to deal with. Many of the ICMP 
+messages contain the header of the datagram that caused a problem. The ICMP 
+code has to extract the ip header returned in it's data field, and return 
+an error to the socket that initially sent the datagram. To do this the ICMP
+code extracts the protocol of the returned datagram, searches the protocol 
+demux table for the protocol and calls the relevant <samp>:proto_error</samp> method.</P>
+
+<P>OOP has once again supplied us with a very elegant solution.</P>
+<P><IMG SRC="./icmp_udp_error.png" WIDTH=651 HEIGHT=256></P>
+
+<h4>socket demux</h4>
+
+<P>Socket demux takes the source ip address, destination ip address, source port 
+and destination port, works out which object would like to deal with the packet 
+and hands it on. The icmp protocol doesn’t do a socket demux, both the udp and 
+tcp protocol do. The protocol demux is done in the <samp>:proto_demux</samp> 
+method or the <samp>:proto_error</samp> method. The objects consuming the packets 
+are linked into a hash table. The routine searches the hash table for the desired 
+entry and hands the packet to the :consume_port method. For the udp protocol the 
+object that consumes packets demuxed to the socket is the io_common object 
+created when the port is opened. The io_common object adds the packet to the 
+data that can be read using the <samp>:read</samp> method we introduced at the start of 
+this paper.</P>
+<P>Tcp packets still have a way to go, the address of the object dealing with 
+the socket is added to the ip data structure, and the packet queued on the 
+tcp_queue, to be dealt with by the tcp task. </P>
+<h3>A look at the OOP model.</h3>
+<p>
+I have outlined how OOP techniques have been used to tame the tcp/ip stack.
+I touched on how they where used to create a very elegant structure for 
+device drivers. I could just as easily have discussed how OOP techniques 
+led to a very tidy file system
+</p>
+<p>
+I have only looked at two OOP implementations in detail, Andrew McKewan's and 
+Anton Ertl's. It was my view the FORTH community needed another OOP model like a 
+hole in the head, I therefore tried to adapt what was there to meet our needs. We have 
+developed cross compilers to the point where they could  compile code written 
+using either model. So for us this was not an issue. We adopted the Anton's 
+model because of its simplicity.
+</p>
+<h3>Anton's model</h3>
+<p>
+An object places the address of a data structure on the stack, nothing more.
+So the rest of Anton's model doesn't care how the address of the data structure came to be. 
+</p>
+<samp>
+'output_file @
+</samp>
+<p>
+Is as valid as:
+</p>
+<samp>
+object_name
+</samp>
+<p>
+You can create an object in the dictionary, an object on the heap or an object 
+on the stack, and they all behave the same way. The address of  an object is returned.
+</p>
+<p>
+Anton's methods take an object from the stack, and locates the method using an 
+offset into the method table. The runtime code is:
+</p>
+<pre><samp>
+	DOES&gt;
+		_selector_offset+ @   \ object selector_offset&lt;--
+		OVER _object_map+ @ + \ object xtp&lt;-- 
+		@execute
+	; 
+</samp></pre>
+<p>
+Blindly using an offset can lead to problems if two different classes have the 
+same method name, but are using  different table offsets. It is a hard bug to 
+find. The COLDFORTH kernel makes extensive use of word name checksums ( to be 
+specific the ethernet CRC32 bit checksum), with the compiler insisting that 
+all tokens used generate a unique CRC32 code. Our version of  Anton's code 
+checks that the methods CRC32 matches the CRC32 code found at the table offset 
+given. The runtime code becomes:</p>
+<pre><samp>
+	DOES&gt;
+		DUP _crc_offset+  @ &gt;R
+		_selector_offset+ @   \ object selector_offset&lt;--
+		OVER _object_map+ @ + \ object xtp&lt;--
+		DUP _object_crc  + @ R&gt; = IF
+			@execute
+			EXIT
+		THEN
+		TRUE ABORT" Object didn't contain selected method" 
+	;
+</samp></pre>
+<p>
+Yes it is slower, but it is still faster than searching a method list. As one of  
+COLDFORTH's  goals is portable code this is it, it has not been 
+converted to assembler.
+</p>
+<p>
+It is possible to replace the ABORT with a table search, this converts the offset 
+into a hint that will speed late binding in most cases. What we have done simply adds a 
+runtime check that the object presented is valid for the method being invoked.
+</p>
+<p>
+Anton's code did allow for compile time binding, I have re-read the source and 
+found an example, the syntax is.
+</p>
+<samp>
+[bind] object print
+</samp> 
+<p>
+Obviously it will only work if the object exists at compile time. We have not 
+used this feature in the kernel. 
+</p>
+<BODY>
+</HTML>

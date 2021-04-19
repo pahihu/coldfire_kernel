@@ -1,0 +1,574 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Vocabularies</h3>
+<a HREF="./license.html">license</a>
+<p>
+These words treat context as a simple stack. ALSO can be looked on as
+vocabulary_push and PREVIOUS as vocubulary_drop. When executed a vocabulary 
+child word puts it's wid address into context. ONLY clears context 
+and installs the root vocabulary twice. 
+It is intended ONLY be used in the form:
+</p>
+<pre> <samp>
+	ONLY voc
+	
+	for example: ONLY FORTH
+</pre> </samp>
+<p>
+In the above example FORTH will overwrite the first vocabulary in the search order,
+which will be the second copy of root put in by only.
+
+To added a vocabulary to the search order, for example classes:
+</p>
+<pre> <samp>
+ALSO classes
+</samp> </pre>
+<p>
+To remove it:
+</p>
+<pre> <samp>
+PREVIOUS
+</pre> </samp>
+<p>
+To move a vocabulary to current but not add to search order
+</p>
+<pre> <samp>
+ALSO classes DEFINITIONS PREVIOUS
+</pre> </samp>
+
+	<pre> <code>
+	HEX
+	</code> </pre>
+
+<a name="#vocs"></a>
+<h5>#vocs ( --n )</h5>
+<p>
+The number of vocabularies that can be searched concurrently, has to be reasonable
+large to support the cross compiler.
+</p>
+
+
+	<pre> <code>
+	10 CONSTANT #vocs
+	</code> </pre>
+
+
+<h5>_task_root_wordlist ( --addr)</h5>
+<p>
+If a task is allocated a dictionary, a new root vocabulary heads and FORTH vocabulary
+heads are created for the task. ONLY has to be able to find the wid for root. It is
+stored in this cell.
+</p>
+
+
+	<pre> <code>
+	uvariable _task_root_wordlist
+	</code> </pre>
+
+
+<h5>The search order</h5>
+<p>
+The search order is kept as a sorted table under context. The count of valid entries
+is kept in n_context_count.
+</p>		
+
+
+	<pre> <code>	  
+	uvariable n_context_count
+	uvariable context  #vocs 1- CELLS uallot
+	</code> </pre>
+
+
+<a name="current"></a>
+<h5>The current compile wordlist</h5>
+<p>
+The words are added to the wordlist pointed to by the top current. We make current
+a stack sp that the kernel can add words to voacabularies without altering the
+applications current value. DEFINITION pushes a value. definition_previous pops
+a value.
+</p>
+
+	<pre> <code>
+	4 CONSTANT _#current_vocs
+	uvariable current  _#current_vocs 1- CELLS uallot
+	</code> </pre>
+
+
+<h5>Describe a vocabulay entry</h5>
+<p>
+Describe a vocabulary. A vocabulary can be a very temporary thing. For instance
+local variables create a vocabulay in a buffer that only exist while a word is being
+defined. We double link the vocabulary so that it can be destroyed using
+the vocabularies wid.
+<br>
+<br>
+<img src="vocabulary.png" height=350 width=700>
+</p>
+
+
+	<pre> <code>
+				
+	.S ( _#voc_body )
+	zero
+	DUP CONSTANT _#voc_body
+	DUP CONSTANT _#voc_link       CELL+ \ link back to head
+	DUP CONSTANT _#voc_back       CELL+ \ double linked list
+	DUP CONSTANT _#voc_wid
+		\ Following point to the memory area
+		\ If vocabulary head is in prom
+		\ this points to the dictionary space
+		\ On a cold start the links are copied
+		\ to the dictionary. If the head is in 
+		\ the dictionary (part of the application)
+		\ this points to the next cell.
+	DUP CONSTANT _#voc_head>      CELL+
+		\ so we can display the context and current vocabuulary
+	DUP CONSTANT _#voc_name>      CELL+ 
+		\ The init table just happes to
+		\ be in the same place in the kernel
+		\ and the application. The applicaion
+		\ init simple copies data onto itself.
+    DUP CONSTANT _#voc_end
+	\ A applicaton vocabulary stores it's heads after the WORDLIST head
+	\ a kernel vocabulary stores it's heads in the target_dictionary
+	\ the head in prom. 
+	DROP
+
+	zero 
+	DUP CONSTANT _#voc_heads_base 
+	DUP CONSTANT _#voc_heads_count CELL+
+	DUP CONSTANT _#voc_heads_data 
+	   
+	DROP
+	
+	.S .( _#voc_heads_data) 
+	</code> </pre>
+<h5>_vocabulary_head</h5>
+<p> 
+All vocabularies are linked into here. 
+See <a HREF="#link_list_support">link list support</a> for an explanation
+of _create_double_listhead
+</p>
+
+
+   	<pre> <code>
+	_create_double_listhead _vocabulary_head
+	</code> </pre>
+
+
+<a name="meta_vocabularies"></a>
+<h4>Vocabularies meta compiler extensions</h4>	   
+<p> 
+The vocabularies end up arranges as shown below. This code looks after the kernal
+vocabulary entries.
+</p>
+<img src="vocabulary.png" height=350 width=700>
+
+
+
+<h5>host WORDLIST ( -- wid )</h5>
+<p>
+A vocabulary must exists in dictionary space, otherwise you can't
+extend it. At compile time the vocabulary must be constructed in prom.
+There needs to be a host version of WORDLIST to contrust vocabularies
+that are started in the kernel, and a target version of WORDLIST
+for vocabularies started by the application. The head values stored in prom
+as a result of the cross compile are copied to the dictionary space in the cold 
+start routine. 
+</p>
+
+
+	<pre> <code>
+	\ This creats the wordlist in the target mothing more.
+	forth : WORDLIST    ( -- wid )
+		HOST HERE                      \ t_here(--
+		_vocabulary_head               \ t_here head(--
+		dt@ forth DUP                  \ t_here (head) (head)(--
+		HOST t,				           \ t_here (head)
+		forth OVER                     \ t_here (head) t_here (--
+		HOST _vocabulary_head 
+		dt!                            \ t_here (head)(--
+		forth                          \ t_here (head)(--
+		DUP IF  \ there is a backpointer in old entry to update
+			2DUP                       \ t_here (head) t_here (head)
+			HOST CELL+                 \ need to use target version of CELL+
+			t!                         \ t_here (head)
+		THEN
+		\ now update back pointer of new entry.
+		2DROP                          \ (--
+		HOST _vocabulary_head 
+		t,                             \ back pointer points to dictionary entry
+		\ pointer to dictionary heads
+		HERE forth                     \ wid<-
+		HOST dictionary_here t,       \ wid(--point to dictionary entry
+		zero t,                        \ name pointer
+		forth threads_number  @        \ wid count(--
+		\ find nearest power of 2 
+		\ The low bits of the hash value are used to select the thread
+		forth  >asl 2** HOST CELLS     \ wid bytes (--
+		CELL+                          \ wid bytes2(-- allow for count
+		HOST dictionary_allot         \ wid(--
+	;
+	HOST
+	</code> </pre>
+
+<h5>host name_wordlist ( wid--) </h5>
+<p>
+So we can create named wordlists in the kernel, see the targets definition of 
+<a HREF="#name_wordlist">name_wordlist</a> for further information.
+</p>
+
+
+	<pre> <code>
+	forth : name_wordlist ( wid --)
+		HOST CREATE t, 
+		DOES> @ ;
+	HOST
+	</code> </pre>
+
+
+<h5>host vocabulary ( wid --)</h5>
+<p>
+So we can create vocabulary in the kernel, see the targets definition of 
+<a HREF="#name_wordlist">name_wordlist</a> for further information.
+</p>
+
+
+	<pre> <code>
+	\ Creates the vocabulary in the target.
+	\ and the word to compile the cfa if found in a 
+	\ : definition xvocabulary creates the host entry.
+    forth : target_vocabulary ( wid --)
+		HOST (CREATE)  forth DUP HOST t,
+		\ install as vocabulary name
+		target_last   \ in host 
+		@             \ the address of the head, at this stage this is in host
+
+		@  _t_lfa>nfa  
+		SWAP        \ name> wid (--
+		_#voc_name> _#voc_wid - + t!
+    DOES>
+		\ pfa
+		@
+		context !
+    ;
+	</code> </pre>
+
+
+<a name="threads_number"></a>
+<h5>threads_number ( --addr)</h5>
+<p>
+Set to the number of lists desired before creation. The default is one, but
+if a lot of words are to be created a greater number may be desirable.
+</p>
+
+
+	<pre> <code>
+	uvariable threads_number
+	</code> </pre>
+
+
+<a name="WORDLIST".</a>
+<h5>ANS 16.6.1.2460 WORDLIST</h5> 
+<p>( -- wid )</p>
+<p>
+Create a new empty word list, returning its word list identifier wid. 
+The new word list may be returned from a pool of preallocated word lists 
+or may be dynamically allocated in data space. 
+A system shall allow the creation of at least 8 new word lists in 
+addition to any provided as part of the system.
+</p>
+<p>
+COLDFORTH creates the new vocabulary in the dictionary, when you run out of
+dictionary space you run out of the potential to use WORDLIST.
+</p>
+
+
+	<pre> <code>
+	: WORDLIST    ( -- wid )
+		2 CELLS ALLOT
+		HERE 2 CELLS - _vocabulary_head link_double  \ _#voc_link
+		\ A application WORDLIST simple points to the cell after
+		\ the WORDLIST head.
+		HERE >R 
+		HERE [ _#voc_end _#voc_head> - ]T LITERAL 
+		 + ,                           \ _#voc_head> ; point to heads
+		zero ,                         \ name pointer
+		\ If you want multiple list change this entry before
+		\ you use wordlist
+		\ example
+		\	threads_number @ 4 _voc_link ! WORDLIST SWAP threads_number !
+		\
+		threads_number @               \ Number lists to be used
+		\ findest nearest power of 2 
+		>asl 2**                       \ num_lists(--               
+		DUP ,                          \ _#voc_heads_count ; number of lists
+		zero DO
+			0 ,    
+		LOOP 
+		R>                             \ wid (--
+	;
+	.S .( after WORDLIST)
+	</code> </pre>
+
+<a name="extend_wordlist"></a>
+<h5>extend_wordlist ( wid1 -- wid2)</h5>
+<p>
+We have here a multitasking system so we need to be able to 
+extend the system vocabularies in multiple tasks. 
+This is the solution.
+The system executes the following code to get things started
+Trying to add directly to a vocabulary will not work as the
+heads will not be in your dictionary area.
+</p>
+<pre> <samp>
+	root                                   \ wid (--
+	extend_wordlist                        \ wid2(--
+	DUP _task_root_wordlist !              \ wid2(--
+	FORTH-WORDLIST OVER 2 SET-ORDER        \ wid2(-- set search order to >root>forth
+	DEFINITIONS                            \ wid2(--define root in root
+	named_wordlist root                    \ (-- root defined n new root
+	FORTH-WORDLIST extend_wordlist         \ wid3(--
+	DUP vocabulary     FORTH               \ wid3(-- FORTH redefined
+	named_wordlist FORTH-WORDLIST          \ wid3(-- FORTH-WORDLIST redefined
+	root FORTH-WORDLIST 2 SET-ORDER        \ (-- task is started with extendable vocabularies
+	DEFINITIONS 
+</samp> </pre>
+
+
+	<pre> <code>
+	: extend_wordlist ( wid1 -- wid2)
+		HERE _vocabulary_head link_double
+		8 ALLOT
+		HERE >R                                        \ wid to stack
+		HERE 4 + ,
+		[ _#voc_head> _#voc_wid - ]T LITERAL + @       \ heads (--
+		DUP [ _#voc_heads_count _#voc_heads_base - ]T LITERAL + @ \ heads counts <-
+		1 +                                            \ include the count cell
+		CELLS TUCK                                     \ bytes heads bytes (--
+		HERE SWAP MOVE                                 \ bytes (--
+		ALLOT
+		R>
+	;
+	.S .( extend_wordlist)
+	</code> </pre>
+
+
+
+<a name="GET-ORDER"></a>
+<h5>ANS 16.6.1.1647 GET-ORDER</h5> 
+<p>( -- widn ... wid1 n )</p>
+<p>
+Returns the number of word lists n in the search order and the word 
+list identifiers widn ... wid1 identifying these word lists. wid1 
+identifies the word list that is searched first, and widn the word 
+list that is searched last. The search order is unaffected. 
+</p>
+
+
+	<pre> <code>
+	: GET-ORDER
+		n_context_count @ zero ?DO
+			n_context_count @  I - 1- CELLS context + @
+		LOOP
+		n_context_count @
+	;
+	</code> </pre>
+
+
+
+<a name="SET-ORDER"></a>
+<h5>ANS 16.6.1.2197 SET-ORDER</h5> 
+<p>( widn ... wid1 n -- )</p>
+<p>
+Set the search order to the word lists identified by widn ... wid1. 
+Subsequently, word list wid1 will be searched first, and word list 
+widn searched last. If n is zero, empty the search order. If n is 
+minus one, set the search order to the implementation-defined minimum 
+search order. The minimum search order shall include the words 
+FORTH-WORDLIST and SET-ORDER. A system shall allow n to be at least eight. 
+</p>
+
+
+	<pre> <code>
+	: SET-ORDER  ( wid1 .. widn n -- )
+		DUP [ #vocs 1- ]T LITERAL > ABORT" Vocabulary overload"
+		DUP -1 = IF
+			DROP  _task_root_wordlist @ DUP 2 RECURSE  
+			EXIT
+		THEN
+		DUP n_context_count  !
+		zero ?DO  
+			I CELLS context + ! 
+		LOOP
+	;
+	</code> </pre>
+
+
+
+<a name="ALSO"></a>
+<h5>ANS 16.6.2.0715 ALSO</h5>
+<p>SEARCH EXT</p>
+<p>( -- )</p>
+<p>
+Transform the search order consisting of widn, ... wid2, wid1 
+(where wid1 is searched first) into widn, ... wid2, wid1, wid1. 
+An ambiguous condition exists if there are too many word lists in 
+the search order.
+</p>
+
+
+	<pre> <code>
+	: ALSO  ( -- )  
+		GET-ORDER  
+		OVER SWAP 1+ DUP  [ #vocs 1 - ]T LITERAL > ABORT" Vocabulary overload"
+		SET-ORDER 
+	;
+	</code> </pre>
+
+
+<a name="ONLY"></a>
+<h5>ANS 16.6.2.1965 ONLY</h5>
+<p>( -- )</p>
+<p>
+Set the search order to the implementation-defined minimum search order. 
+The minimum search order shall include the words FORTH-WORDLIST and
+SET-ORDER.
+</p>
+
+
+	<pre> <code> 
+	: ONLY  ( -- )  
+		-1 SET-ORDER 
+	;
+	</code> </pre>
+
+
+
+<a name="PREVIOUS"></a> 
+<h5>ANS 6.6.2.2037 PREVIOUS</h5> 
+<p>( -- )</p>
+<p>
+Transform the search order consisting of widn, ... wid2, wid1 
+(where wid1 is searched first) into widn, ... wid2. An ambiguous 
+condition exists if the search order was empty before PREVIOUS 
+was executed.
+</p>
+
+
+	<pre> <code>
+	: PREVIOUS  ( --  )  
+		GET-ORDER  
+		SWAP DROP 1-  
+		SET-ORDER 
+	;
+	</code> </pre>
+<a name="DEFINITIONS"></a>
+<h5>ANS 16.6.1.1180 DEFINITIONS</h5>
+<p>SEARCH</p>
+<p>( -- )</p>
+<p>
+Make the compilation word list the same as the first word list in the 
+search order. Specifies that the names of subsequent definitions
+will be placed in the compilation word list. Subsequent changes in 
+the search order will not affect the compilation word list. 
+</p>
+<p>
+<b>COLDFORTH</b>The replaced vocabulary can be had with previous_definitions.
+</p>	
+
+
+	<pre> <code>
+	: _push_definitions ( --)
+		current current CELL+  [ _#current_vocs 1- CELLS ]T LITERAL MOVE
+	;
+
+	: DEFINITIONS
+		_push_definitions
+		context @ current !
+	;
+	</code> </pre>
+
+
+<a name="previous_definitions"></a>
+<h5>previous_defintions (--)</h5>
+<p>
+So you can set a new definition vocabulary and then return to what was. 
+I think a stack with two entries is really enough, we will know when
+all is finished.
+As DEFINITIONS is ofen used without previous_definitions it is expected 
+the stack will overflow and stay that way. But it is old entries that 
+are lost. The stack always contains the most recent additions. 
+</p>
+
+
+	<pre> <code>
+	: previous_definitions ( --)
+		current CELL+ current [ _#current_vocs 1- CELLS ]T LITERAL MOVE
+	;
+	</code> </pre>
+<a name="GET-CURRENT"></a>
+<h5>ANS 16.6.1.1643 GET-CURRENT</h5> 
+<p>SEARCH</p> 
+
+<p>( -- wid )</p>
+<p>
+Return wid, the identifier of the compilation word list. 
+</p>
+
+	<pre> <code>
+	: GET-CURRENT ( --wid)
+		current @
+	;
+	</code> </pre>
+<a name="SET-CURRENT"></a>
+<h5>ANS 16.6.1.2195 SET-CURRENT</h5> 
+<p>SEARCH</p> 
+
+<p>( wid -- )</p>
+<p>
+Set the compilation word list to the word list identified by wid. 
+</p>
+	
+	<pre> <code>
+	: SET-CURRENT ( wid --)
+		current !
+	;
+	</code> </pre>
+	<pre> <code>
+	_#normal_threads forth threads_number !
+   
+    HOST
+
+	\ This can be explained like this. Because we needed FORTH before we
+	\ could create it the initial creation was done in steps. Now
+	\ that all is defined we may as well put it all together.
+
+	forth : all_vocabulary ( wid --)
+		\ create structure in host
+		forth >IN @                    \ wid >in (--
+		OVER HOST
+		xwordlist                      \ wid >in voct(--
+		xvocabulary           \ wid >in (--
+		\ An image of the target heads are kept in the host
+		\ these have to be set to point to the target end list word.
+		\ end_head
+		\ HOST  
+		\ SWAP
+		\ set target_image to correct value
+		\ init_target_image 
+		forth >IN !                    \ wid(--
+		HOST target_vocabulary
+	;
+	</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,1572 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="../license.html">license</a>
+<h3>To do</h3>
+1)Check that the ip packets received are the correct version.<br>
+
+<h5>Ethernet definitions and constants</h5>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc894.html">RFC894</a> Ethernet encapsulation<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1042.html">RFC1042</a> IEEE802 Ethernet encapsulation<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc826.html">RFC826</a> ARP protocol<br>
+<p>
+If you can send RFC894 and 1042 packets, you must be able to configure and it must default to RFC894 packets.
+See <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122</a> Section 2.3.3.
+</p>
+<p>
+The NICE chip can interface to byte buses and word buses. It starts up in byte mode.
+In this mode the data is placed on NICE chip data pins 7->0. The COLDFIRE maps the
+device to a word port. To be able to read and write to the device in this mode. A1 of
+the coldfire is commected to A0 of the nice chips. The registers are thus mapped into
+the low eight bytes of 16 bit values.
+</p>
+<p>
+The mode is then altered and the registers are mapped as words. A0 of the nice chip then
+becomes irrelevent, A1 and A2 of the chip then select the registers. The registers are then
+4 byte boundries.
+<p>
+<h5>Offsets when in byte mode</h5>
+<pre> <code>
+\    $00 CONSTANT #ether_reg0
+\    $02 CONSTANT #ether_reg1
+\    $04 CONSTANT #ether_reg2
+\    $06 CONSTANT #ether_reg3
+\    $08 CONSTANT #ether_reg4
+\    $0A CONSTANT #ether_reg5
+|    $0C CONSTANT #ether_reg6
+\    $0E CONSTANT #ether_reg7
+	</code> </pre>
+<h5>Offsets when in word mode</h5>
+	<pre> <code>
+        | $00 CONSTANT #ether_reg10
+	| $04 CONSTANT #ether_reg32
+        | $08 CONSTANT #ether_reg54
+        | $0C CONSTANT #ether_reg76
+	| $10 CONSTANT #ether_reg98
+        | $14 CONSTANT #ether_regBA
+        | $18 CONSTANT #ether_regDC
+        | $1C CONSTANT #ether_regFE
+	</code> </pre>
+<p>
+%ip_address is set to the desired ip address. If not set default is used.
+</p>
+	<pre> <code>
+	ram_variable %ip_address
+        ram_variable %nice_object
+
+
+\ .ether_error
+|	ram_variable %ether_overflow
+|	ram_variable %ether_crc_error
+|	ram_variable %ether_alignment
+|	ram_variable %ether_short_packet
+|	ram_variable %ether_no_more
+
+
+interface_common class
+        \ count of packets received.
+        cell% instance_variable %%other_packets
+        cell% instance_variable %%arp_packets
+        cell% instance_variable %%ip_packets
+
+	| 1  CONSTANT _#nice_output_priorities
+
+	#queue_list_length
+	_#nice_output_priorities *
+	#queue_data_length + bytes% instance_variable %%output_queue
+
+	cell%  instance_variable %%buffer_loaded
+
+	\ arp table is claimed by the timeout routine and by print words.
+	\ the interrupt tasks do not have to claim it.
+	#facility_length bytes% instance_variable %%arp_facility
+
+	</code> </pre>
+	<p>
+	The arp table is interface dependent, the arp table is indexed by host.
+	We are talking about an internet segment. There is not going to be hundreds
+	of entries. Each entry in this table is a linked list head.
+	</p>
+	<pre> <code>
+	ARP_TSIZE CELLS bytes% instance_variable %%arptable
+	</code> </pre>
+        <a name="$set_nif"></a>
+        <a name="$set_hwb"></a>
+	<p>
+	The NIC address has to be unigue within the network segment.  It does not have
+	to be globelly unigue. HTML did not go the way DEC intended. Ip6 will require a
+	unigue NIC id under the subnet id, so once again the the NIC address only has to
+	be locally unigue.
+	</p>
+	<p>
+        We use a random numbers  for the first 5 bytes.
+	Ethernet addresses that start with 40 are locally allocated so they will not conflict with
+	a globally allocated address.
+	</p>
+	<pre> <code>
+
+	: $set_nif ( $ object --)
+		\ addr object(--
+		SWAP COUNT DROP SWAP :hwa EP_ALEN MOVE
+	;
+
+
+	: $set_hwb ( $ object --)
+		SWAP COUNT DROP SWAP :hwb EP_ALEN MOVE
+	;
+	</code> </pre>
+	<p>
+	The output queue only has to be long enough to take up transmission latency.
+	The interrupt has a higher priority than the routing routine so under normal
+	operation the queue will not grow very long. Problems arise if we have
+	retransmission errors. The interrupt code will drop the packet after 16 tries.
+	We should start dropping packets being queued also at some point. Remember if
+	you hold a packet in a system for more than 1 sec you have to start
+	decrementing the hop count.
+	</p>
+	<p>
+	We don't want to get into that so it is best to make the output queue short enough
+	to be completly dropped within one second if we get into trouble.
+	ethernet runs at 10mbits. call it 1 mbyte. Packet size is about 1600bytes, say 2msec
+	a packet. 16 * 2 = 64 msec to drop. Call in 50 msec. 20 packets max. Make it 16.
+	</p>
+	<p>
+	You may be tempted to argue this is too short it can't even take all the fragments from
+	a 64k ip packet. Remeber the interrupt routine will kick in on the first fragment.
+	The interrupt load will slow down the fragmentation code. If you can't get rid
+	of the initial fragments bits there really is no reason to continue you may as well
+	drop as you try to queue it for output.
+	</p>
+	<pre> <code>
+	| $10 CONSTANT #nice_output_qsize
+	| : output_queue_init ( --)
+		#nice_output_qsize  _#nice_output_priorities %%output_queue queue_init
+	;
+	</code> </pre>
+<p>
+Register 0, transmit status
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>TX done; reset before starting a new transmission</td><td>1</td></tr>
+<tr><td>6</td><td>Net_busy</td><td>-</td></tr>
+<tr><td>5</td><td>Received packet sent</td><td>-</td></tr>
+<tr><td>4</td><td>Carrier lost; auto reset on transmission start</td><td>-</td></tr>
+<tr><td>3</td><td>Reserved</td><td>-</td></tr>
+<tr><td>2</td><td>Collision error; true to reset</td><td>1</td></tr>
+<tr><td>1</td><td>16 Collisions; true to reset</td><td>1</td></tr>
+<tr><td>0</td><td>Reserved</td><td>1</td></tr>
+</table>
+Initial value is 1000 0111 $87
+
+<p>
+Register 1, receive status
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>Received packet</td><td>1</td></tr>
+<tr><td>6</td><td>Bus read error</td><td>1</td></tr>
+<tr><td>5</td><td>DMA end of process</td><td>1</td></tr>
+<tr><td>4</td><td>Remote control packet received</td><td>1</td></tr>
+<tr><td>3</td><td>Short packet error</td><td>1</td></tr>
+<tr><td>2</td><td>Aligned packet error</td><td>1</td></tr>
+<tr><td>1</td><td>CRC packet errer</td><td>1</td></tr>
+<tr><td>0</td><td>Received buffer overflow</td><td>1</td></tr>
+</table>
+Initial value is 1111 1111 $FF
+<p>
+Register 2, transmit interrupts
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>TX done interrupt enable</td><td>0</td></tr>
+<tr><td>6</td><td>-</td><td>-</td></tr>
+<tr><td>5</td><td>-</td><td>-</td></tr>
+<tr><td>4</td><td>-</td><td>-</td></tr>
+<tr><td>3</td><td>-</td><td>-</td></tr>
+<tr><td>2</td><td>Collision interrupt</td><td>0</td></tr>
+<tr><td>1</td><td>16 Collisions interrupt</td><td>0</td></tr>
+<tr><td>0</td><td>-</td><td>-</td></tr>
+</table>
+Initial value is 0000 0001 $01
+
+<p>
+Register 3, receive interrupt
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>Received packet</td><td>1</td></tr>
+<tr><td>6</td><td>Bus read error</td><td>0</td></tr>
+<tr><td>5</td><td>DMA end of process</td><td>0</td></tr>
+<tr><td>4</td><td>Remote control packet received</td><td>0</td></tr>
+<tr><td>3</td><td>Short packet error</td><td>1</td></tr>
+<tr><td>2</td><td>Aligned packet error</td><td>1</td></tr>
+<tr><td>1</td><td>CRC packet errer</td><td>1</td></tr>
+<tr><td>0</td><td>Received buffer overflow</td><td>1</td></tr>
+</table>
+Initial value is 1000 1111 $8F
+
+<p>
+Register 4, tranmit mode
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>Collision count bit3</td><td>-</td></tr>
+<tr><td>6</td><td>Collision count bit2</td><td>-</td></tr>
+<tr><td>5</td><td>Collision count bit1</td><td>-</td></tr>
+<tr><td>4</td><td>Collision count bit0</td><td>-</td></tr>
+<tr><td>3</td><td>Reserved</td><td>0</td></tr>
+<tr><td>2</td><td>/pin95</td><td>1</td></tr>
+<tr><td>1</td><td>Not loopback</td><td>1</td></tr>
+<tr><td>0</td><td>Force tranmit</td><td>0</td></tr>
+</table>
+Initial value is 0000 0110 $06
+
+<p>
+Register 5, recieve mode
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>Reserved</td><td>0</td></tr>
+<tr><td>6</td><td>Rx buffer empty read only</td><td>0</td></tr>
+<tr><td>5</td><td>Accept packets with errors</td><td>0</td></tr>
+<tr><td>4</td><td>40 bit address</td><td>0</td></tr>
+<tr><td>3</td><td>Accept short packets</td><td>0</td></tr>
+<tr><td>2</td><td>Reserved</td><td>1</td></tr>
+<tr><td>1,0</td><td>Address filter</td><td>01</td></tr>
+</table>
+Initial value is 0000 0101 $05
+
+<p>
+Register 6
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7</td><td>Disable data link</td><td>1</td></tr>
+<tr><td>6</td><td>Must be 1</td><td>1</td></tr>
+<tr><td>5</td><td>system byte mode</td><td>0</td></tr>
+<tr><td>4</td><td>buffer byte mode</td><td>0</td></tr>
+<tr><td>3,2</td><td>transmit buffer size</td><td>1,0 2*2k</td></tr>
+<tr><td>1,0</td><td>buffer size</td><td>1,1 64k</td></tr>
+</table>
+Initial value is 1100,1011 = $CB
+
+<p>
+Register 7
+</p>
+<table border=1>
+<th>BIT</th><th>Description</th><th>Initial Value</th>
+<tr><td>7,6</td><td>Mode; set normal nice</td><td>00</td></tr>
+<tr><td>5</td><td>Power up</td><td>1</td></tr>
+<tr><td>4</td><td>Ready pin polarity</td><td>-</td></tr>
+<tr><td>3,2</td><td>Register bank select</td><td>00</td></tr>
+<tr><td>1</td><td>EOP polarity</td><td>0</td></tr>
+<tr><td>0</td><td>Byte order</td><td>1</td></tr>
+</table>
+Initial value is 0010,0001 = $21
+
+	<pre> <code>
+	| :  nice_init ( --)
+		\ 64k chip
+		\ 2*2k transmit buffers
+		\ word system bus
+		\ word buffer bus
+		\ Disable data link
+		$CB   [ _#ethernet_controller_base #ether_reg6 + ]T LITERAL W!
+		\ reset transmit and recieve status bits
+		$FF87 [ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W!
+		\ enable interrupt conditions
+		$8F01 [ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W!
+		\ pin 95 low; no loopback;NODE ID; Broadcast; and multicast
+		$0506 [ _#ethernet_controller_base #ether_reg54 + ]T LITERAL W!
+		\ power_up HL byte order, Disable link, 64k
+		$A1CB [ _#ethernet_controller_base #ether_reg76 + ]T LITERAL W!
+		%%ni_hwa
+		\ addr(--
+		\ byte ordr is low high for registers
+		DUP char@ OVER CHAR+ char@ 8 LSHIFT +  [ _#ethernet_controller_base #ether_reg98 + ]T LITERAL W!
+		CHAR+ CHAR+
+		DUP char@ OVER CHAR+ char@ 8 LSHIFT +  [ _#ethernet_controller_base #ether_regBA + ]T LITERAL W!
+		CHAR+ CHAR+
+		DUP char@ OVER CHAR+ char@ 8 LSHIFT +  [ _#ethernet_controller_base #ether_regDC + ]T LITERAL W!
+
+		DROP
+
+		\ select the hash table and set to zero
+
+		$A5CB [ _#ethernet_controller_base #ether_reg76 + ]T LITERAL W!
+
+		zero [ _#ethernet_controller_base #ether_reg98 + ]T LITERAL W!
+		zero [ _#ethernet_controller_base #ether_regBA + ]T LITERAL W!
+		zero [ _#ethernet_controller_base #ether_regDC + ]T LITERAL W!
+		zero [ _#ethernet_controller_base #ether_regFE + ]T LITERAL W!
+
+		\ set to buffer registers; eable recaiver/ransmitter
+		$A94B [ _#ethernet_controller_base #ether_reg76 + ]T LITERAL W!
+	;
+
+
+
+	\ called from the object under construction
+	| : load_nice_setup ( --)
+		\ set the defaults
+		$EP_BRC         this $set_hwb
+		#default_ip     this set_ip
+		$FFFFFF00       this set_mask
+		\ load user file to override
+		this .panic
+                this
+                $" flash/init/nice_setup.html" ['] $include CATCH IF
+			\ file not present
+			\ this $(--
+			panic" failed to load flash/init/nice_setup.html
+			2DROP
+		THEN
+	;
+
+	m: ( --)
+		%nice_object @ ABORT" Define nice object only once"
+ 		this [parent] :construct
+                \ init our hardware address with a random number
+                $40 %%ni_hwa C!
+                random %%ni_hwa 1+ C!
+                random %%ni_hwa 2+ !
+
+		load_nice_setup
+ 		output_queue_init
+                panic" nice_init" panic_cr
+		nice_init
+		%%arp_facility #facility_length ERASE
+		%%arptable ARP_TSIZE CELLS ERASE
+		\ the mtu is the maximum ip packet that will fit in the datagram.
+		EP_DLEN %%ni_mtu !
+		\ so the interrupt routine can find it
+		this %nice_object !
+	; overrides :construct
+
+
+	m: ( --)
+		this [parent] :destruct
+	; overrides :destruct
+
+	</code> </pre>
+<p>
+We need to think about this. The chip has two buffers; one can be loaded while the other
+is sent; if we want speed we have to do this. There are two bits on the card transmit done
+and the transmit done interrupt bit. We cannot see the counter.
+</p>
+<p>
+Interrupts will be enabled if transmission is occuring.
+</p>
+<p>
+The interrupt routine will look something like this.
+</p>
+<pre> <samp>
+	is_there_a_packet_in_buffer IF
+		start_transmission
+		is_there_a_apacket_in_queue IF
+			load_buffer
+		THEN
+	ELSE
+		is_there_a_packet_in_queue IF
+			load_buffer
+			start_transmission
+			is_there_a_buffer_in_queue IF
+				load_buffer
+			THEN
+		ELSE
+			disable_interrupts
+		THEN
+	THEN
+</samp> </pre>
+<pre> <code>
+	| : out_int_enable ( --)
+		[ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W@
+		$0080 OR
+		[ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W!
+	;
+
+	| : out_int_disable ( --)
+		[ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W@
+		$FF7F AND
+		[ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W!
+	;
+
+	\ yuk yuk yuk, code. But it's code or fight with DMA.
+	| CODE load_nice_buffer ( pep --)
+		S )+ A0 MOV
+		ep_len 0) D0 MOV
+		\ total number of bytes
+		ep_dst # D0 SUB
+		\ standard requires a minimum packet length, it doesn't matter
+		\ if the tail is rubbish.
+		EP_MINLEN # D0 CMP LT IF
+			EP_MINLEN # D0 MOV
+		THEN
+		ep_dst 0) A0 LEA
+		_#ethernet_controller_base #ether_reg98 + # A1 MOV
+		\ have to swap length to keep nice chip happy
+		D0 D2 MOV
+
+		\ swap the byte order for the count
+		8 # D2 ASR
+		D0 D1 MOV
+		8 # D1 ASL
+		D2 D1 OR
+		$FFFF # D1 AND
+
+		D1 A1 ) W. MOV
+		1 # D0 ADD
+		1 # D0 ASR
+		BEGIN
+			A0 )+ A1 ) W. MOV
+			1 # D0 SUB
+		EQ UNTIL
+	NEXT
+
+	\ for interrupt routine
+	m: ( --)
+		%%buffer_loaded @ IF
+			\ if the buffer is loaded we can start the transmission
+			\ and load the next.
+			\ Interrupts will be enabled.
+			\ reset transmit done
+			[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W@
+			0080 AND
+			[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W!
+			\ initiate transmission
+			$81 [ _#ethernet_controller_base #ether_regBA + ]T LITERAL W!
+
+			FALSE %%buffer_loaded !
+			%%output_queue dequeue DUP IF
+				\ packet to load into buffer
+				\ we are setting up for next packet while current is being
+				\ sent, will only happen under very heavy load.
+				DUP load_nice_buffer
+				kill_free_buffer
+				TRUE %%buffer_loaded !
+				EXIT
+			THEN
+		ELSE
+			\ buffer is not loaded
+			%%output_queue dequeue ?DUP IF
+				\ packet to load into buffer
+				out_int_enable
+				DUP load_nice_buffer
+				kill_free_buffer
+				\ reset transmit done
+				[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W@
+				0080 AND
+				[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W!
+				\ initiate transmission
+				$81 [ _#ethernet_controller_base #ether_regBA + ]T LITERAL W!
+				%%output_queue dequeue ?DUP IF
+					\ packet to load into buffer
+					DUP load_nice_buffer
+					kill_free_buffer
+					TRUE %%buffer_loaded !
+				THEN
+				EXIT
+			THEN
+			\ get here and there is nothing more to do.
+			out_int_disable
+		THEN
+	; method :write_packet
+	</code> </pre>
+
+
+
+<p>
+The task code will look something like this
+</p>
+<pre> <samp>
+	place_packet_on_queue
+	claim_device
+	are_interrupts_enable IF
+		release_device
+		EXIT
+	THEN
+	execute_int_service_word
+	release_device
+</samp> </pre>
+<p>
+With this code it is possible for the packet placed in queue to be long gone by the time
+we claim the device and test if interrupts are still enabled. The
+important thing is that only one task can kick things off at a time, and that it only gets
+kicked off when the interrupt routine is no longer running. If we queue and it gets sent
+before we get a chance to test the state of the interrupt routine it is a good thing.
+</p>
+	<pre> <code>
+	\ :write_pep
+
+	| CODE xnop
+		NOP
+	NEXT
+
+        ram_variable %nice_pep_writes
+        ram_variable %nice_pep_int_error
+
+	m: ( addr --)
+                1 %nice_pep_writes +!
+		xnop
+		_lock_word
+		\ see it interrupts are enable
+		[ _#ethernet_controller_base #ether_reg32 + ]T LITERAL W@
+		$0080 AND IF
+			\ this will unlock
+			DUP %%output_queue zero enqueue_try
+			xnop
+			xnop
+			IF
+                                1 %nice_pep_int_error +!
+				\ failed to queue
+				kill_free_buffer
+				\ if the queue is full interrupts should be enabled.
+				\ if it isn't the case there is a bug and it is better
+				\ we find it than hide with a kick here
+				EXIT
+			THEN
+			DROP
+			EXIT
+		THEN
+		out_int_enable
+		DUP load_nice_buffer
+		\ reset transmit done
+		[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W@
+		0080 AND
+		[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W!
+		\ initiate transmission
+		$81 [ _#ethernet_controller_base #ether_regBA + ]T LITERAL W!
+		_unlock_word
+		kill_free_buffer
+	; method :write_pep
+
+
+	</code> </pre>
+
+<p>
+We are going to send the packet over ethernet, this means talking to IP
+software written by others, header has to be as per standard and that is it.
+</p>
+	<pre> <code>
+	m: { variable %pep -- }
+
+\		\ convert data to network order, for coldfire these are null operations.
+\		\ put this back in for machines that store low byte first.
+\		[ ep_data ip_len + ]T LITERAL %pep @ + DUP W@ hs2net SWAP W!
+\		[ ep_data ip_id + ]T LITERAL %pep @ + DUP W@ hs2net SWAP W!
+\		[ ep_data ip_fragoff + ]T LITERAL %pep @ + DUP W@ hs2net SWAP W!
+\		[ ep_data ip_src + ]T LITERAL %pep @ + DUP @ hs4net SWAP !
+\		[ ep_data ip_dst + ]T LITERAL %pep @ + DUP @ hs4net SWAP !
+
+		\ calculate ip header checksum
+		zero [ ep_data ip_cksum + ]T LITERAL %pep @ + W!
+		%pep @ ep_data + %pep @  _pep>ip_hlen cksum
+		[ ep_data ip_cksum + ]T LITERAL %pep @ + W!
+
+		\ this is the device specific bit.
+		%pep @ this :write_pep
+
+	; overrides :write_ip
+
+
+
+</code> </pre>
+<p>
+Diagram below shows the stucture of the arp table.
+If required, an interface has a arp table, it is searched by
+<i>consume_interface</i>. Entries can only be entered into
+the interface arp table from the interface, as we resolve
+unknown entries using a broadcast message on the interface.
+</p>
+<p>
+If there is no entry to resolve the ip address, an arp entry is created, the ip packet
+is queued and a arp request sent.
+</p>
+<p>
+An arp reply that resolves the address will see the queued data sent. You only need
+the arp table if the hardware address cannot be created from the ip address.
+</p>
+<img src="./arp_entry.png" HEIGHT=524 WIDTH=752>
+<p>
+The table is hashed on host address, each interface requiring it
+has it's own arp table.
+</p?
+<p>
+The arp cache has to be searched every time an ip packet is sent so it is
+important the search be reasonable fast.
+</p>
+	<pre> <code>
+	IP_ALEN 4 ??=
+
+	| : arp_host>hash  { variable %ip_addr (  -- hash ) }
+		%ip_addr 4 checksum
+		ARP_TSIZE_MASK AND
+	;
+	</code> </pre>
+<p>
+To search the arp cache, hash the ip and then search the linked list
+</p>
+	<pre> <code>
+	IP_ALEN 4 ??=
+	| : arp_find ( ip -- arp_entry )
+		DUP arp_host>hash
+		%%arptable +
+		BEGIN
+			\ ip addr (--
+			@ DUP
+		WHILE
+			2DUP ae_pra + @ = IF
+				\ ip addr(--
+				NIP
+				EXIT
+			THEN
+		REPEAT
+		\ ip zero(--
+		NIP
+		\ zero
+	;
+
+
+	\ the entry has to be created and linked into table.
+	IP_ALEN 4 ??=
+	: new_arp_entry ( ip --addr $|$)
+		\ ip(--
+		ae_length ['] get_free_buffer CATCH ?DUP IF
+			\ ip ae_length $(--
+			NIP NIP
+			\ $(--
+			EXIT
+		THEN
+                [ last_definition ]T LITERAL OVER buffer_save_ip
+		\ ip addr(--
+		DUP ae_length ERASE
+		\ The head of the queue is in the arp entry.
+		\ The queue is used to queue unsent ipdatagrams.
+		ARP_QSIZE _#ae_queue_priorities jump ae_queue + queue_init
+		AS_PENDING OVER ae_state + !
+		xclock+ @ ARP_RESEND + OVER ae_ttl + !
+		\ ip addr(--
+		2DUP ae_pra + !
+		DUP ROT
+		\ addr addr ip(--
+		arp_host>hash %%arptable +
+		\ addr addr queue_head(--
+		link_double
+		\ addr(--
+		zero
+		\ addr $(--
+		EXIT
+	;
+
+
+	</code> </pre>
+	<p>
+	If there is no address you have to broadcast a arp request. We hope the
+	receiver gets our broadcast, see's that we are trying to talk to his ip and
+	so sends us back an arp reply with the hardware address in it.
+	</p>
+	<pre> <code>
+	\ <i>arp_send</i>
+	\ pae = pointer address entry
+	\ pep = pointer external packet
+        : arp_send { variable %pae -- }{
+		variable %pep
+	}
+		[ ep_data ar_length + ]T LITERAL  ['] get_free_buffer CATCH
+
+		IF
+			\ failed to allocate memory to send message.
+			DROP EXIT
+		THEN
+                [ last_definition ]T LITERAL OVER buffer_save_ip
+		%pep !
+		\ we know the entire ar_ data area is set later int he code
+		\  don't waste time clearing it. But clear the header of the
+		\ pep
+		%pep @ ep_data ERASE
+
+		\ set hardware as appropriate for ethernet
+		AR_HARDWARE hs2net %pep @ [ ep_data ar_hwtype + ]T LITERAL + W!
+		\ protocol is ip as always
+		EPT_IP hs2net %pep @ [ ep_data ar_prtype + ]T LITERAL + W!
+		\ ep length is 6
+		EP_ALEN %pep @ [ ep_data ar_hwlen + ]T LITERAL  + B!
+		\ ip length is 4
+		IP_ALEN %pep @ [ ep_data ar_prlen + ]T LITERAL  + B!
+
+		AR_REQUEST hs2net %pep @ [ ep_data ar_op + ]T LITERAL + W!
+		\ hardware address is always in netorder, we get it from the net
+		\ we send it to the net.
+		%%ni_hwa %pep @ [ ep_data ar_source_ha + ]T LITERAL + EP_ALEN MOVE
+		\ Only work if IP_ALEN = 4
+		%%ni_ip @ hs4net %pep @ [ ep_data ar_source_pa + ]T LITERAL  + !
+
+		%pep @ [ ep_data ar_target_ha + ]T LITERAL  + EP_ALEN ERASE
+		\ only works if IP_ALEN = 4
+		%pae @ ae_pra + @ DUP hs4net %pep @ [ ep_data ar_target_pa + ]T LITERAL + !
+		\ ip(--
+
+		\ set up ep portion of packet
+		%pep @ ep_nexthop + !
+		\ broadcast address is destination
+		%%ni_hwb %pep @ ep_dst + EP_ALEN MOVE
+		EPT_ARP %pep @ ep_type + W!
+		[ ep_data ar_length + ]T LITERAL %pep @ ep_len + !
+		%pep @ this :write_pep
+		\ (--
+	;
+
+	</code> </pre>
+	<h5>arp_add</h5>
+	<p>
+	We have received a arp packet, and found that there is no arp entry. Using
+	the packet received we create an arp entry. This entry will have no ip
+	packets queued for output.
+	</p>
+	<p>
+	This path is followed if we receive an arp request for our adddress. We create
+	an arp entry for the sender of the request so we don't have to send a arp
+	request latter on when the user of the ip packet that is about to come replies.
+	</p>
+	<pre> <code>
+
+	| : arp_add { variable %pep -- variable %pae }
+		%pep @ [ ep_data ar_source_pa + ]T LITERAL + @ new_arp_entry IF
+			zero
+		THEN
+		\ addr(--
+		%pae !
+
+		%pep @ [ ep_data ar_source_ha + ]T LITERAL + %pae @ ae_hwa + EP_ALEN MOVE
+		xclock+ @ ARP_TIMEOUT + %pae @ ae_ttl + !
+		AS_RESOLVED %pae @ ae_state + !
+	;
+	</code> </pre>
+	<p>
+	If the hardware address wasn't available the packet was queued in :consume_interface. All
+	the things that ip>wire has to do still have to be done.
+	</p>
+	<pre> <code>
+	| : arp_queue_send { variable %pae -- }
+		%pae @ ae_queue + BEGIN
+			DUP dequeue DUP
+		WHILE
+			%pae @ ae_hwa + OVER ep_dst + EP_ALEN MOVE
+			\ queue addr(--
+			ip>wire DROP
+			\ queue(--
+		REPEAT
+		\ queue zero(--
+		2DROP
+	;
+	</code> </pre>
+	<p><i>arp_in</i> This will get called because ep_type is EPT_ARP.</p>
+	<pre> <code>
+	| : arp_in { variable %pep -- }{
+			variable %pae
+		}
+		\ data that has to be converted from network byte order
+		\ make sure packet is as expected.
+		\ code 01 for ethernet
+		%pep @ ep_len + @ ep_data - ar_length
+		< IF \ >
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+		%pep @ [ ep_data ar_hwtype + ]T LITERAL + W@ net2hs
+		AR_HARDWARE
+		<> IF
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+
+		\ protocol type must be ip
+		%pep @ [ ep_data ar_prtype + ]T LITERAL + W@ net2hs EPT_IP
+		<> IF
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+
+		\ if it isn't 6 we have no idea what is going on
+		%pep @ [ ep_data ar_hwlen + ]T LITERAL + B@ EP_ALEN
+		<> IF
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+
+		\ if it is ip and not four wrong protocol. I wonder if version
+		\ 6 still used 800.
+		%pep @ [ ep_data ar_prlen + ]T LITERAL + B@ IP_ALEN
+		<> IF
+			%pep @ kill_free_buffer
+			EXIT
+		THEN
+
+
+		\  See if entry in cache for ip address supplied
+		%pep @ [ ep_data ar_source_pa + ]T LITERAL + @ net4hs arp_find
+		DUP %pae !
+
+
+		\ if there is a cache entry %pae will now be non zero
+		IF
+			\ We have the hardware address. Here we should consider people telling lies.
+			\ The way the code is written the arp message has to come from the same
+			\ physical net.
+			\ But we could get two replies the one that lies and the one that tells the
+			\ truth. There really is noway of knowing so we just accept the last.
+			%pep @ [ ep_data ar_source_ha + ]T LITERAL + %pae @ ae_hwa + EP_ALEN MOVE
+			%pae @ ae_state + @ AS_PENDING = IF
+				AS_RESOLVED %pae @ ae_state + !
+				xclock+ @ ARP_TIMEOUT + %pae @ ae_ttl + !
+				%pae @ arp_queue_send
+			THEN
+		ELSE
+				%pep @ arp_add %pae !
+		THEN
+
+
+		\ If someone has asked us for our hardware address we had better
+		\ tell them, otherwise silence.
+		xnop
+		%pep @ [ ep_data ar_op + ]T LITERAL + W@ net2hs AR_REQUEST = IF
+			\ is it our ip address
+			%pep @ [ ep_data ar_target_pa + ]T LITERAL +  @ %%ni_ip @ = IF
+				xnop
+				\ yep it was us
+				\ The packet type ( ep_type ) is already EPT_ARP
+				\ have to create a reply
+				AR_REPLY hs2net %pep @ [ ep_data ar_op + ]T LITERAL + W!
+				\ swap source and target pa
+				%pep @ [ ep_data ar_target_pa + ]T LITERAL + @
+
+				%pep @ [ ep_data ar_source_pa + ]T LITERAL + @
+				%pep @ [ ep_data ar_target_pa + ]T LITERAL + !
+
+				%pep @ [ ep_data ar_source_pa + ]T LITERAL + !
+
+				%pep @ [ ep_data ar_source_ha + ]T LITERAL +
+				%pep @ [ ep_data ar_target_ha + ]T LITERAL + EP_ALEN MOVE
+
+				%%ni_hwa %pep @ [ ep_data ar_source_ha + ]T LITERAL + EP_ALEN MOVE
+
+
+				%pep @ [ ep_data ar_target_pa + ]T LITERAL + @
+				%pep @ ep_nexthop + !
+
+				[ ep_data ar_length + ]T LITERAL %pep @ ep_len + !
+
+				\ The link layer specific stuff the source adddress has to become
+				\ the destionation and the source has to be set to our address.
+				\ This may seem a strang place to do it but remember the destination
+				\ address is normally resolved by looking up the arp table. We are below
+				\ that.
+				%pep @ ep_src + %pep @ ep_dst + EP_ALEN MOVE
+				%%ni_hwa %pep @ ep_src + EP_ALEN MOVE
+			        xnop
+				%pep @  this :write_pep
+			ELSE
+				%pep @ kill_free_buffer
+			THEN
+		ELSE
+			%pep @ kill_free_buffer
+		THEN
+	;
+
+	</code> </pre>
+	<p>
+	<i>consume_interface</i>
+	The packets still has to be fragmented, the ip header changed to netorder,
+	and the ip header checksum calculated. All this is done in ip>wire. This
+	word only deals with getting the hardware address.
+	</p>
+	<pre> <code>
+	\ this word is used by routed, it has no other use.
+	m: { variable %pep -- }
+		\ if hardware source not set; set it.
+		%pep @ ep_src + @ not IF
+			%%ni_hwa %pep @ ep_src + EP_ALEN MOVE
+		THEN
+		\ if software source not set; set it.
+		%pep @ [ ep_data ip_src + ]T LITERAL + @ not IF
+			%%ni_ip @ 	%pep @ [ ep_data ip_src + ]T LITERAL + !
+		THEN
+		\ calculate the protocol checksum.
+		\ an incomeing packet routed and sent on its way will not have ep_proto_obj
+		\ set; this is a good thing as the packet may be a fragment and the first
+		\ few bytes may have nothing to do with the protocol header.
+		%pep @ ep_proto_obj + @ IF
+			 %pep @ %pep @ ep_proto_obj + @ :proto_checksum
+		THEN
+
+		\ Is the nexthop a ip broadcast address; if so use the hardware
+		\ broadcast address.
+		%pep @ ep_nexthop + @ is_broadcast? IF
+			%%ni_hwb %pep @ ep_dst + EP_ALEN MOVE
+			%pep @ ip>wire DROP
+			\ (--
+			EXIT
+		THEN
+		\ Look up the hardware address. Although multiple tasks are using
+		\ the arp cache the code has been written so we don't have to claim the cache.
+		%pep @ ep_nexthop + @
+		arp_find
+
+		?DUP IF
+			\ ace(--
+			DUP ae_state + @ AS_RESOLVED = IF
+				\ ace(--
+				\ we have the hardware address
+				ae_hwa + %pep @ ep_dst + EP_ALEN MOVE
+				\ (--
+				xnop
+				%pep @ ip>wire DROP
+				EXIT
+			THEN
+			\ ace(--
+		ELSE
+			\ no cache entry
+			\ (--
+			%pep @ ep_nexthop + @
+			new_arp_entry IF
+				\ we didn't have the memory to allocate the arp entry
+				%pep @ kill_free_buffer
+				\ (--
+				EXIT
+			THEN
+			\ ace(--
+			\ if we fail to send drop error
+			\ it will get resent later
+			DUP arp_send
+			\ ace(--
+		THEN
+		\ ace(--
+		\ If we get here the hardware message is not yet resolved. We have to
+		\ queue the message. If the queue is full we drop the packet
+		%pep @ SWAP ae_queue + zero enqueue_try IF
+			\ already too many packets queued pending an outcome
+			%pep @ kill_free_buffer
+			\ (--
+			EXIT
+		THEN
+	; overrides :consume_interface  ( pep -- )
+
+	</code> </pre>
+<p>
+A broadcast to the local net will come in,
+go through the routing table and come back here. We place
+the packet in the wire by calling :consume_interface
+</p>
+<p>
+A broadcast from the local net will come in,
+go through the routing table and come back here. We can detect this by looking at
+ep_nif_received, if it is equal to this then the packet should be sent to the local interface.
+</p>
+	<pre> <code>
+	m: ( pep --)
+		DUP ep_nif_received + @ this =
+		IF
+			%local_object @ :consume_interface
+		ELSE
+			this :consume_interface
+		THEN
+	; overrides :broadcast
+
+	\ process options in incoming datagrams
+	\ \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	\ the address points to an option, the output address is the byte
+	\ after
+
+	\ If we return true the pep will go.
+	| : _error_option ( option -- byte_after flag)
+		TRUE
+	;
+
+	\ the option does nothing other than take up one byte possition
+	| : _align ( addr -- addr flag )
+		1+ FALSE
+	;
+
+	\ <a name="options">
+	\ _timestamp
+	\ ------------------------------------------------------------------
+	| : _time_only { variable %option -- ( addr_after_option flag ) }{
+		\ stucture of option head
+		0
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DUP CONSTANT _#ptr   1+
+		DUP CONSTANT _#flags DROP
+		$80000000 CONSTANT #time_non_standard }
+		\ do we have room to add the timestamp
+		\ We subtract one because the ptr is one based.
+		\ We add 4 because we want to add a 4 byte value.
+		\ We only have problems if the resultant value is
+		\ greater than len,
+		%option @ _#ptr + B@
+		4 MAX
+		1 - 4 +
+		%option @ _#len + B@ > IF
+			\ list is full; update overflow count and exit
+			%option @ _#flags + B@ $F0 AND $F0 = IF
+				\ overflow in overflow
+				%option @ DUP _#len + B@ +
+				FALSE
+				EXIT
+			THEN
+			%option @ _#flags + B@ DUP 4 RSHIFT 1+ 4 LSHIFT SWAP $0F AND OR
+			%option @ _#flags + B!
+			%option @ DUP _#len + B@ +
+			FALSE
+			EXIT
+		THEN
+		\ there is room to add time
+		%option @ _#ptr + B@ DUP
+		\ length of area being updated.
+		4 + %option @ _#ptr + B!
+		@standard_ms
+		\ hs4net
+		SWAP 1- %option @ + unaligned!
+		%option @ DUP _#len + B@ +
+		FALSE
+		EXIT
+	;
+
+	| : _time_and_ip { variable %option ( -- after_option flag ) }{
+		0
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DUP CONSTANT _#ptr   1+
+		DUP CONSTANT _#flags DROP
+		$80000000 CONSTANT #time_non_standard }
+		\ do we have room to add the timestamp
+		\ We subtract the one because the ptr is one based.
+		\ We add 8 because we want to add a 4 byte value.
+		\ We only have problems if the resultant value is
+		\ greater than len,
+		%option @ _#ptr + B@
+		4 MAX
+		1 - 8 +
+		%option @ _#len + B@ > IF
+			\ list is full; update overflow count and exit
+			%option @ _#flags + B@ $F0 AND $F0 = IF
+				\ overflow in overflow
+				%option @ DUP _#len + B@ +
+				FALSE
+				EXIT
+			THEN
+			%option @ _#flags + B@ DUP 4 RSHIFT 1+ 4 LSHIFT SWAP $0F AND OR
+			%option @ _#flags + B!
+			%option @ DUP _#len + B@ +
+			FALSE
+			EXIT
+		THEN
+		\ we now add time and ip; this is called from a interface method
+		\ so we can access the instance variable directly
+		%option @ _#ptr + B@ DUP
+		\ length of area being updated
+		8 +
+		%option @ _#ptr + B!
+		%%ni_ip @
+		\ hs4net
+		OVER 1- %option @ + unaligned!
+
+		@standard_ms
+		\ hs4net
+		\ -1 because the pnt is one based
+		\ 4 + because we are setting the time part of the 8 byte
+		\ option
+		SWAP 3 + %option @ + unaligned!
+		%option @ DUP _#len + B@ +
+		FALSE
+		EXIT
+	;
+
+
+	| : _time_if_ip { variable %option ( --- addr1 flag ) }{
+		variable %option_end
+		zero
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DUP CONSTANT _#ptr   1+
+		DUP CONSTANT _#flags 1+
+		DUP CONSTANT _#data DROP
+		$80000000 CONSTANT #time_non_standard }
+		\ scan through the ip's saved in option, If any match out ip
+		\ record the current time.
+		%option @ DUP DUP _#len + B@ + %option_end !
+		_#data + BEGIN
+			\ pointer(--
+			DUP %option_end @ < not IF  \ >
+				DROP
+				%option @ DUP _#len + B@ +
+				FALSE
+				EXIT
+			THEN
+			DUP unaligned@ %%ni_ip @ = IF
+				\ the ip mataches
+				@standard_ms
+				\ hs4net
+				OVER 4+ unaligned!
+			THEN
+			8 +
+		AGAIN
+	;
+
+	\ the standard say's all unknown options will still have
+	\ a count. We just drop datagrams with unknown options, so there
+	\ is no reason to maintain the option pointer. Just indicate
+	\ an error.
+	: _time_flag_error  ( add -- addr flag)
+		TRUE
+	;
+
+	| CREATE _timestamp_vectors
+		5 tw,
+		' _time_only   t,      \ 0
+		' _time_and_ip t,      \ 1
+		' _time_flag_error t,  \ 2
+		' _time_if_ip t,       \ 3
+		' _time_flag_error t,  \ other
+
+	\ the system tries to set up ticks from the default gateway on start up.
+	\ If %tick_set is true we do not set the upper bit of the time, if false we
+	\ do. The upper bit indicates if the supplied time is standard.
+	| : _timestamp { ( addr -- addr1 flag ) }{
+		zero
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DUP CONSTANT _#ptr   1+
+		DUP CONSTANT _#flags
+		DROP }
+		\ we can add the timestamp. There are three options defined by the flags.
+		DUP _#flags + B@ $0F AND _timestamp_vectors vector
+	;
+
+	\ record_route
+	\ -------------
+	\ flag is true if option is bad
+	| : _record_route { variable %option -- ( addr_after flag ) }{
+		zero
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DUP CONSTANT _#ptr
+		DROP }
+		\ do we have room to add the route
+		\ We subtract the one because the ptr is one based.
+		\ We add 4 because we want to add a 4 byte value.
+		\ We only have problems if the resultant value is
+		\ greater than len,
+		%option @ _#ptr + B@
+		\ allow for rubbish
+		4 MAX
+		1 - 4 +
+		%option @ _#len + B@ > IF
+			%option @ DUP _#len + B@ +
+			FALSE
+			EXIT
+		THEN
+
+		%option @ _#ptr + B@ DUP
+		\ length of area being updated.
+		4 + %option @ _#ptr + B!
+		%%ni_ip @
+		\ hs4net
+		SWAP 1- %option @ + !
+		%option @ DUP _#len + B@ +
+		FALSE
+		EXIT
+	;
+
+	| CREATE _option_vectors
+		$0B tw,             \ number of entries
+		' _error_option t,  \ 0 does not get processed here, just something to put in table
+		' _align t,         \ 1 align
+		' _error_option t,  \ 2 security, you hsve to be kidding
+		' _error_option t,  \ 3 loose routeing, do not support
+		' _timestamp t,     \ 4 we support this
+		' _error_option t,  \ 5 not defined
+		' _error_option t,  \ 6 not defined
+		' _record_route t,  \ 7 we support this
+		' _error_option t,  \ 8 obsolete
+		' _error_option t,  \ 9 we do not support
+		' _error_option t,  \ this and higher options are not supported
+
+	\ the option field is divided into three fields, the option number is in the
+	\ low 5 bits.
+	| : _process_an_option ( addr_opt -- addr_after flag )
+		  DUP B@ $1F AND _option_vectors vector
+	;
+
+	\ flag is true if packet should be rejected because of bad options.
+	| : _process_options { variable %pep -- ( flag ) }{
+		variable %options_end
+		}
+		\ this is the common route do as little as possible
+		%pep @  _pep>ip_hlen ip_options = IF
+			\ no options
+			\ options are ok
+			FALSE EXIT
+		THEN
+		%pep @ [ ep_data ip_options + ]T LITERAL +
+		%pep @ ep_data + %pep @ _pep>ip_hlen + %options_end !
+		\ option_pointer(--
+		BEGIN
+			\ end of option list code is a zero option
+			DUP B@ not IF
+				DROP
+				FALSE
+				EXIT
+			THEN
+			\ list has finished
+			DUP %options_end @  < not IF \ >
+				DROP
+				FALSE
+				EXIT
+			THEN
+			( opt_addr -- new_option_addr FLAG )
+			_process_an_option IF
+				\ bad bad option
+				DROP
+				TRUE
+				EXIT
+			THEN
+			DUP %options_end @ > IF
+				\ if here structure of option list is rubbish
+				DROP
+				TRUE
+				EXIT
+			THEN
+		AGAIN
+	;
+
+	| : _ip_in { variable %pep -- ( flag ) }
+
+\		\ convert data to network order, for coldfire these are null operations.
+\		\ put this back in for machines that store low byte first.
+\		[ ep_data ip_len + ]T LITERAL %pep @ + DUP W@ net2hs SWAP W!
+\		[ ep_data ip_id + ]T LITERAL %pep @ + DUP W@ net2hs SWAP W!
+\		[ ep_data ip_fragoff + ]T LITERAL %pep @ + DUP W@ net2hs SWAP W!
+\		[ ep_data ip_src + ]T LITERAL %pep @ + DUP @ net4hs SWAP !
+\		[ ep_data ip_dst + ]T LITERAL %pep @ + DUP @ net4hs SWAP !
+
+                \ #####
+                \ ckeck the ip version; only accept version 4
+		\ check header checksum
+		%pep @ ep_data + %pep @ _pep>ip_hlen cksum IF
+			1 %%ip_checksum_errors +!
+			%pep @ kill_free_buffer
+			FALSE
+			EXIT
+		THEN
+		\ routing we do is to move packets within a control system.
+		\ We are not a general purpose router. We do not accept
+		\ packets with options we do not support. End of story.
+		%pep @ _process_options IF
+			%pep @ kill_free_buffer
+			FALSE
+			EXIT
+		THEN
+		%pep @ queue_ip
+		TRUE
+	;
+	</code> </pre>
+<p>
+The receive word must read the packet from the device if ip do the cheaks that ip required
+and queue the packet onto the ip_queue
+</p>
+	<pre> <code>
+	| CODE _read_nice_packet ( addr count (--)
+		S )+ D0 MOV
+		S )+ A1 MOV
+		1 # D0 ADD
+		1 # D0 ASR
+		_#ethernet_controller_base #ether_reg98 + # A0 MOV
+		BEGIN
+			A0 ) A1 )+ W. MOV
+			1 # D0 SUB
+		EQ UNTIL
+		\ reset packet ready bit.
+		$8000 # D0 MOV
+		D0 _#ethernet_controller_base #ether_reg10 + AB W. MOV
+	NEXT
+
+	| CODE _skip_nice_packet ( addr count (--)
+		S )+ D0 MOV
+		1 # D0 ADD
+		1 # D0 ASR
+		_#ethernet_controller_base #ether_reg98 + # A0 MOV
+		BEGIN
+			A0 ) D1 W. MOV
+			1 # D0 SUB
+		EQ UNTIL
+		\ reset packet ready bit.
+		$8000 # D0 MOV
+		D0 _#ethernet_controller_base #ether_reg10 + AB W. MOV
+	NEXT
+
+	: _receive_a_packet ( --)
+		\ chip is set up to accept good packets only. Status will always
+		\ have good packet set; just drop it.
+		[ _#ethernet_controller_base #ether_reg98 + ]T LITERAL W@ DROP
+		\ the count; it comes in low-high needs to be swapped.
+		[ _#ethernet_controller_base #ether_reg98 + ]T LITERAL W@
+		><   \ >
+		DUP ep_dst +
+		\ count length(--
+		['] get_free_buffer CATCH
+
+		IF
+			\ haven't got the memory
+			\ oh well drop packet.
+			DROP
+			\ count(--
+			_skip_nice_packet
+			EXIT
+		THEN
+                [ last_definition ]T LITERAL OVER buffer_save_ip
+		\ count addr(--
+		DUP ep_dst ERASE
+
+		\ we are the receiving interface
+		this OVER ep_nif_received + !
+
+		\ pck_count buffer(--
+		2DUP ep_dst + SWAP _read_nice_packet
+
+		\ The length includes the internal header, not just data received.
+		SWAP ep_dst + OVER ep_len + !
+
+		\ buffer(--
+		DUP ep_type + W@ net2hs
+
+		DUP EPT_IP = IF
+                        1 %%ip_packets +!
+			DROP
+			_ip_in
+			\ only active the TCP level if packet was valid
+			IF
+				#tcp/ip activate_task_level
+			THEN
+			EXIT
+		THEN
+		DUP EPT_ARP = IF
+		DROP
+                        1 %%arp_packets +!
+			\ this may result in a lot of transmission activity, as packets maybe queued
+			\ for transmission on reception
+			arp_in
+			EXIT
+		THEN
+		\		DUP EPT_RARP = IF
+		\			DROP
+		\			rarp_in
+		\			EXIT
+		\		THEN
+                1 %%other_packets +!
+		DROP
+		\ we get here we don't support it
+		kill_free_buffer
+	;
+
+	\ NICE is set up to read high low byte from packet; however the status and
+	\ count are low high; status doesn't matter we don't look at it as we only
+	\ receive good packets. The count however has to be swapped
+	m: ( --)
+		BEGIN
+			\ we have to read until this bit is set.
+			\ That is until the receive buffer is empty.
+			\ Note we reset the interrupt bit before entry.
+			_#ethernet_controller_base #ether_reg54 + W@ $4000 AND not
+		WHILE
+			_receive_a_packet
+		REPEAT
+	; method :read_packet
+
+
+
+
+
+	</code> </pre>
+	<p>
+	Dequeue the pep packets and return them to the free buffer pool. This gets called
+	if an arp entry has been timed out before it has been resolved.
+	</p>
+	<pre> <code>
+	| : arp_dequeue ( pae --)
+		ae_queue + BEGIN
+			DUP dequeue DUP
+		WHILE
+			kill_free_buffer
+		REPEAT
+		2DROP
+	;
+	</code> </pre>
+<p>
+Every class derived from interface_common provides a :arptimer method. There is
+a interface_timeout task that calls the methods at regular intervals.
+We have to claim a printout facility before playing with this
+<p>
+	<pre> <code>
+	m: ( --)
+		%%arptable ARP_TSIZE CELLS + %%arptable DO
+			%%arp_facility grab
+			I @
+			BEGIN
+				?DUP
+			WHILE
+				\ packet may go get next before
+				DUP @ SWAP
+				\ next this(--
+				DUP ae_ttl + @ xclock- @ + 0< IF  \ waited to long >
+					DUP ae_state + @ AS_RESOLVED = IF
+						DUP unlink_double
+						DUP kill_free_buffer
+					ELSE
+						1 OVER ae_attempts + +!
+						DUP ae_attempts + @ ARP_MAXRETRY > IF
+							DUP unlink_double
+							DUP arp_dequeue
+							DUP kill_free_buffer
+						ELSE
+							ARP_RESEND OVER ae_ttl + !
+							DUP arp_send
+						THEN
+					THEN
+				THEN
+				DROP
+			REPEAT
+			%%arp_facility release
+			xpause
+		cell +LOOP
+	; overrides :arptimer
+
+
+	m: ( --)
+		CR ." ethernet"
+		CR ." ip addr   hardware adr Status       ttl secs  queued"
+		%%arptable ARP_TSIZE CELLS + %%arptable DO
+			%%arp_facility grab
+			I @
+			BEGIN
+				?DUP
+			WHILE
+				\ this(--
+				CR
+				DUP ae_pra + @ .h SPACE
+
+				DUP ae_hwa + .hwa
+				DUP ae_state + @ AS_PENDING  = IF
+					."  Not complete "
+					."           "
+					BASE @ >R
+					ARP_QSIZE OVER [ ae_queue #queue_limit + ]T LITERAL + @ - .d
+					DECIMAL
+					R> BASE !
+				THEN
+				DUP ae_state + @ AS_RESOLVED  = IF
+					."  Resolved     "
+					BASE @ >R
+					DECIMAL
+					DUP ae_ttl + @ xclock- @ + #100 / 10 .l
+					R> BASE !
+				THEN
+				@
+			REPEAT
+			%%arp_facility release
+			xpause
+		cell +LOOP
+	; overrides :.arp
+
+        : .nice_errors ( --)
+        ." overflow: " %ether_overflow @ .h
+        ." crc: " %ether_crc_error @ .h
+        ." alignment: " %ether_alignment @ .h
+        ." short packet: " %ether_short_packet @ .h
+        ." no more: " %ether_no_more @ .h
+;
+
+
+	m: ( indent --)
+			CR DUP SPACES ." interface_nice   | " ." Object: " this .h
+			DUP this [parent] :print
+                        CR DUP SPACES ." ip_packets : " %%ip_packets @ .h
+                                      ." arp_packets: " %%arp_packets @ .h
+                                      ." other_packets: " %%other_packets @ .h
+                        CR DUP SPACES ." ip+ckecksum errors: " %%ip_checksum_errors @ .h
+                        CR DUP SPACES .nice_errors
+                        CR DUP SPACES ." nice_pep_write: " %nice_pep_writes @ .h
+                        CR DUP SPACES ." nice_pep_int_error: " %nice_pep_int_error @ .h
+                        CR DUP SPACES ." %%output_queue: " %%output_queue .h
+                        DROP send
+
+        ; overrides :print
+
+end_class nice_interface
+
+|       07 2** CONSTANT  #sr_trans_done
+|       0F 2** CONSTANT  #sr_receive
+|       0E 2** CONSTANT  #sr_no_more
+|       0B 2** CONSTANT  #sr_short_packet
+|       0A 2** CONSTANT  #sr_alignment_packet_error
+|       09 2** CONSTANT  #sr_crc_error
+|       08 2** CONSTANT  #sr_receive_buffer_overflow
+
+
+
+	interrupt: ethernet
+		[ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W@
+		DUP [ _#ethernet_controller_base #ether_reg10 + ]T LITERAL W!
+		\ status(--
+		#sr_receive OVER AND IF
+			%nice_object @ IF
+				%nice_object @ :read_packet
+			THEN
+		THEN
+		\ status(--
+		#sr_trans_done OVER AND IF
+			%nice_object @ IF
+				%nice_object @ :write_packet
+			THEN
+		THEN
+		\ status(--
+		#sr_no_more OVER AND IF
+			1 %ether_no_more +!
+		THEN
+		\ status(--
+		#sr_short_packet OVER AND IF
+			1 %ether_short_packet +!
+		THEN
+		\ status(--
+		#sr_alignment_packet_error OVER AND IF
+			1 %ether_alignment +!
+		THEN
+		\ status(--
+		#sr_crc_error OVER AND IF
+			1 %ether_crc_error +!
+		THEN
+		\ status(--
+		#sr_receive_buffer_overflow OVER AND IF
+			1 %ether_overflow +!
+		THEN
+		DROP
+		\ (--
+	;interrupt
+
+
+: .nice ( --)
+        zero %nice_object @ :print
+;
+
+
+</code> </pre>
+</body>
+</html>

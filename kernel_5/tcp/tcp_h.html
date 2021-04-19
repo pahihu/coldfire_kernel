@@ -1,0 +1,79 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a><br>
+<h3>TCP header file</h3>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc0793.html">RFC793 TCP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1122.html">RFC1122 More info</a><br>
+<p>
+I think I grok it, Time to start.
+</p>
+<h5>TCP state</h5>
+<p>
+The standard describes a loverly state diagram. Thats how we are going to go it. 
+The state valuse are table offsets.
+</p>
+<pre> <code>
+zero 
+| DUP CONSTANT #tcps_closed         CELL+  \ 0
+| DUP CONSTANT #tcps_abort          CELL+  \ 4 protocol has aborted link
+										 \ task using link will close
+										 \ if we go through this there is no timewait
+| DUP CONSTANT #tcps_listen         CELL+  \ 8
+| DUP CONSTANT #tcps_synsend        CELL+  \ 0C
+| DUP CONSTANT #tcps_synrcvd        CELL+  \ 10
+| DUP CONSTANT #tcps_established    CELL+  \ 14
+| DUP CONSTANT #tcps_finwait1       CELL+  \ 18
+| DUP CONSTANT #tcps_finwait2       CELL+  \ 1C
+| DUP CONSTANT #tcps_closewait      CELL+  \ 20
+| DUP CONSTANT #tcps_lastack        CELL+  \ 24
+| DUP CONSTANT #tcps_closing        CELL+  \ 28 task will close link, the demux table will
+                                         \  keep an entry to deal with timewait.
+| DUP CONSTANT #tcps_timewait       CELL+  \  task will close the link but will leave
+                                         \  the demux entry.
+
+|    CONSTANT #tcps_error
+</code> </pre>
+<p>
+Structure of a TCP datagram; a TCP packet has options just like an ip packet,
+so the offset byte has to be consulted.
+</p>
+	<pre> <code>
+	zero
+|	DUP CONSTANT #tcp_src      2+
+|	DUP CONSTANT #tcp_dst      2+
+|	DUP CONSTANT #tcp_seq      4+
+|	DUP CONSTANT #tcp_ack      4+
+|	DUP CONSTANT #tcp_offset   1+
+|       DUP CONSTANT #tcp_flags    1+
+|	DUP CONSTANT #tcp_window   2+
+|	DUP CONSTANT #tcp_checksum 2+
+|	DUP CONSTANT #tcp_urgptr   2+
+|	    CONSTANT #tcp_header_end
+	</code> </pre>
+<p>
+The flag byte is arranged as follows.
+</p>
+	<pre> <code>
+|	$01 CONSTANT #tcpf_fin     \ finish flag
+|	$02 CONSTANT #tcpf_syn     \ sync flag
+|	$04 CONSTANT #tcpf_rst     \ reset flag
+|	$08 CONSTANT #tcpf_psh     \ push the data
+|	$10 CONSTANT #tcpf_ack     \ ack field valid
+|	$20 CONSTANT #tcpf_urg     \ urgent pointer valid
+	</code> </pre>
+	<p>
+	Shift value to convert header length stored in datgram to header length in bytes.<br>
+	Value is stored in top 4 bits and gives number of 32 bit words.
+	</p>
+	<pre> <code>
+|	4 2 - CONSTANT #tcp_hlen>bytes_asr
+	</code> </pre>
+</body>
+</html>

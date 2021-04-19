@@ -1,0 +1,93 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+<i>checksum</i> is used extensively. All names are checksummed and the value used to 
+speed up name searches. The application and kernel are checksumed, with the
+checksummed checked on a restart. And string change of value is detected 
+with checksums.
+</p>
+	<pre> <code>
+	( make checksum table) 
+    HEX
+    forth  : make_table  ( --)
+    	forth  100 0 DO
+    		I  8 0 DO
+    			DUP 1 AND IF
+    				1 RSHIFT 0EDB88320 XOR
+    			ELSE 
+    				1 RSHIFT 
+    			THEN
+    	 	LOOP
+    	 	HOST t, forth
+    	LOOP 
+    ;
+    
+    HOST
+    | CREATE checksum_table
+    make_table
+
+	</code> </pre>
+<a name="checksum"></a>
+<p>
+One of the words that needs to be rewritten in code for performance.
+</p>
+	<pre> <samp>
+	: checksum ( addr n -- value )
+		-1 -rot
+		OVER + SWAP ?DO
+			DUP 8 RSHIFT   \ old new (--
+			SWAP           \ new old (--
+			I C@ XOR       \ new old+(--
+			0FF AND        \ new +(--
+			4*             \ new offset(--
+			checksum_table + @  \ new new_value(--
+			XOR            \ new_value
+		LOOP
+		-1 XOR
+	;
+	</samp> </pre>
+
+	<pre> <code>
+    CODE  checksum ( addr count --value)
+		S )+ D0 MOV
+		S )+ A0 MOV
+		-1 # D1 MOV
+		D0 TST NE IF
+			checksum_table # A1 MOV
+			BEGIN
+				0 # D2 MOV
+				D1 D2 B. MOV
+				8 # D1 LSR
+				0 # D3 MOV
+				A0 )+ D3 B. MOV
+				D3 D2 EOR
+				2 # D2 ASL
+				( extract an entry from a 256 long word table)
+				[ A1 D2 ] D3 MOV
+				D3 D1 EOR
+				1 # D0 SUB
+			LE UNTIL
+		THEN
+		-1 # D1 EOR
+		D1 S -) MOV
+	NEXT
+
+        \ <a name="$checksum"></a>
+	: $checksum ( addr --n )
+		COUNT
+		checksum
+	;
+	</code> </pre>
+
+</body>
+</html>
+

@@ -1,0 +1,126 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name="SOURCE"></a>
+<h5>6.1.2216 SOURCE</h5>
+<p> 
+( -- c-addr u )
+</p>
+<p>
+c-addr is the address of, and u is the number of characters in, the input buffer.
+</p> 
+
+<p>
+SOURCE simplifies the process of directly accessing the input buffer by hiding 
+the differences between its location for different input sources. 
+This also gives implementors more flexibility in their implementation of 
+buffering mechanisms for different input sources. The committee moved away 
+from an input buffer specification consisting of a collection of individual 
+variables, declaring TIB and #TIB obsolescent. 
+</p>
+<p>
+In this system TIB and #TIB always point to (words) input area.
+</p>
+<p>
+SOURCE  and the contents of >IN completly describes the input.
+</p>
+
+	<pre> <code>
+	: SOURCE ( -- addr n )
+		TIB 
+		#TIB @
+	;
+	</code> </pre>
+
+<a name="CHAR"></a>
+<h5>ANS 6.1.0895 CHAR</h5>
+<p>CORE</p> 
+<p>( "< spaces >name" -- char )</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space. 
+Put the value of its first character onto the stack. 
+</p>
+<pre> <samp>
+	Typical use: ... CHAR A CONSTANT "A" ... 
+</samp> </pre>
+
+	<pre> <code> 
+	: CHAR ( -- char)
+		BL (word) DROP char@
+	; 
+   	</code> </pre>
+
+<a name=".S"></a>
+<h5>ANS 15.6.1.0220 .S</h5> 
+<p>TOOLS</p>
+<p>( -- )</p>
+<p>
+Copy and display the values currently on the data stack. 
+The format of the display is implementation-dependent. 
+</p>
+<p>
+.S may be implemented using pictured numeric output words. 
+Consequently, its use may corrupt the transient region identified by #>.
+</p>
+<p>
+.S is a debugging convenience found on almost all Forth systems. 
+It is universally mentioned in Forth texts. 
+</p>
+<p>
+<br>
+<B>COLDFORTH</B>
+The picture number words are used but the picture number words can be
+nested so .S can be used within <# if you must use <# instead of [#
+</p> 
+
+	<pre> <code>
+	
+	| : _?stack_empty ( -- )    DEPTH 0<  ABORT" Stack empty" ;
+
+    : .S ( ? -- ?)
+    	_?stack_empty DEPTH CR IF
+    		@s  _%data_stack_end @ 4- 4- DO  
+				I @ .h  
+			-4 +LOOP  
+		THEN  
+		."  <-Top " 
+		send 
+    ;
+	' .S (.S) t!
+	</code> </pre>   
+
+<a name="tick"><h5>ANS 6.1.0070 '</h5></a> 
+<p>tick CORE</p> 
+<p>( "&lt;space&gt;name" -- xt )</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space. Find name 
+and return xt, the execution token for name. An ambiguous condition exists if
+name is not found. 
+</p>
+<p>
+When interpreting, ' xyz EXECUTE is equivalent to xyz. 
+</p>
+	
+	<pre> <code>
+	| : ?token  ( flag--)
+		ABORT" Can't use input token." 
+	;
+
+	: ' ( "name" -- xt)  
+		_defined       \ FALSE | xt -1 | xt 1(--	
+		0=            \ true|xt false(--
+		\ ABORT if name not found
+		?token        \ xt(--
+	;
+    </code> </pre>
+
+</body>
+</html>

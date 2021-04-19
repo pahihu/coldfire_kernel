@@ -1,0 +1,345 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+   <pre> <code>
+\ any location within word.
+| CREATE _unknown  ," Source unknown"
+CREATE null 0 t,
+: word_source ( word_addr -- $addr)
+        %input_files @ BEGIN
+                \ at addr(--
+                2DUP DUP @ SWAP 2DUP U&lt; IF
+                        WITHIN IF
+                                NIP
+                                \ this is it
+                                @ _input$_file + @ ?DUP IF
+                                        EXIT
+                                ELSE
+                                        _unknown
+                                        EXIT
+                                THEN
+                        THEN
+                ELSE
+                        DROP
+                        2DROP
+                THEN
+                @
+        DUP 0= UNTIL
+        \ get here no go
+        2DROP
+        _unknown
+;
+
+
+\ Print the words in alpha order.
+
+
+\ First we have to work out how many will match.
+\ Then allocate a buffer big enough to store three pointers per word
+\ datapointer lesspointer greaterpointer.
+\ We could be stingy and use 2bytes for less and greater pointers but why bother.
+\ we return the buffer anyway.
+\ Then we add the words to the structure and print it out.
+\ In other words we create a binary tree and use it.
+
+
+\ describe the binary tree structure
+zero
+| DUP CONSTANT _#pointer_data    CELL+        \ name address
+| DUP CONSTANT _#pointer_less    CELL+        \ a offset
+| DUP CONSTANT _#pointer_greater CELL+        \ a offset
+|     CONSTANT _#pointer_length
+
+
+| $20    CONSTANT _#print_column
+
+\ remember coldforth converts HTML character strings
+
+| CREATE _quote_  ," &amp;quot;"
+| CREATE _lt_     ," &amp;lt;"
+| CREATE _gt_     ," &amp;gt;"
+| CREATE _amp_    ," &amp;amp;"
+
+CREATE _the_char_table_
+     4 t,
+     CHAR &quot; t, _quote_ t,
+     CHAR &lt; t, _lt_ t,
+     CHAR &gt; t, _gt_ t,
+     CHAR &amp; t, _amp_ t,
+
+\ describe the above table.
+| 4 CONSTANT _#char_table_data_
+0
+| DUP CONSTANT _#char_table_char_ CELL +
+| DUP CONSTANT _#char_table_string_ CELL +
+| DUP CONSTANT _#char_table_entry_
+DROP
+
+| : _char_table_ ( char -- addr true|false)
+        _the_char_table_ @ _#char_table_entry_ * zero DO
+                DUP [ _the_char_table_ _#char_table_data_ + ]T LITERAL I + @ = IF
+                        DROP
+                        [ _the_char_table_ _#char_table_data_ + _#char_table_string_ + ]T LITERAL I +
+                        TRUE
+                        UNLOOP EXIT
+                THEN
+        _#char_table_entry_ +LOOP
+        DROP
+        FALSE
+;
+
+| : _html_special_ ( addr -- addr1 n )
+        DUP char@ _char_table_ IF
+                \ add1 addr2(--
+                NIP
+                @ COUNT
+        ELSE
+                \ one character at address
+                1
+        THEN
+;
+\ this is a useful word
+: html_type { ( addr n --) }
+        zero ?DO
+                \ add(--
+                DUP I CHARS + _html_special_  TYPE
+        LOOP
+        DROP
+;
+
+: .head_html ( nfa--)
+	name_count _#name_count_bits AND html_type
+;
+
+: .HEAD ( nfa--)
+	name_count _#name_count_bits AND ~TYPE
+;
+
+\ tab to a mutlipel of n
+: tabs ( n--)
+	character# OVER / 1 + * character#  - zero MAX SPACES  ;
+
+\ if character# is greater than character_max afer adding n a CR
+\ : ?cr  ( n --)
+\ 	character# + character_max @ &lt; not IF CR THEN ;
+
+\ set this to true to get a html printout
+uvariable %words_html
+\ set to true if you want link structure added
+uvariable %word_source_link
+uvariable %word_link
+| : _print_tree ( offset -- )
+	buffer OVER + _#pointer_less + @ ?DUP IF ( sorry more to go )
+        \ offset offset_new (--
+        RECURSE \ when we get back all less than is done
+    THEN
+    \ print ourselves
+    ^C
+    buffer OVER +
+        %words_html @ IF
+                ." &lt;tr&gt;"
+                ." &lt;td&gt;"
+
+                %word_link @ IF
+                         ." &lt;a href=" [CHAR] " EMIT  ." ./"
+                        _#pointer_data + @  DUP .head_html
+                       [CHAR] " EMIT
+                        ." &gt;"
+                        DUP .head_html
+                        ." &lt;/a&gt;"
+
+                ELSE
+                        _#pointer_data + @  DUP .head_html _#print_column tabs SPACE
+                THEN
+                ." &lt;/td&gt;"
+                ." &lt;td&gt;"
+                \ addr(--
+                %word_source_link @ IF
+                        ." &lt;a href=" [CHAR] " EMIT
+                        DUP word_source DUP COUNT TYPE
+                        \ addr_head addr_file(--
+                        ." #"
+                        OVER .head_html
+                        [CHAR] " EMIT
+                        ." &gt;"
+                        COUNT TYPE
+                        ." #"
+                        .head_html
+                        ." &lt;/a&gt;&lt;td&gt;"
+                        CR
+                ELSE
+                        word_source COUNT TYPE
+
+                THEN
+                ." &lt;/td&gt;"
+                ." &lt;/tr&gt;"
+
+         ELSE
+	        _#pointer_data + @  DUP .HEAD
+                _#print_column tabs SPACE
+                word_source COUNT TYPE
+	        CR
+        THEN
+    \ now the greater than connected to this node
+    buffer OVER + _#pointer_greater + @ ?DUP IF ( there is greater stuff)
+         RECURSE \ when we get back all is done
+                                  \ to the word we where less than
+    THEN
+    DROP    \ (--
+;
+</code></pre>
+<a name="(words)"></a>
+<pre><code>
+: (words)     {  variable _%wid  variable _$match1 -- }{
+        variable  _%word_cnt                \ number of words that will be printed.
+        variable  _%buffer_pointer          \ where we put the next lot of data
+                                            \ when loading the buffer.
+        variable  _%current_packet          \ packet we are dealing with when linking
+                                            \ new packet in tree.
+		variable  _%#threads                \ number of threads to deal with
+        }
+
+
+	zero _%word_cnt !                      \ (-- number of words found
+
+
+	 _%wid @
+	[ _#voc_head&gt; _#voc_wid -  ]T LITERAL + @ DUP \ heads heads(--
+	[ _#voc_heads_count  _#voc_heads_base -   ]T LITERAL + @
+	_%#threads !       \ heads (--
+	[ _#voc_heads_data _#voc_heads_base - ]T LITERAL + \ threads(--
+	_%#threads @ zero DO
+		DUP I CELLS + BEGIN                                  \ threads link (--
+			@ ?DUP
+        WHILE
+			DUP lfa&gt;nfa name_count _#name_count_bits AND
+			_$match1 @ COUNT SEARCH IF
+				one  _%word_cnt +!                       \ threads link (--
+			THEN
+			2DROP
+			^C
+		REPEAT
+	LOOP                                                 \ threads (--
+	\ threads(-- We now know how many words we will have to deal with
+	_%word_cnt @ IF
+
+		\ Get and initialize our data area.
+		_%word_cnt @ _#pointer_length * get_buffer       \ get_buffer puts in 'buffer the
+                                                         \ address of an area
+														 \ large enough
+                                                         \ to store the data
+		\ This is the fastest method to initialise
+		buffer _%word_cnt @ _#pointer_length * ERASE
+		zero _%buffer_pointer !
+		\ threads(--
+		_%#threads @ zero DO
+			DUP I CELLS +
+			BEGIN
+				@ ?DUP
+			WHILE
+				\ threads link(--
+				DUP lfa&gt;nfa name_count _#name_count_bits AND _$match1 @ COUNT SEARCH IF                \ word has to be added
+					2DROP
+					DUP lfa&gt;nfa                  \ threads link nfa(--
+					\ remember the less and greater pointers are zero
+					\ because of the erase above.
+					\ we can use the code below for the first time through
+					\ because the _buffer_pointers are zero.
+					DUP  buffer _%buffer_pointer @ + _#pointer_data + ! \ threads link nfa(--
+					zero _%current_packet !
+					name_count _#name_count_bits AND
+					BEGIN
+						2DUP
+						_%current_packet @ buffer + _#pointer_data + @
+						name_count _#name_count_bits AND COMPARE \ threads link addr n flag(--
+						0&lt; IF ( new data is less than current node)
+							_%current_packet @ buffer + _#pointer_less + @ DUP 0= IF
+								\ we can place a pointer here
+								\ threads link nfa zero (--
+								_%buffer_pointer @
+								_%current_packet @ buffer + _#pointer_less + !
+							ELSE
+								\ threads link nfa next_pointer (--
+								DUP  _%current_packet !
+							THEN
+						ELSE  ( new data is higher than current node)
+							_%current_packet @ buffer + _#pointer_greater + @ DUP 0= IF
+								\ we can place a pointer here
+								\ threads link nfa zero (--
+								_%buffer_pointer @
+								_%current_packet @ buffer + _#pointer_greater + !
+							ELSE
+								\ threads link nfa next_pointer (--
+								DUP _%current_packet !
+							THEN
+						THEN
+						^C
+					0= UNTIL   \ threads link nfa (--
+					2DROP
+					( used a buffer position)
+					_#pointer_length _%buffer_pointer +!
+					\ threads link (--
+				ELSE 2DROP THEN
+			REPEAT \ threads list(--
+		LOOP
+		\ (--
+		\ we now have a structure that can be used to print out the names in
+		\ sorted order.
+		\ You trace down less link until zero, print it go back trace down less link
+		\ until zero print it etc.
+		\ as this is best done with recursize code there is a  word _print_tree
+                %words_html @ IF
+	        	." &lt;table&gt;"
+                        ." &lt;tr&gt;&lt;th&gt;Word&lt;/th&gt;&lt;th&gt;Source&lt;/th&gt;&lt;/tr&gt;"
+                ELSE
+                        CR
+                THEN
+		zero _print_tree
+                %words_html @ IF
+	        	." &lt;/table&gt; "
+                ELSE
+                        CR
+                THEN
+
+		send
+		kill_buffer
+	THEN    \ threads(--
+	DROP
+;
+
+</code> </pre>
+<a name="WORDS"></a>
+<h5>ANS 15.6.1.2465 WORDS</h5>
+<p>( -- )</p>
+<p>
+List the definition names in the first word list of the search order.
+The format of the display is implementation-dependent.
+</p>
+<p>
+WORDS does not corrupt the transient region identified by #&gt;.
+</p>
+<pre> <code>
+
+: WORDS       {  ( "name" ) }{
+		variable _$match1  }
+
+		$buffer buffer _$match1 !
+		\ set count of strings to zero
+        BL (word) _$match1 @ $make
+        context @ _$match1 @ (words)
+		kill_buffer
+;
+
+
+</code></pre>
+</body>
+</html>
+

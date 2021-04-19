@@ -1,0 +1,231 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+    <pre> <code>
+   
+    | CREATE (klabels) 0 t,
+    | CREATE no_labels -1 tw,
+    
+	\ we will allow someone who has spent 10 years studying the code to change 
+	\ the keyboard functions
+	dictionary_create keyboard_functions
+		0C dt, 
+		0 dt, 
+		0 dt, 
+		0 dt, 
+		0 dt, 
+		0 dt, 
+		0 dt,
+		0 dt,
+		0 dt,
+    	0 dt,
+    	0 dt,
+    	0 dt,
+    	0 dt,
+
+
+
+</code> </pre>
+<a name="EVALUATE"></a>
+<h5>6.1.1360 EVALUATE</h5>
+<p>
+( i*x c-addr u -- j*x )
+</p>
+<p>
+Save the current input source specification. Store minus-one (-1) in SOURCE-ID
+if it is present. Make the string described by c-addr and u both the
+input source and input buffer, set >IN to zero, and interpret.
+When the parse area is empty, restore the prior input source specification.
+Other stack effects are due to the words EVALUATEd.
+</p>
+
+    <pre> <code>
+
+
+	| : string_set_stream ( addr n --)
+		zero >IN !
+		#TIB !
+		zero %line !
+		%tib !
+		-1 SOURCE-ID !
+	;
+
+
+	: EVALUATE ( ? addr n --?  )
+	        save_stream
+		        string_set_stream
+		        scan
+    	        restore_stream
+	;
+
+        \ <a name="$evaluate"></a>
+        : $evaluate ( addr --)
+		COUNT EVALUATE
+	;
+
+
+	</code> </pre>
+<a name="QUERY"></a>
+<h5>6.2.2040 QUERY</h5>
+<p>CORE EXT</p>
+<p>( -- )</p>
+<p>
+Make the user input device the input source. Receive input into the terminal
+input buffer, replacing any previous contents. Make the result,
+whose address is returned by TIB, the input buffer. Set >IN to zero.
+</p>
+<p>
+Note: This word is obsolescent and is included as a concession to existing
+implementations.
+</p>
+<p>
+<b>COLDFORTH</b> Was never fixed up in the standard, it should have been.
+As defined here you can interpret QUERY from a file ( call it a script file)
+and get one line of user input. Hardly a useless function.
+</b>
+	<pre> <code>
+    : QUERY ( --)
+	save_stream
+			0 SOURCE-ID !
+			#$buffer get_buffer
+			buffer %tib !
+			0 %line !
+			buffer DUP buffer_size  send ACCEPT #TIB ! 0 >IN !
+			scan
+			kill_buffer
+    	restore_stream
+	;
+
+
+
+	\ adds the functions keys
+    | : kquery ( --)
+	save_stream
+			0 SOURCE-ID !
+			#$buffer get_buffer
+			buffer %tib !
+			0 %line !
+			buffer #$buffer ACCEPT #TIB ! 0 >IN !
+			\ put a space between user input and output
+			SPACE
+			scan
+			SOURCE + char@
+			kill_buffer
+    	restore_stream
+		\ temination_code(--
+		\ This adds functions keys
+		seal W@ not IF
+			DUP [ #end_function 1- ]T LITERAL > IF
+    				#end_function -
+					keyboard_functions @ MIN
+					zero MAX
+					1+ 4* keyboard_functions + @execute
+    		ELSE
+				DROP
+			THEN
+    	ELSE
+			DROP
+		THEN
+    ;
+
+	</code> </pre>
+<a name="QUIT"></a>
+<h5>6.1.2050 QUIT</h5>
+<p>CORE</p>
+<p>( -- )  ( R:  i*x -- )</p>
+<p>
+Empty the return stack, store zero in SOURCE-ID if it is present,
+make the user input device the input source, and enter interpretation state.
+Do not display a message. Repeat the following:
+</p>
+<p>
+Accept a line from the input source into the input buffer, set >IN to zero,
+and interpret. Display the implementation-defined system prompt if in
+interpretation state, all processing has been completed, and no ambiguous
+condition exists.
+</p>
+<p>
+<b>COLDFORTH</b> The code below is clearly non standard, but it is clearly the way
+it is going to stay. Emptying the return stack is aborts problem not <i>QUIT</i>s.
+ABORT deals with the restart in all task, <i>QUIT</i>s use is limited to those that
+are set up to use the forth interpretor. If <i>QUIT</i> is used in some other
+context other than after an abort then what advantage is there in not returning
+to the calling code.
+</p>
+<p>
+To ask for data before the first prompt is really not a very sensible thing to do.
+</p>
+
+	<pre> <code>
+	| CREATE 'message 0 t,
+
+    : QUIT  ( --)
+\    	clear
+\		CR
+\   	seal W@ IF
+\   		no_labels LABELS
+\			no_labels SHIFT_LABELS
+\    	ELSE
+\    		(klabels) @ LABELS
+\			no_labels SHIFT_LABELS
+\    	THEN
+\    	'message @execute
+    	BEGIN
+			CR
+            		.prompt
+			send
+\			QUERY
+			kquery
+        AGAIN
+    ;   RECOVER
+
+
+
+
+
+    </code> </pre>
+<a name="("></a>
+<h5>ANS 6.1.0080 (</h5>
+<p>paren CORE</p>
+
+<p>Compilation: Perform the execution semantics given below.</p>
+
+<p>Execution: ( "ccc&lt;paren&gt;" -- )</p>
+
+<p>Parse ccc delimited by ) (right parenthesis). ( is an immediate word.</p>
+<p>
+The number of characters in ccc may be zero to the number of
+characters in the parse area.</p>
+<p>
+When parsing from a text file, if the end of the parse area is reached
+before a right parenthesis is found, refill the input buffer from the
+next line of the file, set >IN to zero, and resume parsing, repeating
+this process until either a right parenthesis is found or the end
+of the file is reached.
+</p>
+<pre> <samp>
+Typical use: ... ( ccc) ...
+</samp> </pre>
+
+
+	<pre> <code>
+  	: (  ( -- )
+		BEGIN
+			[CHAR] ) (word) 2DROP
+			TIB  >IN @ + 1- C@ [CHAR] ) = IF
+				EXIT
+			THEN
+			REFILL 0=
+		UNTIL
+	;  IMMEDIATE
+	</code> </pre>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a name="[if]_[then]_[else]"></a>
+<h3> [IF] [THEN] [ELSE] </h3>
+<a HREF="./license.html">license</a>
+<p>
+Software that runs in several system environments often contains some 
+source code that is environmentally dependent. Conditional compilation - 
+the selective inclusion or exclusion of portions of the source code 
+at compile time - is one technique that is often used to assist in the 
+maintenance of such source code. 
+</p> <p>
+Conditional compilation is sometimes done with smart comments - 
+definitions that either skip or do not skip the remainder of the 
+line based on some test.
+For example: 
+</p> <p>
+If 16-Bit? contains TRUE, lines preceded by 16BIT\
+will be skipped. Otherwise, they will not be skipped.
+</p>
+<pre> <samp> 
+ram_variable 16-BIT?
+
+: 16BIT\  ( -- )  16-BIT? @  IF  POSTPONE \  THEN ;  IMMEDIATE
+</samp> </pre>
+<p> 
+This technique works on a line by line basis, and is good for short, 
+isolated variant code sequences. 
+</p> <p> 
+More complicated conditional compilation problems suggest a nestable method 
+that can encompass more than one source line at a time. The words
+included in the ANS Forth optional Programming tools extensions word 
+set are useful for this purpose.
+</p>
+<a name="[ELSE]"></a>
+<h5>ANS 15.6.2.2531 [ELSE]</h5>
+<p>
+Compilation: Perform the execution semantics given below.
+</p>
+<p>
+Execution: ( "< spaces >name" ... -- )
+</p>
+<p>
+Skipping leading spaces, parse and discard space-delimited words from 
+the parse area, including nested occurrences of [IF] ... [THEN] and [IF] ...
+[ELSE] ... [THEN], until the word [THEN] has been parsed and discarded. 
+If the parse area becomes exhausted, it is refilled as with REFILL. [ELSE] is
+an immediate word. 
+<pre> <samp>
+Typical use: ... flag [IF] ... [ELSE] ... [THEN] ... 
+</pre> </samp>
+
+
+	<pre> <code>
+	: [ELSE]  ( -- )
+		1 BEGIN                                   \ level(--
+			BEGIN
+				BL (word) DUP  
+			WHILE                                 \ level adr len(--
+				2DUP  S" [IF]"  COMPARE 0=
+				IF                                \ level adr len(--
+					2DROP 1+                      \ level'(--
+				ELSE                              \ level adr len(--
+					2DUP  S" [ELSE]"
+					COMPARE 0= IF                 \ level adr len(--
+						2DROP 1- DUP IF            
+							1+ 
+						THEN      \ level'
+					 ELSE                         \ level adr len(--
+						S" [THEN]"  COMPARE 0= IF \ level(--
+							1-                    \ level'(--
+						THEN
+					THEN
+				THEN ?DUP 0=  IF 
+					EXIT 
+				THEN                              \ level'(--
+		  REPEAT  2DROP                           \ level(--
+		REFILL 0=  UNTIL                          \ level(--
+		DROP
+	;  IMMEDIATE
+	</code> </pre>
+
+
+<a name="[IF]"></a>
+<h5>ANS 15.6.2.2532 [IF]</h5> 
+<p>
+Compilation: Perform the execution semantics given below.
+</p>
+<p>
+Execution: ( flag | flag "< spaces >name" ... -- )
+</p>
+<p>
+If flag is true, do nothing. Otherwise, skipping leading spaces, parse 
+and discard space-delimited words from the parse area, including 
+nested occurrences of [IF] ... [THEN] and [IF] ... [ELSE] ... [THEN], 
+until either the word [ELSE] or the word [THEN] has been parsed and 
+discarded. If the parse area becomes exhausted, it is refilled as 
+with REFILL. [IF] is an immediate word. 
+</p>
+<p>  
+An ambiguous condition exists if [IF] is POSTPONEd, or if the end of 
+the input buffer is reached and cannot be refilled before the terminating 
+[ELSE] or [THEN] is parsed. 
+</p>
+<pre> <samp>
+Typical use: ... flag [IF] ... [ELSE] ... [THEN] ... 
+</samp> </pre>
+	
+	
+	<pre> <code>
+	: [IF]  ( flag -- )
+		0= IF [COMPILE] [ELSE] THEN 
+	;  IMMEDIATE
+	</code> </pre>
+
+<a name="[THEN]"></a>
+<h5>ANS 15.6.2.2533 [THEN]</h5> 
+<p>
+Compilation: Perform the execution semantics given below.
+</p>
+<p>
+Execution: ( -- )
+</p>
+<p>
+Does nothing. [THEN] is an immediate word. 
+</p>
+<pre> <samp> 
+Typical use: ... flag [IF] ... [ELSE] ... [THEN] ... 
+</samp> </pre>
+	
+	<pre> <code>
+	: [THEN]
+	; IMMEDIATE
+	</code> </pre>
+</body>
+</html>

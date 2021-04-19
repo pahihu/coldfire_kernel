@@ -1,0 +1,610 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>Generic words to setup ip ddtagrams</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0768.html">RFC768 UDP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0791.html">RFC791 IP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 Host requirments</a><br>
+<p>
+We are not a router, we are a host that supports routing because
+we need it with our system. We do not support source routing, I am told it is a
+security risk ( how is beyond me). If however this is the general
+feeling then obviously it's support in the long term is
+questionable. From where I sit it is just extra code that will not be used.
+Source routing with the systems controlled by this code is questionable.
+</p>
+<p>
+The interfaces only allows datagrams with certain options in. See
+<dt> <a HREF="./interface_nice#options">options</a>
+</p>
+
+<pre> <code>
+	\ don't copy byte option
+	| : _option_no_byte  ( from to -- from+ to+ )
+		2DROP
+		one zero
+	;
+
+	\ copy byte option
+	| : _option_byte ( from to -- from+ to+ )
+		SWAP B@ SWAP B!
+		one one
+	;
+
+	| : _option_copy { ( from to -- from+ to+ ) }{
+		variable %length
+		zero
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DROP
+		}
+
+		OVER _#len + B@ DUP %length !
+		MOVE
+		%length @ DUP
+	;
+
+	| : _option_no_copy { ( from to -- from+ to+ ) }{
+		zero
+		DUP CONSTANT _#code  1+
+		DUP CONSTANT _#len   1+
+		DROP
+		}
+		OVER _#len + B@
+		zero
+	;
+
+
+
+	\ the default action is to skip the options using the
+	\ count that follows the code. We only play with the
+	\ options that need to be played with.
+	| CREATE _options_table
+			0B tw,
+			' _option_no_byte t,  \ 0  this will never get called as top loop deals with
+			' _option_byte t,     \ 1  nop
+			' _option_no_copy t,  \ 2
+			' _option_no_copy t,  \ 3
+			' _option_copy t,     \ 4  timestamp
+			' _option_no_copy t,  \ 5
+			' _option_no_copy t,  \ 6
+			' _option_copy t,     \ 7  record route
+			' _option_no_copy t,  \ 8
+			' _option_copy    t,  \ 9
+			' _option_no_copy  t, \ 0A
+
+
+|		: _option_vector  ( from to  -- from+ to+ )
+			OVER B@ $1F AND _options_table vector
+		;
+
+
+	|	CREATE $option_fault ," Options incorrect"
+
+	|	: _copy_options { variable %pepin variable %pepout ( -- count $ ) }{
+			variable %from_addr
+			variable %to_addr
+			variable %header_max }
+			%pepin @  _pep>ip_hlen ip_options = IF
+				\ no options
+				zero zero EXIT
+			THEN
+
+			%pepin @  [ ep_data ip_options + ]T LITERAL + %from_addr !
+			%pepout @ [ ep_data ip_options + ]T LITERAL + DUP %to_addr !
+			%pepin @ ep_data + %pepin @  _pep>ip_hlen + %header_max !
+
+			\ we have options
+
+			BEGIN
+				%from_addr @ B@ not IF
+					\ end of option list
+					%to_addr @ SWAP -
+
+					\ round to 32 bit boundry
+					\ remember header length has to be in 32 bit words
+					DUP 03 AND IF
+						0 %to_addr @ B!
+						4 OVER 3 AND - +
+					THEN
+					zero
+					EXIT
+				THEN
+
+				%from_addr @ %to_addr @ _option_vector
+
+				%to_addr +!
+				%from_addr +!
+				%from_addr @ %header_max @ > IF
+					\ if the option list is shit this will happen
+					DROP zero $option_fault
+					EXIT
+				THEN
+			\ allowed to end at header.
+			%from_addr @ %header_max = UNTIL
+			%to_addr @ SWAP -
+
+			\ round to 32 bit boundry
+			\ remember header length has to be in 32 bit words
+			DUP 03 AND IF
+				\ end of option list
+				\ in output
+				0 %to_addr @ B!
+				4 OVER 3 AND - +
+			THEN
+			\ things seem ok
+			zero
+		;
+		</code> </pre>
+<p>
+This should be protocol specific, but I know of at least
+one stack that is broken and expects it to be machine specific.
+This is the number used by UDP and TCP to id a datagram. Assume it is being updated
+at all priorities and protect it when in use.
+</p>
+<p>
+Doing it this way also means we can have a common
+routine for generating ip headers. That is not a bad thing.
+</p>
+	<pre> <code>
+	| ram_variable _%datagram_number
+
+	\ only done so access is locked, if you need to get one from
+	\ locked code do it yourself.
+	| : get_datagram_id ( -- num )
+		_lock_word
+		_%datagram_number @
+		1 _%datagram_number +!
+		_unlock_word
+	;
+
+		</code> </pre>
+<h4> Support routines</h4>
+		<pre> <code>
+		\ setup empty ip datagram
+		: setup_ip { ( source destination ) variable %option_count variable %pep --  }
+			\ erase the header
+			%pep @ [ ep_data ip_options + ]T LITERAL  ERASE
+			\ -- ep_link         CELL+    \ link field for queues
+			\ -- ep_back         CELL+    \ just in case we want to put in double link list
+			\ -- ep_error        CELL+    \ address of error message or zero if none.
+			\ -- ep_proto_obj    CELL+    \ so the interface can calculate the proto  checksum
+                        \ -- ep_nif_received CELL+    \ The nif this packet received on
+			\ -- ep_nexthop      CELL+    \ ip address
+			\ --ep_len          CELL+    \ length in total including this header.
+			\ the length is set to that required for a null ip packet; that is a header
+			[ ep_data ip_options + ]T LITERAL %option_count @ + %pep @ ep_len + !
+			\ --ep_dst          HW_AMAX +
+			\ --ep_src          HW_AMAX +
+			\ --ep_type         2 +
+			\ an ip packet
+			\ this is the stucture we are using; has to be
+			EPT_IP %pep @ ep_type + W!
+			\ ep_data                  \ data in the packet
+			\ ---------------------------------------------
+			\ --ip_verlen      1+        \ IP version & header length (in longs)
+			\ We are creating a datagram with no options.
+			ip_options %option_count @ + 2 RSHIFT
+			[ IP_VERSION 4 LSHIFT ]T LITERAL OR
+			%pep @ [ ep_data ip_verlen + ]T LITERAL + B!
+			\ --ip_tos         1+        \ type of service
+			\ --ip_len         2+        \ total packet length (in octets), including ip header
+			ip_options %option_count @ +
+			%pep @ [ ep_data ip_len + ]T LITERAL + W!
+			\ --ip_id          2+        \ datagram id
+			\ standard requires you to use protocol, datagram number, source
+			\ and destination number to defrag. I happen to know at least one stack
+			\ forgot to include the proto number. The standard requires you to send
+			\ out what will work and accept what won't, if it can be made to work.
+			\ So we had better have a common datagram number for all protocols.
+			get_datagram_id
+			%pep @ [ ep_data ip_id + ]T LITERAL + W!
+			\ --ip_fragoff     2+        \ fragment offset (in 8-octet's)
+			\ well at this stage she isn't fragmented
+			\ --ip_ttl         1+        \ time to live, in gateway hops
+                        \ set by the routing task, if time is not less than following value.
+			\ In other words let the routing task set this.
+			RTM_INF %pep @ [ ep_data ip_ttl + ]T LITERAL + B!
+			\ --ip_proto       1+        \ IP protocol
+                        \ --ip_cksum       2+        \ header checksum
+			\ --ip_src         IP_ALEN + \ IP address of source
+			SWAP
+			%pep @ [ ep_data ip_src + ]T LITERAL + !
+			\ --ip_dst         IP_ALEN + \ IP address of destination
+			%pep @ [ ep_data ip_dst + ]T LITERAL + !
+
+			\ set up base address and count for ip data area
+			%pep @ [ ep_data ip_options + ]T LITERAL + %option_count @ +
+			%pep @ ep_ipdata + !
+			0 %pep @ ep_ipcount + !
+		;
+
+
+		| : add_to_ip { ( n ) variable %pep -- }
+			\ the length is set to that required for a null ip packet; that is a header
+			DUP %pep @ ep_len + +!
+			%pep @ [ ep_data ip_len + ]T LITERAL + DUP W@
+			\ n addr n1 (--
+			jump + SWAP W!
+			\ n (--
+			%pep @ ep_ipcount + +!
+		;
+
+		| : add_to_ip_head  ( n addr (--)
+			2DUP add_to_ip
+			\ subtract from ip data count
+			OVER NEGATE OVER ep_ipcount + +!
+			\ add to ip data pointer
+			2DUP ep_ipdata + +!
+
+			[ ep_data ip_verlen + ]T LITERAL + DUP B@ 0F AND 2 LSHIFT
+			\ n addr n(--
+			ROT +
+			DUP #max_ip_header > ABORT" header overflow"
+			2 RSHIFT
+			IP_VERSION 4 LSHIFT OR
+			SWAP B!
+		;
+
+		| : setup_pep_from_pep { variable %pep_in variable %pep_out --  }{
+			variable %tos
+			variable %proto }
+
+			\ just incase we are rewriting the in datagram
+			%pep_in @ [ ep_data ip_tos + ]T LITERAL + B@ %tos !
+			%pep_in @ [ ep_data ip_proto + ]T LITERAL + B@ %proto !
+
+			\ set up the options area
+			\ has to be done before head just in case we are rewriting
+			%pep_in @ %pep_out @ _copy_options ?DUP IF
+				\ I think this is the best thing to do
+				DROP
+				\ the option length is zero so the crud will simple not be returned.
+				\ we probable should send a error message.
+			THEN
+			\ n(--
+
+			%pep_in @ [ ep_data ip_dst + ]T LITERAL + @
+			%pep_in @ [ ep_data ip_src + ]T LITERAL + @
+			ROT %pep_out @ setup_ip
+
+			\ --ip_tos         1+        \ type of service
+			\ If the user wants a special type of service he must alter the
+			\ pep head himself. We use the same service as used by incoming datagram
+			%tos @ %pep_out @ [ ep_data ip_tos + ]T LITERAL + B!
+			%proto @ %pep_out @ [ ep_data ip_proto + ]T LITERAL + B!
+
+		;
+			</code> </pre>
+<h4>ip_queue</h4>
+<p>
+All ip packets from all sources are queued onto one queue. The queue is priority based.
+This has several consequences.
+</p>
+<ul>
+<li>High priority packets come first.</li>
+<li>No source has priority over another, first in best dressed.</li>
+<li>Routed task control is simple, it waits for a packet on the ip queue</li>
+<li>Conceptually simple to follow. Ip sources have to get their packets to the ip queue
+	getting them from there to whereever they go is another problem</li>
+</ul>
+<p>
+Having said this, protocols use queue_ip_wait to queue there ip packets. Interfaces use
+queue_ip_force. So incoming packets get priority over locally generated packets.
+</p>
+<p>
+We have to discuss the queue depth. The aim of this exercise is to send 1 meg pictures.
+The BVP can send pictures in 8k packets, which it should do. ( It will be interesting to
+see if the NT can defragment such a packet, it should, if not the picture will have to
+be repackaged by a BCM task). That give 128 packets a picture. THE BCM will have to fragment
+each packet for ethernet, each packet will be sent as 7 fragments. Giving 380 ethernet packets.
+</p>
+<p>
+However we could use the queue_ip_wait word, not overrun the system.
+As the BVP uses large anounts of memory for picture storege
+and doesn't have several megabytes available for communication ( the BCM does) this is
+the solution we will use.
+</p>
+	<pre> <code>
+	\ keep track of the packets discarded and why,
+	| ram_variable %ip_queue_discards
+	| ram_variable %ip_length_error
+	| ram_variable %ip_header_length_error
+	| ram_variable %ip_version_error
+	| ram_variable %ip_queued
+        | ram_variable %icmp_error_massage
+        | ram_variable %routing_error
+        | ram_variable %fragment_timeout
+        | ram_variable %routing_timeout
+
+        : .ip_stats
+                CR ." queued    : " %ip_queued @ .h
+                CR ." discards  : " %ip_queue_discards @      .h ." err_len    : " %ip_length_error @ .h
+                CR ." err_hd_len: " %ip_header_length_error @ .h ." err_version: " %ip_version_error @ .h
+                CR ." icmp_error: " %icmp_error_massage @ .h     ." route error: " %routing_error @ .h
+                CR ." frag tmout: " %fragment_timeout @ .h       ." rout tmout : " %routing_timeout @ .h
+        ;
+
+	| 8 CONSTANT _#ip_priority_levels
+        \ make the ip queue rather deep; it should never be a limit we reach
+	| $200 CONSTANT _#ip_queue_depth
+
+	| _#ip_queue_depth _#ip_priority_levels net_queue _ip_queue
+	</code> </pre>
+<p>
+And this is why just testing the speed of an IP stack tells you so little. You can speed it
+up by skipping the checks.
+</p>
+<p>
+Anyone that assumes data comeing from anywhere in the world is structured correctly has rocks
+in their head.
+</p>
+	<pre> <code>
+        \ may not exit to multitasker
+	| : queue_ip { variable %pep -- }
+		\ make sure version is ok
+		%pep @ [ ep_data ip_verlen + ]T LITERAL + B@  $F0 AND [ IP_VERSION 4 LSHIFT ]T LITERAL <> IF
+			%pep @ kill_free_buffer
+			1 %ip_version_error +!
+			EXIT
+		THEN
+		\ header isn't longer than datgram
+		%pep @ _pep>ip_plen  %pep @ _pep>ip_hlen < IF \ >
+			%pep @ kill_free_buffer
+			%ip_header_length_error +!
+			EXIT
+		THEN
+		\ datagram isn't longer than packet
+		%pep @ ep_len + @ ep_data - %pep @ _pep>ip_plen  < IF \ >
+			%pep @ kill_free_buffer
+			1 %ip_length_error +!
+			EXIT
+		THEN
+		xclock+ @ %pep @ ep_xclock+ + !
+		%pep @ _ip_queue OVER _pep>ip_priority enqueue_try IF
+			%pep @ kill_free_buffer
+			1 %ip_queue_discards +!
+			EXIT
+		THEN
+		1 %ip_queued +!
+	;
+
+	| : queue_ip_wait { variable %pep -- }
+		\ make sure version is ok
+		%pep @ [ ep_data ip_verlen + ]T LITERAL + B@ $F0 AND [ IP_VERSION 4 LSHIFT ]T LITERAL <> IF
+			%pep @ kill_free_buffer
+			1 %ip_version_error +!
+			EXIT
+		THEN
+		\ header isn't longer than datgram
+		%pep @ _pep>ip_plen  %pep @ _pep>ip_hlen < IF \ >
+			%pep @ kill_free_buffer
+			%ip_header_length_error +!
+			EXIT
+		THEN
+		\ datgram isn't longer than packet
+		%pep @ ep_len + @ ep_data - %pep @ _pep>ip_plen  < IF \ >
+			%pep @ kill_free_buffer
+			1 %ip_length_error +!
+			EXIT
+		THEN
+		xclock+ @ %pep @ ep_xclock+ + !
+		%pep @ _ip_queue %pep @ _pep>ip_priority enqueue_wait
+	;
+
+	\ If you have to queue incoming packets directly this is the one to use.
+	| : queue_ip_force { variable %pep -- }
+		\ make sure version is ok
+		%pep @ [ ep_data ip_verlen + ]T LITERAL + B@ $F0 AND  [ IP_VERSION 4 LSHIFT ]T LITERAL <> IF
+			%pep @ kill_free_buffer
+			1 %ip_version_error +!
+			EXIT
+		THEN
+		\ header isn't longer than datgram
+		%pep @ _pep>ip_plen  %pep @ _pep>ip_hlen < IF \ >
+			%pep @ kill_free_buffer
+			%ip_header_length_error +!
+			EXIT
+		THEN
+		\ datgram isn't longer than packet
+		%pep @ ep_len + @ ep_data - %pep @ _pep>ip_plen  < IF \ >
+			%pep @ kill_free_buffer
+			1 %ip_length_error +!
+			EXIT
+		THEN
+		xclock+ @ %pep @ ep_xclock+ + !
+		%pep @ _ip_queue %pep @ _pep>ip_priority enqueue_force
+	;
+	</code> </pre>
+<p>
+Many situations require the return of a error datagram. This word makes the reply
+according to the supplied code and destroys the datagram in error.
+</p>
+<p>
+We are not allowed to generate an error about an error; for the ICMP datgram groupings see:
+</p>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 section 3.2.2</a><br>
+	<pre> <code>
+	| 0   CONSTANT ICT_ECHORP	  \ Echo reply
+	| 3   CONSTANT ICT_DESTUR	  \ Destination unreachable
+	| 4   CONSTANT ICT_SRCQ	  \ Source quench
+	| 5   CONSTANT ICT_REDIRECT \ Redirect message type
+	| 8   CONSTANT ICT_ECHORQ	  \ Echo request
+	| #11 CONSTANT ICT_TIMEX	  \ Time exceeded
+	| #12 CONSTANT ICT_PARAMP   \ Parameter Problem
+	| #13 CONSTANT ICT_TIMERQ	  \ Timestamp request
+	| #14 CONSTANT ICT_TIMERP	  \ Timestamp reply
+	| #15 CONSTANT ICT_INFORQ   \ Information request
+	| #16 CONSTANT ICT_INFORP	  \ Information reply
+	| #17 CONSTANT ICT_MASKRQ   \ Mask request
+	| #18 CONSTANT ICT_MASKRP   \ Mask reply
+	| #19 CONSTANT ICT_MAX_TYPE \ Error
+
+	| CREATE _responce_table
+		0 t,  \ ICT_ECHORP Echo reply, server is not interested
+		0 t,
+		0 t,
+		0 t,  \ 3 ICT_DESTUR Destination unreachable
+		0 t,  \ 4 ICT_SRCQ Source quench
+		0 t,  \ 5 ICT_REDIRECT Redirect message type
+		0 t,
+		0 t,
+		-1 t, \ 8 ICT_ECHORQ Echo request
+		0 t,
+		0 t,
+		0 t,  \ 11 ICT_TIMEX Time exceeded
+		0 t,  \ 12 ICT_PARAMP Parameter Problem
+		-1 t, \ 13 ICT_TIMERQ Timestamp request
+		0 t,  \ 14 ICT_TIMERP Timestamp reply ( server will not be interested)
+		\ Information request/reply should not be implemented
+		\ see <a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 section 3.2.2.6</a>
+		0 t, \ 15 ICT_INFORQ Information request
+		0 t,  \ 16 ICT_INFORP Information reply
+		-1 t, \ 17 ICT_MASKRQ Mask request
+		0 t,  \ 18 ICT_MASKRP Mask reply
+		0 t,  \ 19 ICT_MAX_TYPE Error
+
+		</code> </pre>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 section 3.2.2</a><br>
+<p>
+         An ICMP error message MUST NOT be sent as the result of
+         receiving:
+</p>
+<ul>
+<li>an ICMP error message</li>
+<li>a datagram destined to an IP broadcast or IP multicast address,</li>
+<li>a datagram sent as a link-layer broadcast</li>
+<li>a non-initial fragment</li>
+<li>a datagram whose source address does not define a single
+host -- e.g., a zero address, a loopback address, a
+broadcast address, a multicast address, or a Class E
+address.</li>
+</ul>
+	<pre> <code>
+
+	| : icmp_error_ok { variable %pep -- ( flag ) }
+		\ if ep_error is set we are reporting an error to an application
+		\ just give up
+		%pep @ ep_error + @ IF
+			FALSE
+			EXIT
+		THEN
+		\ if it's not the first fragment don't report
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_FRAGOFF AND IF
+			FALSE
+			EXIT
+		THEN
+		%pep @ [ ep_data ip_proto + ]T LITERAL + B@ IPT_ICMP = IF
+			\ we do not generate errors about datagrams that are in errors.
+			\ unfortunatly not all icmp messages are errors
+			%pep @ ep_ipdata + @ ic_type + B@ ICT_MAX_TYPE MIN CELLS
+			_responce_table + @
+			EXIT
+		THEN
+		\ don't respond if received from a broadcast
+		%pep @ ep_nif_received + @ ?DUP IF
+			:@netmask
+			\ mask(--
+			%pep @ [ ep_data ip_src + ]T LITERAL + @ OR -1 = IF
+				FALSE
+				EXIT
+			THEN
+		THEN
+		\ ran out of excuses; lets send it
+		TRUE
+	;
+
+
+
+	\ the two following words use this to generate the two case.
+	\ supplied destination used as source; or source is interface
+	\ packet is sent out on.
+	| : _(icmp_error) {
+			variable %src
+			variable %type
+			variable %code
+			variable %icdata
+			variable %pep_in -- }{
+			variable %pep_out
+			variable %ipdata_out
+			}
+
+		[ ep_data ip_options + ic_data +  _#error_header_return_length + ]T LITERAL
+		get_free_buffer %pep_out !
+
+		%src @
+		%pep_in @ [ ep_data ip_src + ]T LITERAL + @
+		zero %pep_out @ setup_ip
+
+		%pep_out @ ep_ipdata + @ %ipdata_out !
+
+		_%icmp_object @ %pep_out @ ep_proto_obj + !
+		IPT_ICMP %pep_out @ [ ep_data ip_proto + ]T LITERAL + B!
+		%ipdata_out @ ic_data ERASE
+		\ set up the ic header
+		%type @ %ipdata_out @ ic_type + B!
+		%code @ %ipdata_out @ ic_code + B!
+		%icdata @ %ipdata_out @ ic_length + !
+
+		\ copy error datagram header to error message
+		%pep_in @ ep_data + %ipdata_out @ ic_data +
+		\ if the datagram data area is less than _#error_header_return_length
+		\ (which can happen) we return all the datagram and no more.
+		_#error_header_return_length %pep_in @ _pep>ip_plen MIN DUP >R MOVE
+
+		\ add ic_error message length to datagram
+		R> ic_data + %pep_out @ add_to_ip
+		\ if we are overloaded the packet is just dropped.
+		%pep_out @ queue_ip
+	;
+
+	\ packet has been routed to us; source address is the incoming
+	\ destination.
+	| : icmp_error_message { variable %code variable %pep -- }
+                1 %icmp_error_massage +!
+		%pep @ icmp_error_ok IF
+			%pep @ [ ep_data ip_dst + ]T LITERAL + @ ICT_DESTUR %code @ zero %pep @
+			_(icmp_error)
+		THEN
+		%pep @ kill_free_buffer
+	;
+
+	\ we are trying to route packet; source address is dependent on interface
+	\ packet is sent out over
+	| : icmp_routing_error { variable %code variable %pep -- }
+                1 %routing_error +!
+                %pep @ icmp_error_ok IF
+			zero ICT_DESTUR %code @ zero %pep @ _(icmp_error)
+		THEN
+		%pep @ kill_free_buffer
+	;
+
+	\ ##### make sure these get used where appropiate
+	| : fragment_timeout_message { variable %pep -- }
+                1 %fragment_timeout +!
+		%pep @ icmp_error_ok IF
+			%pep @ [ ep_data ip_dst + ]T LITERAL + @
+			ICT_TIMEX ICC_FTIMEX zero %pep @ _(icmp_error)
+		THEN
+		%pep @ kill_free_buffer
+	;
+
+	| : routing_timeout { variable %pep -- }
+                1 %routing_timeout +!
+		%pep @ icmp_error_ok IF
+			zero
+			ICT_TIMEX ICC_TIMEX zero %pep @ _(icmp_error)
+		THEN
+		%pep @ kill_free_buffer
+	;
+
+	</code> </pre>
+</body>
+</html>

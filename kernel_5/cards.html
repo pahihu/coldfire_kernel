@@ -1,0 +1,104 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+
+        \ <a name="bus_reset"></a>
+        : bus_reset ( --)
+		_breg_SS0 C@
+		[ _#SS0_enable_rti -1 XOR ]T LITERAL AND
+		_breg_SS0 C!
+	;
+
+        \ <a name="bus_enable"></a>
+        : bus_enable ( --)
+		_breg_SS0 C@
+		_#SS0_enable_rti OR
+		_breg_SS0 C!
+	;
+
+
+        \ <a name=" %cards"></a>
+        ram_create %cards
+        #slot_num  8 *  ram_allot
+
+    \ <a name="#card_present"></a>
+    0   DUP CONSTANT    #card_present   2+
+
+    \ <a name="#card_code"></a>
+    	DUP CONSTANT    #card_code      2+
+
+    \ <a name="#card_base"></a>
+    	DUP CONSTANT    #card_base      4+
+
+    \ <a name="#card_length"></a>
+    		CONSTANT    #card_length
+
+
+
+
+	( fault exception handleing routine ) HEX
+        ( used when testing for cards in rack)
+        | ram_variable _%bus_error
+        | interrupt: ?cards_exception
+                zero  _breg_int_reset_bus_error C!
+		TRUE _%bus_error !
+        ;interrupt
+
+	| 0C000 CONSTANT _#id_offset
+	| 10000 CONSTANT _#card_address_space
+
+	| CODE interruptable_W@ ( addr -- value)
+		S )+ A0 MOV
+		0 # D0 MOV
+		\ get all writes out of the way
+		NOP
+		A0 ) D0 W. MOV
+		NOP
+		D0 S -) MOV
+	NEXT
+
+        \ take head use not recommended
+        | : check_bus_address { ( addr --) }{
+                variable %old_exception }
+                0 _%bus_error !
+                $1F @exception %old_exception !
+                ?cards_exception 1F EXCEPTION
+                \ operation may or may not succeed.
+                @s >R
+                interruptable_W@
+                R> !s DROP
+                %old_exception @ $1F EXCEPTION
+                _%bus_error @
+        ;
+
+	: ?cards { }{
+		variable _%cards_array
+		variable _%card
+		}
+		%cards _%cards_array !
+		_#RTI1000_bus_base _%card !
+		#slot_num zero DO
+			_%card @ _#id_offset +
+                        check_bus_address not IF
+				TRUE _%cards_array @ #card_present + W!
+                                _%card @ _#id_offset +  W@ _%cards_array @ #card_code + W!
+				_%card @ _%cards_array @ #card_base + !
+			THEN
+			#card_length _%cards_array +!
+    		_#card_address_space _%card +!
+		LOOP
+	;
+
+	</code> </pre>
+
+</body>
+</html>

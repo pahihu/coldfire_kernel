@@ -1,0 +1,109 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<a name="CREATE"></a>
+<h5>6.1.1000 CREATE</h5> 
+<p>CORE</p> 
+<p>( "name" -- )</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space. 
+Create a definition for name with the execution semantics defined
+below. If the data-space pointer is not aligned, reserve enough data 
+space to align it. The new data-space pointer defines name's
+data field. CREATE does not allocate data space in name's data field. 
+</p>
+<p>name Execution: ( -- a-addr )</p>
+<p>
+a-addr is the address of name's data field. The execution semantics of
+name may be extended by using DOES>.
+</p>
+	<pre> <code> 
+	: CREATE  ( "name" -- ) 
+    	'create @execute 
+    ;
+    </code> </pre>
+	<pre> <code>
+	include ./base_altering.html
+	</code> </pre>
+<a name="CATCH"></a>
+<h5>ANS 9.6.1.0875 CATCH</h5> 
+<p>EXCEPTION</p> 
+<p>( i*x xt -- j*x 0 | i*x n )</p>
+<p>
+Push an exception frame on the exception stack and then execute the 
+execution token xt (as with EXECUTE) in such a way that control can 
+be transferred to a point just after CATCH if THROW is executed 
+during the execution of xt.
+</p> 
+<p>
+If the execution of xt completes normally (i.e., the exception 
+frame pushed by this CATCH is not popped by an execution of THROW) 
+pop the exception frame and return zero on top of the data stack, 
+above whatever stack items would have been returned by xt EXECUTE. 
+Otherwise, the remainder of the execution semantics are given by THROW. 
+</p>
+
+	<pre> <code>
+	CODE CATCH       ( cfa -- n )
+		S )+ W MOV
+		OP R -) MOV         \ object pointer must be restored.
+		LP R -) MOV         \ local pointer has to be restored.
+		S R -) MOV          \ stackpointer
+		handler U) R -) MOV \ hander 
+		R handler U) MOV    \ save so throw
+		W ) JSR
+		R )+ handler U) MOV
+		3 CELLS # R ADD
+		0 # S -) MOV
+	NEXT
+	</code> </pre>
+<a name="DEPTH"></a>
+<h5>6.1.1200 DEPTH</h5> 
+<p>CORE</p> 
+<p>( -- +n )</p>
+<p>
++n is the number of single-cell values contained in the data stack 
+before +n was placed on the stack.
+</p> 
+	<pre> <code>
+	: DEPTH ( -- n)
+		_%data_stack_end @ @s - 4/ 2-
+	;
+	</code> </pre>
+<a name="TIB"></a>
+<h5>6.2.2290 TIB</h5> 
+<p>t-i-b CORE EXT</p> 
+<p>( -- c-addr )</p>
+<p>
+c-addr is the address of the terminal input buffer. 
+</p>
+<p>
+Note: This word is obsolescent and is included as a concession to 
+existing implementations. 
+</p>
+<p>
+<b>COLDFORTH</b> The TIB returns the base address of the 
+input buffer no matter what the source.
+</p>
+	<pre> <code>
+	: TIB ( --addr )
+		%tib @ 
+	;
+
+
+
+    	\ Given a user_variable reference to the current running task
+	\ convert to a reference in the other task.
+	: other_task  ( user_variable user_area -- user_new)
+		SWAP user_base - +
+	;
+	</code> </pre>
+</body>
+</html>

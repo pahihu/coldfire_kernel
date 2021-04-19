@@ -1,0 +1,318 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+
+<h5> _empty_lists </h5>
+<a HREF="./license.html">license</a>
+<p>
+Used in empty to remove items in the about to be zapped dictionary from
+lists.
+</p>
+	<pre> <code>
+	??HEX
+	| : _single_unlink_next ( link --)
+		DUP @ @  \ link ((link)) (--
+		SWAP !   \ (--
+	;
+
+
+	| : _double_unlink_next ( link --)
+		@ unlink_double
+	;
+
+
+	| : _unknown_code  ( link --)
+		DROP TRUE ABORT" link list head contains an Unknown code"
+	;
+
+	0 _#single_linked_list ??=
+	1 _#double_linked_list ??=
+
+
+        | : empty_single_list { variable _%new_'h_task  variable %head -- }
+                        %head @
+                        BEGIN
+                                @ DUP _%new_'h_task @ _'h_task @ WITHIN
+			WHILE
+                                @
+			REPEAT
+			%head @ !
+        ;
+
+        | : _empty_input_files ( new_h --)
+                %input_files empty_single_list
+        ;
+
+        | CREATE _unlink_table
+		3 tw,
+		' _single_unlink_next t,
+		' _double_unlink_next t,
+		' _unknown_code t,
+
+
+	| : _unlink_next ( addr head --)
+		[ _#lh_link_type _#lh_init_link - ]T LITERAL + @ _unlink_table vector
+	;
+
+
+
+
+	\ Any list item between _%new_'h_task and _'h_task has to be removed
+	\ A new list_head cannot be created in the application, this structure
+	\ belongs to the kernel.
+	| : _empty_lists { variable _%new_'h_task -- }
+		_lists_head
+		BEGIN
+			@ DUP													\ link+1 link+1 (--
+		WHILE
+			DUP [ _#lh_dict_pointer _#lh_init_link - ]T LITERAL +   \ link list (--
+			BEGIN
+				DUP @                                               \ link list list+1(--
+			WHILE
+				DUP @ _%new_'h_task @ _'h_task @ WITHIN             \ link list flag (--
+				IF
+					DUP jump                                        \ link list list link(--
+					_unlink_next
+				ELSE
+					\ only move on if there was not an unlink.
+					@                                               \ link next (--
+				THEN
+			REPEAT
+			DROP											        \ link (--
+		REPEAT                                                      \ link (--
+		DROP                                                        \ (--
+	;
+
+
+
+
+	| : _empty_wordlists  { variable _%'h_new -- }
+		_vocabulary_head @
+		BEGIN
+			\ list(--
+			DUP
+		WHILE
+			DUP [ _#voc_head> _#voc_link - ]T LITERAL + @  \ list voc_heads(--
+			\ list voc_heads(--
+			DUP [ _#voc_heads_count _#voc_heads_base -  ]T LITERAL + @ zero DO
+				\ list voc_heads (--in do loop
+				DUP I CELLS + _#voc_heads_data +
+				\ list voc_heads thread (--
+				\ single linked list we have to keep pointer so we
+				\ can unlink
+				BEGIN
+					DUP @
+				WHILE
+					\ list voc_heads thread(--
+					DUP @ _%'h_new  @ _'h_task @ WITHIN IF \ this word has to be zapped
+						\ list voc_heads thread(--found word to zap
+						DUP
+						_single_unlink_next
+						\ Don't move to next pointer as the new next
+						\ may also require unlinking
+					ELSE
+						\ If the next is not to be unlinked then move on
+						@
+					THEN
+				REPEAT
+				DROP   \ list voc_heads(--
+			LOOP
+			DROP \ list (--
+			@
+		REPEAT
+		DROP \ (--
+	;
+
+	\ describe the data area of marker
+    zero
+	\ A work marked in the operator task cannot be used in another task.
+	\ Remember that all other tasks start with the operator word set.
+	| DUP CONSTANT  _#marked_user_base        CELL+
+	| DUP CONSTANT  _#marked_'h               CELL+
+	| DUP CONSTANT  _#marked_'r               CELL+
+	| DUP CONSTANT  _#marked_'f               CELL+
+	| DUP CONSTANT  _#marked_'p               CELL+
+
+#BVP5552 #BVP5551 + #BVP6551 + #BVP6552 + [IF]
+	| DUP CONSTANT  _#marked_'s               CELL+
+	| DUP CONSTANT  _#marked_'b               CELL+
+[THEN]
+
+	| DUP CONSTANT  _#marked_'u               CELL+
+
+	| DUP CONSTANT  _#marked_create           CELL+
+
+	| DUP CONSTANT  _#marked_ahere            CELL+
+	| DUP CONSTANT  _#marked_aw!              CELL+
+	| DUP CONSTANT  _#marked_aw@              CELL+
+	| DUP CONSTANT  _#marked_agap             CELL+
+	| DUP CONSTANT  _#marked_%cpu             CELL+
+        | DUP CONSTANT  _#marked_save_input$      CELL+
+        | DUP CONSTANT  _#marked_restore_input$   CELL+
+
+	| DUP CONSTANT  _#marked_current          _#current_vocs CELLS +
+	| DUP CONSTANT  _#marked_searched_number  CELL+
+
+	DROP
+	</code> </pre>
+<a name="MARKER"></a>
+<h5>ANS 6.2.1850 MARKER</h5>
+<p>( " =spaces=name" -- )</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space.
+Create a definition for name with the execution semantics defined below.
+</p>
+<p>name Execution: ( -- )</p>
+<p>
+Restore all dictionary allocation and search order pointers to the state
+they had just prior to the definition of name. Remove the definition of
+name and all subsequent definitions. Restoration of any structures
+still existing that could refer to deleted definitions or deallocated
+data space is not necessarily provided.
+No other contextual information such as numeric base is affected.
+</p>
+	<pre> <code>
+	: MARKER ( --)
+		HERE
+		CREATE
+		user_base ,
+		,   \ value obtained before CREATE, so child will disappear when executed.
+		'ram @ ,
+		'fast @ ,
+		'port @ ,
+
+[ #BVP5552 #BVP5551 + [IF] ]T
+		'static @ ,
+[ [THEN] ]T
+
+[ #BVP5552 #BVP5551 + #BVP6551 + #BVP6552 + [IF] ]T
+		'bank @ ,
+[ [THEN] ]T
+
+		'user @ ,
+
+		'create @ ,
+
+		\ assembler allocators
+		'ahere @  ,
+		'aw!   @  ,
+		'aw@   @  ,
+		'agap  @  ,
+		%cpu   @ ,
+                (save_input$) @ ,
+                (restore_input$) @ ,
+
+		\ save current
+		current _#current_vocs zero DO
+			DUP @ , CELL+
+		LOOP
+		DROP
+		\ save context
+		GET-ORDER \ widn ... wid1 n(--
+		DUP , zero DO , LOOP
+
+		DOES>
+ 			{ variable _%pfa -- }
+
+			\ Only use if  marker for current task
+			 _%pfa @ _#marked_user_base + @ user_base =  IF
+				_%pfa @ _#marked_'h + @                 \ 'h(--about to  empty lists
+				_empty_lists
+
+                                _%pfa @ _#marked_'h + @                 \
+                                _empty_input_files
+
+				\ This is done after _empty_lists as that operation may
+				\ have got rid of some vocabularies and why do unneeded work
+				_%pfa @ _#marked_'h + @                 \  'h(--about to empty worlists
+				_empty_wordlists
+
+				_%pfa @ _#marked_'h + @                 \  'h(--about to empty worlists
+				_empty_input_files
+
+
+
+				\ reclaim used memory areas
+				_%pfa @ _#marked_'r + @ DUP 'ram @ OVER - \ rbase rbase rnumber(--about to erase ram
+				ERASE   \ marked_'r(--
+				'ram !
+
+				_%pfa @ _#marked_'f + @ DUP 'fast @ OVER - \ fbase fbase fnumber(--about to erase mram
+				ERASE   \ marked_'f(--
+				'fast !
+
+[ #BVP5552  #BVP5551 + [IF] ]T
+				_%pfa @ _#marked_'s + @ DUP 'static @ OVER - \ sbase sbase snumber(--about to erase mram
+				ERASE   \ marked_'s(--
+				'static !
+[ [THEN] ]T
+
+
+[ #BVP5552  #BVP5551 + #BVP6551 + #BVP6552 + [IF] ]T
+				_%pfa @ _#marked_'b + @ DUP 'bank @ OVER - \ sbase sbase snumber(--about to erase mram
+				ERASE   \ marked_'b(--
+				'bank !
+
+[ [THEN] ]T
+
+
+				_%pfa @ _#marked_'p + @ DUP 'port @ OVER - \ mbase mbase mnumber(--about to erase mram
+				ERASE   \ marked_'p(--
+				'port !
+
+				\ user is kept as an offset.
+				_%pfa @ _#marked_'u + @ DUP user_base +
+				'user  @ user_base + OVER -  \ uoffset ubase unumber(--about to erase u area
+				ERASE   \ marked_'u(--
+				'user !
+				_%pfa @ _#marked_create + @ 'create !
+
+				\ (-- about to fix up search order"
+				\ restore current to value before marker
+
+				_%pfa @ _#marked_current +
+				_#current_vocs zero DO
+					DUP @ current I CELLS + ! CELL+
+				LOOP
+				DROP
+
+				\ Restore search order prior to marker
+				_%pfa @ _#marked_searched_number + DUP @  \ base number(--
+				>R                                        \ base(--
+				R@ CELLS +                                \ end (--
+				R@ zero DO
+					DUP @ SWAP                            \ ... wid end(--
+					cell-
+				LOOP
+				DROP                                      \ widn ... wid1(--
+				R>
+				\  widn .... wid1 n(-- search order"
+				SET-ORDER
+				\ assembler
+				_%pfa @ _#marked_ahere + @  'ahere !
+				_%pfa @ _#marked_aw! + @ 'aw! !
+				_%pfa @ _#marked_aw@  + @ 'aw@ !
+				_%pfa @ _#marked_agap  + @  'agap !
+				_%pfa @ _#marked_%cpu  + @  %cpu !
+
+				_%pfa @ _#marked_save_input$  + @  (save_input$) !
+				_%pfa @ _#marked_restore_input$  + @  (restore_input$) !
+
+                                \ erase dictionary last as it destoys marker data.
+				_%pfa @ _#marked_'h + @ DUP _'h_task @ OVER  - \ hbase hbase hnumber(--about to erase dict
+				ERASE   \ marked_'h(--
+				_'h_task !
+
+			THEN
+	;
+ 	</code> </pre>
+
+</body>
+</html>

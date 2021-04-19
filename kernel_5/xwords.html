@@ -1,0 +1,483 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a name="multitasking"></a>
+<h3>Multitasking</h3>
+<a HREF="./license.html">license</a>
+<p>
+How tasks are dealt with sets the scene for the whole system.
+Tasks can be schedule by multiple interrupt sources. Each interrupt
+source is allocated a different priority. All interrupt sources have
+a higher priority than the clock interrupt. The clock interrupt
+is divided into 3 sub priorities. The lowest priority consumes all
+spare cpu time.
+Within a priority task sheduling is on a co-oporaive basis. That is 
+the task gets the CPU until it releases it. Task switching within
+a level is done at FORTH word boundries making in necessary to
+save the FORTH enviroment only.
+</p>
+<p>
+Switching between levels is done on a pre-emtive basis, the full machine
+state is saved with no reference to what is actually running.
+</p>
+<p>
+See <a HREF="./real_time_clock.html">real_time_clock.html</a>
+</p>
+	<pre> <code>
+	ram_variable %ticks
+	ram_variable xclock+
+	ram_variable xclock-
+	ram_variable %today
+
+	\ set to try when ip gets time from gateway
+	\ the system looks after this
+	ram_variable %ticks_set
+
+
+	    
+	ram_variable XAGAIN           ( Time to restart level 0)
+  	</code> </pre>
+
+<a name="xbase"></a>
+<h5>xbase</h5>
+<p>
+	The clock interrupt interrupts the system every 10d msec. The interrupt does not raise
+	the task priority level unless the number of interrupts equals the value stored
+	in xbase. For example if xbase is set to 10d the clock will raise the 
+	priority level every 100d msecs.
+</p>
+	<pre> <code>
+    dictionary_variable  xbase
+	01 xbase dt!
+
+
+	</code> </pre>
+
+<a name="sleep/wake"></a>
+<h5>sleep wake</h5>
+<p>
+The following are constants stored in the tasks STATUS to control
+the state of the task. 
+</p>
+<p>
+29 Nov 2001 They are offsets into a switch vector table. The vectors include a level_switch code.
+The level_switch code is only used by teh system. See the file traps.html
+</p>
+	<pre> <code>
+	0
+	DUP CONSTANT sleep           CELL+   \ ignore task
+	DUP CONSTANT wake            CELL+   \ active task
+	DUP CONSTANT test            CELL+   \ look at task activation time
+        DUP CONSTANT level_switch    CELL+   \
+	DROP
+	</code> </pre>
+<p>
+ The multitasker has several list. List zero has the highest priority, list
+ on the next highest and so on. _xlevel points to the list currently running.
+</p>
+	<pre> <code>
+	ram_variable _xlevel
+	</code> </pre>
+<p>
+The priority to be executed when multitasker to be restated,
+this is looked at when ever the
+the processor state moves from supervisor to user.
+</p>
+	<pre> <code>
+	ram_variable _xlevel_next
+	</code> </pre>
+
+<a name="xnext"></a>
+<h5>xnext (suspend a task)</h5>
+<p>
+We may not have protected memory, but boy we have fast task switches.
+This word saves the forth enviroment on the parameter stack, saves the current 
+stack pointer into the user area and returns to the multitasker. 
+</p>
+
+	<pre> <code>
+	CODE xnext ( --)
+		LP R -) MOV  \ local pointer
+		OP R -) MOV  \ object pointer
+		S R -) MOV
+                NOP          \ so at least the error is displayed with the correct U
+panic" 02 trap about to call " panic_cr
+                02 # TRAP
+panic" 02 trap called " panic_cr
+                R )+ S MOV
+                R )+ OP MOV
+                R )+ LP MOV
+        NEXT
+	</code> </pre>
+<h5>stop</h5>
+<p>
+Brings things to an end
+</p>
+	<pre> <code>
+	CODE stop
+		00 # TRAP
+	NEXT
+	</code> </pre>
+
+<a name="xpause"></a>
+<h5>xpause</h5>
+<p>   
+Exit to the multitasker, the task will be restarted when things 
+are looked at again.
+If the task is on #clock_low this will be as soon 
+as load permits. If the task is on a higher level this will be 
+when the hardware restarts that level. #clock_medium
+and #task_level_clock_high are looked at every 100 msecs. 
+This can be altered by storing a  different value into 
+<a HREF="./Kernel.html#xbase">xbase</a>. The interrupt tasks 
+are only looked at when a interrrupt occures and the interrupt 
+raises the priority level.
+</p>
+
+	<pre> <code>
+	: status ( -- addr)
+		@u activation_status
+	;
+
+	: xpause  ( --)
+		wake status W!   
+		xnext
+	;
+	</code> </pre>
+
+<a name="xoff"></a>
+<h5>xoff</h5>
+<p>
+Use if the task is to remain but not started again. If the task is to be restarted
+by another task use xsleep.
+</p>
+
+	<pre> <code>
+	: xoff ( --)    
+		sleep status W!
+		xnext
+	;
+	</code> </pre>
+
+
+<a name="xsleep"></a>
+<h5>xsleep</h5>
+<p>
+	We will not be actived unless someone else wakes us up.
+	Used in the form.
+</p>
+	<samp>: yyyy  ..... xsleep start_something_that_can_wake_us  xpause ... ;</samp>
+<p>
+We do it this ways so we won't miss an event. If we start the external
+activity before setting the STATUS area the external event could set it before
+we do and the event will be missed forever.
+</p>
+
+
+	<pre> <code>
+	: xsleep ( --)  
+		sleep status W!
+	;
+	</code> </pre>
+<a name="xwake"><h5>xwake</h5></a>
+
+<p>
+Use is pretty limited, used in type routines when tranferring rotating buffer characters
+to input buffer, without echo.
+</p>
+	<pre> <code>
+	: xwake ( --)
+		wake status W!
+	;
+	</code> </pre>    
+
+
+<a name="xtest"></a>
+<h5>xtest</h5>
+<p>
+Set the STATUS to test, used in the form:
+</p>
+<samp>: xxxx  .....  xtest n xwait ...... ;</samp>
+<p> 
+Or to be more specific.
+</p>
+<samp> : yyyy  ..... xtest start_something_that_can_wake_us n xwait ... ; </samp>
+<p>
+See xtimeout? for futher clarification.
+</p>
+
+	<pre> <code>
+	: xtest  ( --)  
+		test user_base activation_status W! 
+	;
+	</code> </pre>
+
+
+<a name="xwait"></a>
+<h5>xwait</h5>
+<p>
+Take the current time, add the requested time delay 
+and use that as the reactivation time. Go to sleep.
+</p>
+
+
+	<pre> <code>
+	: xwait  ( n --)
+		xclock+ @ + 
+		_task_restart_time !
+		xnext
+	;
+	</code> </pre>
+
+
+<a name="xcycle"></a>
+<h5>xcycle</h5>
+<p>
+The time is added to the last <samp>_task_restart_time</samp>
+and used as the next <samp>_task_restart_time</samp>. If the number
+of executions is really important then use this. It's 
+use is not recommented as you gain very little ( you still
+have to use the actual delay for time calculations) and the 
+risks are great ( you can lose a years time and be locked
+out for a year).
+</p>
+
+
+	<pre> <code>
+	: xcycle ( n --)
+		_task_restart_time @ +
+		_task_restart_time !
+		xnext
+	;
+	</code> </pre>
+
+<a name="_xtimeout"></a>
+<h5>xtimeout?</h5>
+<p>
+When you do an <samp>xwait</samp> for an external event, the external event changes
+the STATUS to wake when the event times out. If the event didn't
+time out the staus area will still be set to <samp>_test</samp>. Obviously this
+word was to be used before the STATUS is altered by other multitasker
+words.
+</p>
+<p>
+flag is true if timeout
+</p>
+
+	<pre> <code>
+	: xtimeout? ( --flag )
+		status W@ test =
+	;
+
+	</code> </pre>
+
+<a name="facility_variables"></a>
+<h3>Facility variables</h3>
+<p>
+Being a multitasking system, several tasks may want to use the same resources at the
+same time. Whan an item is claimed it is linked into _facility_head so that the
+items can be realeased if the task aborts.A task claims a facility by having
+it's user_base address written to the facility variable.
+</p>
+<p>
+All the facilites used by a task are link back to this head.
+</p>
+
+
+	<pre> <code>
+		uvariable	_facility_head
+	</code> </pre>
+
+
+<a name="grab"></a>
+<h5>grab</h5>
+<p>
+Try and claim the facility without returning to the multitasker,
+if you fail return to the multitasker and try again later.
+</p>
+
+
+	<pre> <code>
+
+	: grab ( addr --)
+		BEGIN
+                        DUP @ status = IF	\ addr (--
+				DROP
+				EXIT
+			THEN
+			_lock_word
+			DUP @
+			0= IF		\ addr (--
+			    status OVER !
+				\ link into facility list so about can release
+				_unlock_word
+				_#facility_link + _facility_head link_double
+				EXIT
+			THEN
+			_unlock_word
+			xpause
+		AGAIN
+	;
+	</code> </pre>
+		
+
+<a name="get"></a>
+<h5>get</h5>
+<p>
+get is a little kinder to the system than grab, it returns to the multitasker
+and then tries to get the facility when next started.
+</p>
+
+
+	<pre> <code>
+	: get ( addr --)
+		xpause 
+		grab 
+	;
+
+	</code> </pre>
+
+<a name="release"></a>
+<h5>release</h5>
+<p>
+There is code that has assumed that release doesn't 
+exit to the multitasker ( grab is used directly after).
+We assume tasks don't release if they don't claim. 
+</p>
+	
+	<pre> <code>
+	\ There is code that depends on this definition of release
+	\ if you change bump the version number
+	01 CONSTANT _#release_version
+	: release ( addr --)
+		DUP @ 0<> IF
+			DUP _#facility_link + unlink_double
+			zero SWAP !
+		ELSE
+			DROP
+		THEN
+	;
+	</code> </pre>
+<p>
+Dual port must use activation status, further the claim is not linked in
+has dual port stuctures are locked in history.
+</p>	
+	
+	<pre> <code>  
+	\ Non standard
+	\
+	\ There is code that has assumed that release doesn't 
+	\ exit to the multitasker ( grab is used directly after)
+	\ ##### get rid of when dual port stuff is sorted out
+	: port_release ( addr --)
+		DUP @ status = IF
+			zero SWAP !
+		ELSE
+			DROP
+		THEN
+	;
+	</code> </pre>
+
+<a name="xgrab"></a>
+<h5>xgrab</h5>
+<p>
+Try and get the facility for a little while and if not successful give up.
+A flag is returned to indicate the outcome.
+</p>
+
+	<pre> <code>
+	| CREATE $can't_claim ," Can't claim facility."
+
+	\ n1 is the time to wait
+	\ addr is the facility address
+	\ $ is a error string
+	: xgrab ( n1 addr --0|$)
+		BEGIN
+			OVER 0>
+		WHILE
+			_lock_word
+			DUP @ 0= IF		\ count addr (--
+			    status OVER !
+				\ link into facility list so about can release
+				_unlock_word
+				_#facility_link + _facility_head link_double
+				DROP
+				FALSE
+				EXIT
+			THEN
+			_unlock_word
+			DUP @ status = IF	\ count addr (--
+				2DROP
+				FALSE
+				EXIT
+			THEN
+			xtest 0A xwait
+			SWAP 0A - SWAP
+		REPEAT
+		\ get to here and the game is lost
+		2DROP
+		$can't_claim
+	;
+
+	</code> </pre>
+<p>
+Areas claimed in dual port must use ther activation status. Further they are not locked
+in as dual port structures are locked in history.
+</p>
+	<pre> <code>
+	\ n1 is the time to wait
+	\ addr is the facility address
+	: port_xgrab ( n1 addr --false|$)
+		BEGIN
+			OVER 0>
+		WHILE
+			_lock_word
+			DUP @ 0= IF		\ count addr (--
+			    status SWAP !
+				_unlock_word
+				DROP
+				FALSE
+				EXIT
+			THEN
+			_unlock_word
+			DUP @ status = IF	\ count addr (--
+				2DROP
+				FALSE
+				EXIT
+			THEN
+			xtest 0A xwait
+			SWAP 0A - SWAP
+		REPEAT
+		\ get to here and the game is lost
+		2DROP
+		$can't_claim
+	;
+	</code> </pre>
+        <p>
+        Code to release all facilities on an abort. This should not
+        be needed as catch should be used to tidy up.
+        </p>
+        <pre><code>
+        | : release_facilities ( --)
+                BEGIN
+                        _facility_head @  ?DUP
+                WHILE
+                        _#facility_link - release
+                REPEAT
+        ;
+
+        </code></pre>
+
+
+</body>
+</html>
+
+
+

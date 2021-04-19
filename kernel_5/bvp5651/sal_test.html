@@ -1,0 +1,156 @@
+<html>
+<head>
+<title>bvp5601_sal_test.html</title>
+<META NAME="Author" CONTENT="Sal">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+
+
+<pre> <code> 
+
+ include ./bvp5601_fpga_constants.html \ <a HREF="./bvp5601_fpga_constants.html">link</a>
+
+</code> </pre>
+
+
+
+
+<pre> <code> 
+
+
+ram_variable %rti_finished
+
+
+ram_variable %image_areas _prom_kernel_size ram_allot
+%image_areas CONSTANT %TEST_IMAGE
+\ This area is read/write
+%image_areas _#kernel_size + CONSTANT %NEW_DICTIONARY_IMAGE 
+
+
+
+\ interrupt service routine for stage 1
+    interrupt: new_int5_service_stage1
+			panic_cr panic" Interrupt 5 " 
+			_#Status_Register @
+			DUP
+			_#Camera_Interrupt AND IF
+				0  _#Reset_int5_Camera !
+				panic" from Camera. " panic_cr
+			THEN
+			_#CPU2_Interrup AND IF
+				0  _#Reset_int5_CPU2 !
+				panic" from CPU2. "
+			_#Send_int5_CPU1 W@
+			panic_cr panic" The interrupt code is: " 
+			.panic panic_cr
+			THEN
+	;interrupt
+
+
+\ interrupt service routine for stage 2
+    interrupt: new_int5_service_stage2
+			panic_cr panic" Interrupt 5 from CPU1." 
+			0  _#Reset_int5_CPU1 W!
+			_#CODE_int5_CPU2 W@
+			panic_cr panic" The interrupt code is: " 
+			.panic panic_cr
+	;interrupt
+
+\ interrupt5 activation for stage 1
+	: install_int5_stage1
+		new_int5_service_stage1 $1D EXCEPTION
+	;
+
+\ interrupt5 activation for stage 2
+	: install_int5_stage2
+		new_int5_service_stage2 $1D EXCEPTION
+	;
+
+
+
+\ generating interrupt5 from stage 1 to stage 2
+	: send_int5_stage1 ( int_code -- )
+		_#CODE_int5_CPU2 W!
+		0 _#Send_int5_CPU2 W!
+	;
+
+\ generating interrupt5 from stage 2 to stage 1
+	: send_int5_stage2 ( int_code -- )
+		_#Send_int5_CPU1 W!
+	;
+
+
+
+
+\   Command 2 
+\ activating camera - 0=inactive    1= active
+	: camera_active ( activation_code -- )
+		_#Camera_picture_active !
+	;
+
+\ activating camera interrupts - 0=inactive    1= active
+	: camera_interrupt_active ( activation_code -- )
+		_#Picture_interrupt_active !
+	;
+
+\ RGB to HSL active - 0=inactive    1= active
+	: RGB_HSL_active ( activation_code -- )
+		_#RGB_HSL_active !
+	;
+
+\ NIR Alignment active - 0=inactive    1= active
+	: NIR_Alignment_active ( activation_code -- )
+		_#NIR_Alighnment_active !
+	;
+
+	: display_image ( image_number -- )
+
+	;
+
+	: display_colour ( image_number -- )
+
+	;
+
+	: display_nir ( image_number -- )
+
+	;
+
+	: display_line ( image_number line_number -- )
+ 	\	0 %rti_finished ! 	 \ reset the flag
+	\	3   rti_command          \ command_code  = 3 ( transfer 32 bit data )
+\
+\		DUP rti_param1           \ write the transfer length ( a size -- a size )
+\		0   rti_param2           \ 
+\		0 SLOT>BASE SWAP MOVE	 \ write the data  ( a size -- )
+\		rti_interrupt_and_wait
+	;
+
+
+
+\
+\	: rti_transfer_long ( a size -- )
+\ 		0 %rti_finished ! 	 \ reset the flag
+\		3   rti_command          \ command_code  = 3 ( transfer 32 bit data )
+\
+\		DUP rti_param1           \ write the transfer length ( a size -- a size )
+\		0   rti_param2           \ 
+\		0 SLOT>BASE SWAP MOVE	 \ write the data  ( a size -- )
+\		rti_interrupt_and_wait
+\	;
+
+
+
+\	." About to install interrupt 5 for stage 1 " CR 
+\	install_int5_stage1
+
+
+</code> </pre>
+</body>
+</html>
+
+

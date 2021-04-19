@@ -1,0 +1,56 @@
+<html>
+<head>
+<title>fpga_constants.html</title>
+<META NAME="Author" CONTENT="Sal,Gary">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" Use this file to generate COLDFORTH and Application">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+
+
+<pre> <code> 
+
+
+
+\ constants for FPGA access
+$30000000 CONSTANT _#FPGA_BASE_ADDRESS  		\ CS3 (32 bits access)
+$40000000 CONSTANT _#FPGA_BASE_DUAL_ADDRESS  		\ CS2 (16/32 bits access)
+$40f00000 CONSTANT _#FPGA_BASE_VGA_ADDRESS  		\ CS2 (16/32 bits access)
+
+$40800000 CONSTANT _#FPGA_DUAL_START
+$40EFFFFF CONSTANT _#FPGA_DUAL_END
+
+\ FPGA commands relative to _#FPGA_BASE_Picture_ADDRESS($30000000)
+_#FPGA_BASE_ADDRESS    		CONSTANT _#Control_Command0  	\ Control Commands
+_#FPGA_BASE_ADDRESS  $400000 +  CONSTANT _#Control_Command  	\ Control Commands
+_#FPGA_BASE_ADDRESS  $800000 +  CONSTANT _#Init_Mem_Command  	\ Init Data commands
+_#FPGA_BASE_ADDRESS  $C00000 +  CONSTANT _#P_DRAM_Command  	\ Picture commands
+_#FPGA_BASE_ADDRESS  $1000000 + CONSTANT _#Interrupt_Command  	\ Interrupt to other CPU, both CPU's
+
+
+\ Control commands relative to _#Control_Command
+
+\ Reset interrupt from other coldfire CPU ( both CPU's )
+_#Control_Command0  CONSTANT  _#Reset_cpu_int5
+\ Reset interrupt from camera
+_#Control_Command0  $40000 + CONSTANT  _#Reset_int5_Camera
+
+
+\ Status Register
+\ #define Status_Register
+_#FPGA_BASE_ADDRESS $1000   + CONSTANT  _#Status_Register
+\ #define bit masks
+$01             CONSTANT _#Picture_Transfer_in_Progress
+$02             CONSTANT _#N_DRAM_Transfer_in_Progress
+$04             CONSTANT _#CPU_Interrupt
+$08             CONSTANT _#Camera_Interrupt
+$0FF000000      CONSTANT _#Version_number
+
+</code> </pre>
+</body>
+</html>
+
+

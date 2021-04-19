@@ -1,0 +1,37 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    3C CONSTANT _#heading_max
+
+	dictionary_create    config
+    \ <a name="$heading"></a>
+    dictionary_create    $heading    _#heading_max dictionary_allot
+    \ <a name="$password"></a>
+    dictionary_create    $password   20 dictionary_allot
+
+
+	\ A horrible horrible kludge to set the target dictionary area as our
+	\ compile area
+	HERE                 \ Save so we can undo
+    set_dictionary       \ Set W0 to base of area and allow for different areas
+	config org           \ move to out base
+	HERE                 \ for our calculations
+		," RTI1000 "
+		HERE OVER - $password CONFIG - SWAP - ALLOT
+		," cvs"
+	DROP ( start address of area)
+	set_prom
+	org
+	</code> </pre>
+
+</body>
+</html>

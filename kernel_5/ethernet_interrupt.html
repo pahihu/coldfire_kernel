@@ -1,0 +1,73 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    ( bit position interrupt status reg)
+    ram_variable ))typed
+    ram_variable ))expect
+    ram_variable ))rega
+    ram_variable ))interrupt
+    
+    
+    
+    
+    
+    ( ethernet) HEX
+    01 CONSTANT #ether_reg0   00 CONSTANT #ether_reg10
+    03 CONSTANT #ether_reg1
+    05 CONSTANT #ether_reg2   04 CONSTANT #ether_reg32
+    07 CONSTANT #ether_reg3
+    09 CONSTANT #ether_reg4   08 CONSTANT #ether_reg54
+    0B CONSTANT #ether_reg5
+    0D CONSTANT #ether_reg6   0C CONSTANT #ether_reg76
+    0F CONSTANT #ether_reg7
+    
+    
+    
+    
+    
+    
+    
+    ( ethernet)   HEX
+    11 CONSTANT #ether_reg8   10 CONSTANT #ether_reg98
+    13 CONSTANT #ether_reg9
+    15 CONSTANT #ether_regA   14 CONSTANT #ether_regBA
+    17 CONSTANT #ether_regB
+    19 CONSTANT #ether_regC   18 CONSTANT #ether_regDC
+    1B CONSTANT #ether_regD
+    1D CONSTANT #ether_regE   1C CONSTANT #ether_regFE
+    1F CONSTANT #ether_regF
+    
+    
+    
+    
+    
+    
+    
+
+     #ether_port 4 * CONSTANT #ether_pubase
+    
+    
+    ( default ETHER routines)
+    : {ETYPE}  ( putable --)
+		DROP
+	;
+    : {EEXPECT} ( putable --)
+		DROP 
+	;     
+	</code> </pre>
+    
+    
+    
+      
+    
+</body>
+</html>

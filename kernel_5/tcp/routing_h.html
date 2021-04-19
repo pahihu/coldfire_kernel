@@ -1,0 +1,70 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h5>route.h - RTFREE</h5>
+<a HREF="./license.html">license</a>
+<pre> <code>
+\ how routing table entries were generate, high numbers will have precedence over
+\ over lower
+| 0 CONSTANT RT_STATIC
+| 1 CONSTANT RT_ICC_REDIRECT
+
+\ Routing Table Entries:
+\ struct route
+	zero
+| 	DUP CONSTANT rt_link      CELL+
+|	DUP CONSTANT rt_link_back CELL+
+|	DUP CONSTANT rt_net       IP_ALEN +      \ network address for this route
+|	DUP CONSTANT rt_mask      IP_ALEN +      \ mask for this route
+|	DUP CONSTANT rt_sort      CELL+          \ number of bits set in mask
+|	DUP CONSTANT rt_how       CELL+          \ how the key was added
+|	DUP CONSTANT rt_tos       CELL+          \ type of service offered by route
+|	DUP CONSTANT rt_gw        IP_ALEN +      \ next IP hop
+|	DUP CONSTANT rt_metric    CELL+          \ distance metric
+|	DUP CONSTANT rt_interface CELL+          \ interface object to send data our on
+|	DUP CONSTANT rt_ttl       CELL+          \ time to live
+|	DUP CONSTANT rt_forever   CELL+          \ set to true if route to last forever
+|	DUP CONSTANT rt_broadcast CELL+          \ true if local machine to treat as a broadcast
+|	DUP CONSTANT rt_refcnt    CELL+          \ current reference count
+|	DUP CONSTANT rt_usecnt    CELL+          \ total use count so far
+|		CONSTANT rt_length
+
+| ip_anyaddr  CONSTANT RT_DEFAULT              \ the default net
+| ip_loopback CONSTANT RT_LOOPBACK             \ the loopback net
+
+\ must be a binary power
+| $80         CONSTANT RT_TSIZE               \ these are pointers to lists
+RT_TSIZE 1 - CELLS
+|             CONSTANT RT_TSIZE_MASK           \ mask used to select rttable offset
+| #999        CONSTANT RT_INF                  \ no timeout for this route
+
+| 01          CONSTANT #ttl_local_net
+</code> </pre>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1700.html">RFC1700 page 63</a>
+<p>
+The current recommended default time to live (TTL) for the
+Internet Protocol (IP) [45,105] is 64.
+</p>
+<pre> <code>
+| $41         CONSTANT RTM_INF                 \ an infinite metric
+
+| #120 #1sec * CONSTANT RIPZTIME
+
+ram_variable %rttable RT_TSIZE CELLS ram_allot
+
+\ points to a route packet.
+ram_variable %default_route
+
+
+
+	</code> </pre>
+
+</body>
+</html>

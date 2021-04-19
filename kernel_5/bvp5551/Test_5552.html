@@ -1,0 +1,33 @@
+<html>
+<head>
+<title>Test 555 S2</title>
+<META NAME="Author" CONTENT="GB">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" Test Words for 555 stage 2">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+
+<h4>Interface version and function</h4>
+<p>
+Read the function and version number from backplane dual port memory
+from S2. See Test555_from_bcm file for the equivalent function from
+the BCM.
+</p>
+<pre> <code>
+: read_version ( -- version )
+	[ PORT P._interface_version + ] LITERAL W@ ;
+
+: read_id ( -- function_id )
+	[ PORT P._function_id + ] LITERAL W@ ;
+
+
+: .id ( -- )
+	read_version cr ." interface_version - " .
+	read_id cr ." function_id - " . send
+;
+
+</code> </pre>
+</body>
+</html>

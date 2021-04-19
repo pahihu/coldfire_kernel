@@ -1,0 +1,1218 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth block_editor">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+        <a name="$extend"></a>
+        <p>
+	Some string manipulation words
+	</p>
+	<pre> <code>
+	: $extend ( $  %offset -- )
+		\ we may have to pad the string with spaces
+		OVER COUNT NIP -
+		\ $ num_spaces(--
+		zero MAX
+		zero ?DO
+			DUP COUNT TUCK +
+			\ $ count end(--
+			BL SWAP char!
+			1+ OVER $count!
+		LOOP
+		DROP
+	;
+        \ <a name="$insert"></a>
+	\ this may not be as fast as possible, but it has no stack errors either.
+	\ In fact this is a good axample as to why stack variables are a good thing.
+	: $insert  { ( $ins $string ) variable _%offset variable _%max ( --) }{
+		variable _%insert_length
+		}
+		\ make sure string extends to the offset
+		DUP _%offset @ $extend
+		\ $ins $string(--
+		\ now work out the insert length
+		\ if we overflow we insert but we don't insert all
+		OVER COUNT NIP
+		\ $ins $string num_insert(--
+		_%max @
+		\ $ins $string num_insert max(--
+		jump COUNT NIP -
+		\ $ins $string num_insert num_can (--
+		MIN
+		_%insert_length !
+		DUP COUNT DROP
+		\ $ins $string add(--
+		_%offset @ +
+		\ $ins $string source(--
+		OVER COUNT DROP
+		_%offset @ +
+		_%insert_length @ +
+		\ $ins $string source destination(--
+		jump COUNT NIP _%offset @ -
+		MOVE
+		\ $ins $string(--
+		SWAP COUNT DROP
+		\ $string source(--
+		OVER COUNT DROP _%offset @ +
+		\ $string source destination(--
+		_%insert_length @ MOVE
+		\ $string(--
+		DUP COUNT NIP _%insert_length @ + SWAP $count!
+	;
+	</code> </pre>
+<p>
+Remember we are writing an editor that is to be used to edit files on a terminal, long record
+can not be dealt with and it is unneeded complexity allowing for them.
+</p>
+	<pre> <code>
+	\ describe the screen
+	| $01  CONSTANT _#edit_first_line
+	| $05  CONSTANT _#edit_first_character
+	| $00  CONSTANT _#edit_message_line
+	| $20  CONSTANT _#edit_message_character
+	| $0A  CONSTANT _#edit_message_length
+	| $0   CONSTANT _#edit_insert_line
+	| $30  CONSTANT _#edit_insert_character
+	| $4   CONSTANT _#edit_tab
+	| $10  CONSTANT _#edit_display_lines
+
+	\ describe the buffer
+	| $800 CONSTANT _#edit_node_claim_size
+	| $8000 CONSTANT _#edit_data_claim_size
+	</code> </pre>
+	<h5>Describe the file</h5>
+	<pre> <code>
+	\ name of file being edited
+	| #$buffer ufree_buffer $edit_name
+	\ The handle of the file to be edited
+	| uvariable %edit_handle
+
+	</code> </pre>
+	<h5>The current line and character</h5>
+	<pre> <code>
+
+	\ The link being edited
+	| uvariable _%edit_current_pnode
+	\ this is an offset from _%edit_display_base_line
+	| uvariable _%edit_current_line
+	| uvariable _%edit_current_char
+
+	| uvariable _%edit_display_lines
+	\ uvariable _%edit_help
+
+	</code> </pre>
+
+	<h5>The file line being displayed on the screen</h5>
+	<pre> <code>
+	\ the pnode that points to the data being displayed
+	| uvariable _%edit_display_base_pnode
+	\ the base line on the display
+	| uvariable _%edit_display_base_line
+
+	</code> </pre>
+	<h5>The file</h5>
+	<p>
+	The file is a double linked list of records. You edit the file by
+	manipulating this list. When finshed the list is written to disk.
+	</p>
+	<p>
+	The file is forward linked from here
+	</p>
+	<pre> <code>
+
+	| uvariable _%edit_file_node_head
+
+	</code> </pre>
+	<h5>Buffer control</h5>
+	<p>
+	The nodes and data buffers are taken from seperate lists. As written this
+	gives no great advanage. But is would be a simple matter to allow the editor to use
+	differnet data buffers for different sized lines.
+	</p>
+
+	<p>
+	All buffers used are linked in here this list is used to release buffers
+	at the end of the edit.
+	</p>
+	<pre> <code>
+
+	| uvariable _%edit_buffers
+
+	| : _return_edit_buffers ( addr --)
+		BEGIN
+			_%edit_buffers @
+		WHILE
+			_%edit_buffers @
+			DUP unlink_double
+			kill_free_buffer
+		REPEAT
+	;
+
+
+	</code> </pre>
+	<h5>Empty buffer lists</h5>
+	<pre> <code>
+
+	| uvariable _%edit_empty_node_list
+	| uvariable _%edit_empty_record_list
+
+	</code> </pre>
+	<h5>The edit buffers</h5>
+	<pre> <code>
+	| #$buffer ufree_buffer _$insert_buffer
+	| #$buffer ufree_buffer _$find_buffer
+
+
+	\ uvariable _%edit_mode
+
+	\ 0 CONSTANT _#command_mode
+	\ 1 CONSTANT _#screen_mode
+
+	\ set to true if characters are to be inserted into the buffer
+	uvariable _%insert
+
+	\ describe the edit buffers
+	0
+	| DUP CONSTANT _#ewt_base
+	| DUP CONSTANT _#ewt_double_link  2 CELLS +
+	| DUP CONSTANT _#ewt_data
+	DROP
+
+	\ descibe a edit node.
+	0
+	| DUP CONSTANT _#ewt_n_fwd        CELL+
+	| DUP CONSTANT _#ewt_n_bwd        CELL+
+	| DUP CONSTANT _#ewt_n_data>      CELL+
+    | CONSTANT _#ewt_n_length
+
+	| 80 CONSTANT _#ewt_d_length
+	_#ewt_d_length #$buffer  ??<
+	</code> </pre>
+	<h5>Adding records to empty lists</h5>
+	<pre> <code>
+	| : _new_edit_nodes ( --)
+		\ get a new buffer and make it current
+		\ we will make the structure out of free buffers
+		\ so abort will not destroy things, but we will
+		\ make sure only one file is edited at a time.
+		_#edit_node_claim_size get_free_buffer \ addr(--
+		\ link into same list as record buffer
+		DUP _%edit_buffers link_double
+		\ addr(--
+		DUP buffer_size
+		\ addr length(--
+		_#ewt_data
+		\ addr length offset(--
+		BEGIN
+			\ addr length offset(--
+			2DUP _#ewt_n_length + < IF \  >finished
+				2DROP
+				DROP
+				EXIT
+			THEN
+			jump OVER + _%edit_empty_node_list link_double
+			_#ewt_n_length +
+		AGAIN
+	;
+
+	| : _new_edit_records ( --)
+		\ get a new buffer and make it current
+		\ we will make the structure out of free buffers
+		\ so abort will not destroy things, but we will
+		\ make sure only one file is open at a time
+		_#edit_data_claim_size get_free_buffer \ addr(--
+		DUP _%edit_buffers link_double
+		\ addr
+		DUP buffer_size
+		\ addr length
+		_#ewt_data
+		BEGIN
+			\ addr length offset(--
+			2DUP _#ewt_d_length + < IF \ >finished
+				2DROP
+				DROP
+				EXIT
+			THEN
+			jump OVER + _%edit_empty_record_list link_double
+			_#ewt_d_length +
+		AGAIN
+	;
+
+	</code> </pre>
+	<h5>Supply nodes and records</h5>
+	<pre> <code>
+
+	| : _get_empty_node ( --addr)
+		_%edit_empty_node_list @ not IF
+			_new_edit_nodes
+		THEN
+		_%edit_empty_node_list @ DUP unlink_double
+	;
+
+	| : _get_empty_record ( --addr)
+		_%edit_empty_record_list @ not IF
+			_new_edit_records
+		THEN
+		_%edit_empty_record_list @ DUP unlink_double
+	;
+
+	</code> </pre>
+	<h5>Additional double linked chain word</h5>
+	<p>
+	Given a node in a double linked chain link a record in after
+	that node.
+	</p>
+	<pre> <code>
+	| : link_node_double ( new_addr old_node --)
+		_lock_word
+			\ set fields in new record
+			2DUP @ SWAP !
+			2DUP SWAP CELL+ !
+			2DUP @ DUP IF
+				CELL+ ! \ update backward pointer nest record
+			ELSE
+				2DROP
+			THEN
+			! \ update forward pointer
+		_unlock_word
+	;
+
+	</code> </pre>
+	<h5>Create edit node from string</h5>
+	<pre> <code>
+	\ link a node in containing data described on stack
+	| : Sadd_node ( addr num pnode --)
+		_get_empty_node TUCK
+		\ line addr num new_node old_node new_node(--
+		SWAP link_node_double
+		\ line addr num new_node(--
+		_get_empty_record TUCK
+		\ line addr num buffer new_node buffer(--
+		SWAP _#ewt_n_data> + !
+		\ line addr num buffer (--
+		$make
+		\ line
+	;
+
+	</code> </pre>
+	<h5>Return a node</h5>
+	<p>
+	Note this takes a node, not a pnode ( pointer node)
+	</p>
+	<pre> <code>
+	| : _return_node ( node --)
+		DUP unlink_double
+		DUP _#ewt_n_data> + @ _%edit_empty_record_list link_double
+		_%edit_empty_node_list link_double
+	;
+
+	</code> </pre>
+	<h5>Current edit string</h5>
+	<pre> <code>
+	| : _$current ( --$ )
+		_%edit_current_pnode @ @ _#ewt_n_data> + @
+	;
+
+	| : _!$current ( $ --)
+		_$current _#ewt_d_length $move
+	;
+
+
+	\ pnode is the node we are to link read records into
+	\ n is the number of lines to be read
+	| : _read_in_file  ( pnode n --pnode)
+		$buffer
+		zero ?DO
+			buffer _#ewt_d_length
+			\ pnode offset addr n (--
+			%edit_handle @  READ-LINE
+			\ pnode num flag $(--
+			?DUP IF
+				kill_buffer
+				$ABORT
+			THEN
+			not IF  \ there was no more input
+				\ We have to back up one.
+				kill_buffer
+				DROP
+				\ node(--
+				CELL+ @
+				\ pnode(--
+				-1 _%edit_display_base_line +!
+				UNLOOP
+				EXIT
+			THEN
+			\ pnode offset num(--
+			buffer
+			\ pnode num addr(--
+			SWAP
+			jump
+			\ pnode addr num pnode(--
+			Sadd_node
+			\ pnode(--
+			@
+			1 _%edit_display_base_line +!
+		LOOP
+		kill_buffer
+	;
+
+	\ move up link if we come to zero
+	\ read from file enough lines to
+	\ deal with request
+	\ We enter with pointer exit with a pointer.
+	| : _setup_data ( pnode n --node)
+		zero ?DO
+			DUP @
+			not IF
+				i' I - _read_in_file
+				UNLOOP
+				EXIT
+			THEN
+			@
+			1 _%edit_display_base_line +!
+		LOOP
+	;
+
+	</code> </pre>
+	<p>
+	Where we are up to in file. When we start editing we don't read in the whole file
+	only that that has been seen. If we run out of linked list we once again start
+	reading the file from where we left off. When writing out the file is created
+	from the edit records, and the file after where we left the read is added to the
+	end.
+	</p>
+
+	<pre> <code>
+	| : write_out_file { ( position1 position2 ) variable %backup_handle -- }
+		\ copy the linked list of records to the disk
+
+		$edit_name $mkfile
+		$edit_name R/W $open %edit_handle !
+		_%edit_file_node_head
+		\ position addr(--
+		BEGIN
+			@ DUP
+		WHILE
+			 DUP _#ewt_n_data> + @
+			 \ possition addr $(--
+			 COUNT
+			 %edit_handle @ :write_line
+		REPEAT
+		DROP
+		\ add the portion of the unread file to the end
+		%backup_handle @ REPOSITION-FILE $ABORT
+
+		#$buffer get_buffer
+		\ (--
+		BEGIN
+			buffer #$buffer %backup_handle @ ['] :read CATCH
+			?DUP IF
+				kill_buffer
+				$ABORT
+			THEN
+			\ n(--
+			buffer OVER %edit_handle @ ['] :write CATCH
+			?DUP IF
+				kill_buffer
+				$ABORT
+			THEN
+		0= UNTIL
+		kill_buffer
+	;
+
+	| CREATE $backup_extension ," .bk"
+	\ you have to make a backup before writeing the file
+	\ there is no other option.
+	| : backup_file ( -- position1 possition2 backup_handle)
+
+		%edit_handle @ FILE-POSITION $ABORT
+
+		%edit_handle @ close
+
+
+		\ add an extension to the current file name can
+		\ never go wrong ( unless file name gets to big
+		#$buffer get_buffer
+		$edit_name buffer #$buffer $move
+		$backup_extension buffer buffer COUNT NIP #$buffer $insert
+		\ this is neat really.
+		\ (--
+		\ if backup file is present remove it.
+		buffer R/O ['] $open CATCH
+		?DUP IF
+				\  hopefully an error saying file not present
+				\ ?? ?? $(--
+				DROP 2DROP
+		ELSE
+			close
+			buffer ['] $remove CATCH
+			?DUP IF
+				\ the file can be deleted by others between the two tests
+				\ but it isn't likely. Most probable cause if errors that
+				\ can't be dealt with.
+				kill_buffer
+				$ABORT
+			THEN
+		THEN
+
+		$edit_name buffer ['] $rename CATCH
+
+		?DUP IF
+			kill_buffer
+			$ABORT
+		THEN
+		\ open up back up file
+		buffer R/O $open
+		kill_buffer
+	;
+
+
+	| : save_file ( --)
+		backup_file
+		DUP >R
+		['] write_out_file CATCH
+		?DUP IF
+			R> close
+			$ABORT
+		THEN
+		R> close
+	;
+
+
+	</code> </pre>
+	<h5>editor stuff</h5>
+	<p>
+	From the current curser postion to the end of the line as determined by the
+	output device.
+	</p>
+	<pre> <code>
+	| : clear_to_eol ( --)
+		character_max @ character# - zero MAX SPACES
+	;
+
+	</code> </pre>
+	<p>
+	From the current line to the end of the block of data being displayed.
+	</p>
+	<pre> <code>
+	| : .eob ( --)
+		_%edit_current_pnode @
+		_%edit_display_lines @ _%edit_current_line @ DO
+			\ link
+			@ DUP not IF \ ran out of file
+				\ if we are not to end of file area clean the rest up
+				_%edit_display_lines @ I DO
+					I _#edit_first_line + 0 TAB
+					clear_to_eol
+				LOOP
+				DROP
+				UNLOOP EXIT
+			THEN
+			\ lab to line
+			I _#edit_first_line + 0 TAB
+			I 1+ _%edit_display_base_line @ + 4 .R _#edit_first_character 4 - SPACES
+			DUP _#ewt_n_data> + @ COUNT ~TYPE clear_to_eol
+		LOOP
+		DROP
+	;
+	\ if we run out of lines don't clear rest of page. we started with a clean sheet
+	| : .eof ( --)
+		_%edit_current_pnode @
+		_%edit_display_lines @ _%edit_current_line @ DO
+			\ link (--
+			@ DUP not IF \ ran out of file
+				DROP
+				UNLOOP EXIT
+			THEN
+			\ lab to line
+			I _#edit_first_line + 0 TAB
+			I 1+ _%edit_display_base_line @ + 4 .R _#edit_first_character 4 - SPACES
+			DUP _#ewt_n_data> + @ COUNT ~TYPE clear_to_eol
+		LOOP
+		DROP
+	;
+
+	</code> </pre>
+	<h5>list file</h5>
+	<pre> <code>
+
+	 | : _.insert_state ( --)
+		_#edit_insert_line _#edit_insert_character TAB _%insert @ IF
+			S" insert"  ~MARK
+		ELSE
+			_#edit_message_length SPACES
+		THEN
+	;
+
+    \ : _editor_how_to_use  ( --)
+	\	." DELETE ^Y < word    ^T > word   ^R > line   ^G > char   ^H > char" CR
+	\	." MOVE   ^B < block   ^N > block  ^A < word   ^F > word"  CR
+	\	."        ^E < line    ^X > line   ^D > char " CR
+	\	." INSERT ^J last      ^C line     ^V Toggle " CR
+	\	." OTHER  ^Z Save/Exit ^K Abort    ESC Command ^P Save" send ;
+
+
+	\ note that display can end on any line if we run out of file
+	| : list_file ( line node --)
+		PAGE           \ clean screen
+		0 0 TAB
+		$edit_name $type
+		_.insert_state
+		DUP _%edit_display_lines @ _setup_data DROP
+		0 _%edit_current_line !
+		0 _%edit_current_char !
+		DUP _%edit_display_base_pnode !
+		_%edit_current_pnode !
+		_%edit_display_base_line !
+		.eof
+		\ _%edit_help @ IF
+		\	_#edit_display_lines 1 + 0 TAB
+		\	_editor_how_to_use
+		\ THEN
+		\ ######
+		\ the WS60 seems to bomb if this is not here, I have no idea why.
+		send
+	;
+
+	</code> </pre>
+	<h5>Edit message</h5>
+	<pre> <code>
+
+	| : _.edit_message ( addr n --)
+		_#edit_message_line _#edit_message_character TAB ~TYPE
+	;
+
+	| : _clear_edit_message
+		$buffer
+			buffer  _#edit_message_length BL FILL
+			buffer _#edit_message_length _.edit_message
+		kill_buffer
+	;
+
+	| : _not_found ( --)
+		S" Not Found" _.edit_message
+		#bell EMIT
+	;
+
+
+	
+	</code> </pre>
+	<h5>prompt line</h5>
+	<p>
+	Go to the prompt line and set up for next prompt.
+	</p>
+	<pre> <code>	
+
+	| : _clear_prompt_line ( --) 
+		_%edit_display_lines @ 1+ _#edit_first_line + zero 
+		TAB clear_to_eol 
+		_%edit_display_lines @ _#edit_first_line + zero TAB
+	;
+
+	</code> </pre>
+	<h5>Input edit string</h5>
+	<p>
+	Input rest of line as edit string. If there is no data current 
+	contents are not overridden. There are two buffers, the insert buffer and
+	the find buffer. This same word is used to input into both.
+	</p>
+	<pre> <code>	
+	
+	| : _input_string ( addr --) 
+		0 WORD     \ addr $(--get all input in line
+		\ only use string if it contains data
+		DUP COUNT NIP IF 
+			SWAP #$buffer $move
+		ELSE
+			2DROP
+		THEN 
+	;
+	
+	</code> </pre>
+	<h5>node to insert buffer</h5>
+	<p>
+	The editor word <i>x</i> deletes the current line, the contents are moved
+	to the insert buffer.
+	</p>
+	<pre> <code>	
+
+	| : _node>insert_buffer ( node --)
+		_#ewt_n_data> + @ _$insert_buffer #$buffer $move
+	;
+
+	</code> </pre>
+	<h5>position curser</h5>
+	<p>
+	Current line and character are maintained realtive to the data being displayed
+	in the screen. The displayed data is offset on the screen. This word allows for 
+	all that, and places the cursor where that data is.
+	</p>
+	<pre> <code>
+		
+	| : _position_cursor ( --) 
+		_%edit_current_line @ _#edit_first_line +
+		_%edit_current_char @ 
+		
+		character_max @ MIN
+		
+		\ Not the right thing to do for the screen overwrite mode
+		\ limit character position to string being printed
+		\ _%edit_current_pnode @ @ IF
+		\	_$current COUNT NIP MIN 
+		\ ELSE
+		\	zero MIN
+		\ THEN
+
+		_#edit_first_character + TAB 
+	;
+
+ 	</code> </pre>
+	<h5>Rest of line</h5>
+	<p>
+	Using the curser position the address and number of characters remaining in 
+	current line line is returned.
+	</p>
+	<pre> <code>	
+
+	| : _rest_of_line ( -- addr n )
+		_$current COUNT _%edit_current_char @ 
+		\ addr nmax offset(--
+		OVER MIN
+		\ addr nmax offset_actual
+		TUCK
+		\ addr offset_actual nmax offset_actual
+		-
+		\ addr offset_actual n_actual
+		-rot
+		+
+		SWAP
+		\ addr n
+	;
+
+ 	</code> </pre>
+	<h5>add line</h5>
+	<p>
+	_%edit_current_pnode points to the current none. Unfortunatly we
+	can have a null file. So we may have to link in at the link instead of
+	under the current line.
+	</p>
+	<pre> <code>	
+	| : _put_under_line ( "string" --)
+		_$insert_buffer COUNT 
+		_%edit_current_pnode @ @ IF
+			_%edit_current_pnode @ @ 
+		ELSE
+			_%edit_current_pnode @
+		THEN 
+		Sadd_node
+	;
+ 	</code> </pre>
+	<p>
+	Indicate where curser is and clear prompt line.
+	</p>
+	<pre> <code>	
+	
+	| : .current_line ( --) 
+		_position_cursor 
+			\ (--
+		_%edit_current_pnode @ @ IF 
+			_rest_of_line
+			\ addr n (--
+			\ _%edit_mode @ _#command_mode = IF 
+				~MARK  
+			\   ELSE 
+			\ 	~TYPE 
+			\ THEN
+		THEN
+		clear_to_eol
+		_clear_prompt_line 
+	;
+
+ 	</code> </pre>
+	<p>
+	Reprint from current cursor position to end on line
+	</p>
+	<pre> <code>	
+
+	| : .eol ( --) 
+		_position_cursor    \ (-- 
+		_%edit_current_pnode @ @ IF
+			_rest_of_line ~TYPE
+		THEN
+		clear_to_eol 
+		_position_cursor
+	;
+
+ 	</code> </pre>
+	<h5>String words</h5>
+	<p>
+	Delete characters in specified $ at offset given.
+	</p>
+	<pre> <code>	
+
+
+	| : $edit_delete { ( num_del $input ) variable _%offset --  }
+		DUP COUNT NIP
+		\ limit offset to within string
+		\ zero length string will still have offset out of sting
+		_%offset @ OVER 1- MIN zero MAX _%offset ! 
+		\ num_del $input length(--
+		\ limit delete length to length remaining after offset
+		ROT 
+		\ $input length num_del(--
+		OVER 
+		\ $input length num_del length(--
+		_%offset @ - 
+		\ $input length num_del length_over(--
+		zero MAX 
+		\ $input length num length_over(--
+		MIN -rot
+		\ num_del $input length(--
+		\ Move the delete data to the insert buffer
+		jump _$insert_buffer $count!
+		\ num_del $input length(--
+		jump jump COUNT DROP 
+		\ num_del $input length num_del addr(--
+		_%offset @ + 
+		\ num_del $input length num_del addr_base(--
+		_$insert_buffer COUNT DROP ROT MOVE
+		\ num_del $input length(--
+		_%offset @ -
+		jump - 
+		\ num_del $input move_size(--
+		-rot
+		\ move_size num_del $input(--
+		\ fix un count
+		DUP COUNT NIP 
+		\ move_size num_del $input num(--
+		jump - OVER $count!
+		\ move_size num_del $input(--
+		COUNT DROP _%offset @ + 
+		\ move_size num_del dest(--
+		SWAP OVER + SWAP
+		\ move_size source dest(--
+		ROT MOVE
+	; 
+
+	 </code> </pre>
+	<h5>String words operating on current</h5>
+	<pre> <code>	
+
+	| : _$delete_current ( n --) 
+		_$current _%edit_current_char @ 
+		$edit_delete 
+	;
+
+
+	| : _$insert_current ( $ --)
+		_$current
+		_%edit_current_char @
+		_#ewt_d_length
+		\ souce destination offset max(-- 
+		$insert
+	;
+
+	| : _insert_character ( char --)
+		01 _emit_buffer $count!
+		_emit_buffer COUNT DROP char!
+		_emit_buffer _$insert_current
+	;
+
+	\ life is a little complex we may be inserting at the end of
+	\ the string, in fact several charactrers past the end
+	| : _replace_character ( char --)
+		_$current _%edit_current_char @ 1+ $extend 
+		\ char(--
+		_$current COUNT DROP
+		_%edit_current_char @ + char!
+	;
+					
+
+	</code> </pre>
+	<h5>Current cursor position manipulation</h5>
+	<pre> <code>	
+
+	| : +cursor ( n --)
+		_%edit_current_char +!
+		_%edit_current_char @ zero MAX
+		character_max @ MIN
+		_#ewt_d_length  MIN
+		_%edit_current_char !
+	;
+
+
+	\ we save pointers to the print line. 
+	\ bit of work to determine if the print 
+	\ line node contains a pointer.
+	| : ?next_link ( addr --)
+		DUP not IF
+			DROP FALSE EXIT
+		THEN
+		@ \ the print node
+		DUP not IF
+			DROP FALSE EXIT
+		THEN
+		@ \ next print node
+		not IF 
+			FALSE EXIT
+		THEN
+		TRUE
+	;
+
+
+	| : +1line ( --)
+		_%edit_current_pnode  @ ?next_link IF
+			_%edit_current_line @ 1+ _%edit_display_lines @ < IF \ >
+				1 _%edit_current_line +! 
+				_%edit_current_pnode @ @ _%edit_current_pnode !
+			THEN
+		THEN 
+	;
+
+	| : -1line ( --)
+
+		_%edit_current_pnode  @ _%edit_file_node_head   <> IF
+			_%edit_current_line @ IF
+				-1 _%edit_current_line +! 
+				\ move back link once
+				_%edit_current_pnode @ CELL+ @ _%edit_current_pnode !
+			THEN
+		THEN 
+	;
+
+	</code> </pre>
+	<h5>Current cursor position manipulation</h5>
+	<p>
+	You have to open the file with
+	<samp>edit file_name</samp>
+	and have to close the file with
+	<samp>end_edit</samp> 
+	but the line edit commands are the same.
+	</p>
+	<pre> <code>	
+
+	| : _move_fwd_block ( node -- node )
+		_#edit_display_lines zero DO
+			DUP @ not IF
+				UNLOOP
+				EXIT
+			THEN
+			@
+			1 _%edit_display_base_line +!
+		LOOP
+	;
+    
+	| : _move_back_block ( node -- node )
+		_%edit_file_node_head OVER <> IF
+			_#edit_display_lines zero DO
+				CELL+ @ 
+				-1 _%edit_display_base_line +!		
+				DUP  _%edit_file_node_head = IF
+					\ we are at the start
+					UNLOOP
+					EXIT
+				THEN
+			LOOP
+		THEN
+	;
+
+
+	\ list current block
+	: l ( --) 
+		_%edit_display_base_line @
+		_%edit_display_base_pnode @ list_file
+		.current_line
+		ONLY FORTH ALSO EDITOR
+	;
+
+target_also
+EDITOR 
+target_definitions
+  
+	\ put a string at the current line.
+	: p ( " string " --)
+		_clear_edit_message  \ clear the message field at the top of the screen 
+		_$insert_buffer _input_string 
+		_%edit_current_pnode @ @ IF
+			_$insert_buffer _!$current
+		ELSE
+			_put_under_line 
+			.eob 
+		THEN  
+		.current_line
+	;
+
+	\ go to displayed line
+	: t ( n -- )
+		1- 
+		_%edit_display_base_line @ -
+		zero MAX
+		_%edit_display_lines @ 1 - MIN
+		_%edit_display_base_pnode @
+		OVER zero ?DO
+			DUP ?next_link not IF \ come to the end of the list
+				_clear_edit_message
+				\ clear the marking on current line. 
+				.eol 
+				0 _%edit_current_char !
+				_%edit_current_pnode !
+				I _%edit_current_line !
+				.current_line
+				\ n(--
+				DROP 
+				UNLOOP
+				EXIT
+			THEN
+			@ 
+		LOOP
+		\ line pnode(--
+		_clear_edit_message
+		\ clear the marking on current line. 
+		.eol 
+		0 _%edit_current_char !
+		_%edit_current_pnode !
+		_%edit_current_line !
+		.current_line
+	;
+
+	\ go to line n, this is a new word
+	: to ( n --)
+		1- zero MAX
+		 zero _%edit_display_base_line !	
+		 _%edit_file_node_head  SWAP _setup_data
+		 _%edit_display_base_pnode !
+		l
+	;
+
+
+	\ remove current line and put contents in the insert buffer
+	: x ( --)
+		_%edit_current_pnode @ @ ?DUP IF
+			_%edit_current_pnode @ @ _node>insert_buffer
+			_return_node
+			.eob
+			.current_line
+			EXIT
+		THEN
+		 _clear_prompt_line
+	;
+
+
+	\ put string under current line
+	: u  ( "string" --)
+		_$insert_buffer _input_string
+		_%edit_current_pnode @ @ IF
+			_put_under_line 
+			.eob 
+			+1line
+		ELSE
+			_put_under_line
+			.eob
+		THEN
+		.current_line 
+	;
+
+	\ erase found string
+	: e
+		_%edit_current_pnode @ @ IF
+			_$find_buffer COUNT NIP  DUP NEGATE +cursor 
+			_$delete_current 
+			.current_line
+			EXIT
+		THEN
+		_clear_prompt_line 
+	;             
+
+
+	\ insert string on current line
+	: i ( "string" --)
+		_$insert_buffer _input_string 
+		_%edit_current_pnode @ @ IF
+			_$insert_buffer _$insert_current 
+			.eol  
+			_$insert_buffer COUNT NIP +cursor 
+			.current_line 
+			EXIT
+		THEN
+		_clear_prompt_line 
+	;                  
+
+	\ replace found string
+	: r ( "string" --)
+		_%edit_current_pnode @ @ IF 
+			_$find_buffer COUNT NIP  DUP NEGATE +cursor 
+			_$delete_current
+		THEN 
+		i
+	;
+
+
+	\ find string
+	: f ( "string" --)
+		_$find_buffer _input_string
+		_%edit_current_pnode @ @ IF
+			\ clear highlighting current line
+			_%edit_current_char @ >R
+			\ clear highlighting current line
+			.eol
+			_clear_edit_message
+			_%edit_current_pnode @
+			_%edit_display_lines @ _%edit_current_line @ DO
+				\ link(-- 
+				@ DUP not IF \ ran out of file don't move
+					DROP
+					UNLOOP 
+					R> _%edit_current_char !
+					_not_found
+					.current_line
+					EXIT
+				THEN
+				DUP _#ewt_n_data> + @ COUNT SWAP OVER 
+				\ link n addr n(--
+				_%edit_current_char @ MIN
+				\ link n addr offset(--
+				TUCK 
+				\ link n offset addr offset(--
+				+ -rot -
+				\ link addr+0 n-0 (-- 
+				_$find_buffer COUNT SEARCH IF \ string located
+					\ link addr n(--
+					NIP
+					\ link n(--
+					OVER _#ewt_n_data> + @ 
+					\ link n $(--
+					COUNT NIP 
+					\ link n length(--
+					SWAP -
+					_$find_buffer COUNT NIP + 
+					_%edit_current_char !
+					I _%edit_current_line !
+					\ link(--
+		
+					\ move back to pointing node
+					CELL+ @
+					_%edit_current_pnode !	
+							
+					.current_line
+		
+					UNLOOP
+					r>drop
+					EXIT
+				ELSE
+					2DROP
+				THEN
+				zero _%edit_current_char !
+			LOOP 
+			DROP
+			R> _%edit_current_char !
+			_not_found
+			.current_line
+			EXIT
+		THEN
+		_clear_prompt_line		
+	;
+
+
+	: n ( --)
+		_%edit_display_base_pnode @
+		_move_fwd_block
+		_%edit_display_base_pnode !
+		l
+	;
+
+
+	: b ( --)
+		_%edit_display_base_pnode @
+		_move_back_block
+		_%edit_display_base_pnode !
+		l
+	;
+
+target_previous
+target_previous_definitions
+
+\ Open a file for edit.
+	</code> </pre>
+	<h5>Edit entry and exit words</h5>
+	<pre> <code>	
+
+	: _edit ( "file" -- )
+
+		ALSO EDITOR 
+
+		\ The link being edited
+		_%edit_file_node_head  _%edit_current_pnode !
+
+
+		\ the file is forward linked from here
+		zero _%edit_file_node_head !
+
+		\ list of empty nodes
+		zero _%edit_empty_node_list !
+		zero _%edit_empty_record_list !
+
+		\ the link being displayed
+		_%edit_file_node_head  _%edit_display_base_pnode !
+		zero _%edit_display_base_line !
+
+		\ the curser postion
+		zero _%edit_current_char !
+		zero _%edit_current_line !
+
+
+		\ use all the screen
+		\ FALSE _%edit_help ! 
+		line_max @ 2 - _#edit_first_line -  0 MAX _%edit_display_lines !
+
+	; 
+
+	: edit
+		%edit_handle @ 
+		ABORT" Only one file can be open for edit at a time, finish previous edit"
+		>IN @ >R BL WORD R> >IN !
+		$edit_name #$buffer $move R/O open %edit_handle !
+		%edit_handle @ @class file_class <> IF
+			%edit_handle @
+			0 %edit_handle ! 
+			close
+			TRUE ABORT" Can only edit files"
+		THEN
+		_edit
+		l  \ list current block	
+	;
+	
+
+
+	CREATE $no_file ," No file open"
+
+	: empty_buffers
+		_return_edit_buffers
+		%edit_handle @ 
+		0 %edit_handle !
+		close
+		$no_file $edit_name #$buffer $move
+		\ _#command_mode _%edit_mode !
+		ONLY FORTH 
+	;
+	
+ 
+	: flush
+		%edit_handle @ not ABORT" No file open for edit"
+		['] save_file CATCH
+		?DUP IF
+			empty_buffers
+			$ABORT
+		THEN
+		empty_buffers
+	;
+
+
+	
+	</code> </pre>		
+</body>
+</html>

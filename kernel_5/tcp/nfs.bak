@@ -1,0 +1,861 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>b
+
+<body>
+<a HREF="./license.html">license</a>
+<pre> <code>
+	ram_variable %nfs_debug
+	| : nfs_udp_handle ( -- addr)
+		%mount_object @ :nfs_udp_handle
+	;
+
+        \ CAN ABORT
+        \ Look the file up in the directory.
+        | : _nfs_lookup_call {    variable %name_addr
+                                variable %name_count
+                                variable %fhandle
+                                variable %udp_handle
+                                -- ( pep|0) }
+                %fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+                %name_addr @ %name_count @ _string_to_stack R> +    \ data n(--
+		_#nfs_program _#nfs_version _#nfs_lookup %udp_handle @
+		_rpc
+
+        ;
+
+</code>
+        \ can ABORT
+        \ fhandle
+        \ sattr
+        \       mode
+        \       uid
+        \       gid
+        \       size
+        \       atime
+        \       mtime
+        | : _nfs_zero_length {
+                                variable %fhandle
+                                variable %udp_handle
+                                -- ( pep|0) }
+                %fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+                %fhandle @ [ _#fh_size  _#fattr_mode + ]T LITERAL + @
+                %fhandle @ [ _#fh_size  _#fattr_uid + ]T LITERAL + @
+                %fhandle @ [ _#fh_size  _#fattr_gid + ]T LITERAL + @
+                zero
+                %fhandle @ [ _#fh_size  _#fattr_atime + ]T LITERAL + DUP @ SWAP 4+ @
+                %fhandle @ [ _#fh_size  _#fattr_mtime + ]T LITERAL + DUP @ SWAP 4+ @
+                R> 8 +    \ data n(--
+		_#nfs_program _#nfs_version _#nfs_setattr %udp_handle @
+		_rpc
+
+        ;
+<code>
+        \ can abort
+	| : _nfs_open_file { ( name_addr name_count )
+					   variable %addr_fhandle
+					   variable %addr_result -- }
+
+                \ if a null file open return the input handle
+                DUP not IF
+                        2DROP
+                        %addr_fhandle @ %addr_result @ _#fopen_length MOVE
+                        EXIT
+                THEN
+                %addr_fhandle @ nfs_udp_handle _nfs_lookup_call
+                \ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				4+
+				%addr_result @ _#fopen_length MOVE
+				kill_free_buffer
+                                EXIT
+			ELSE
+				x@
+				unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+
+        | : _nfs_get_attr  { variable %addr_fhandle variable %addr_result -- }
+                %addr_fhandle @ nfs_udp_handle _get_attr_call
+                \ pep(--
+	        ?DUP IF
+	                DUP ep_protodata + @ _rpcr_parameters
+	                \ pep parameters(--
+	                DUP x@ not IF
+                                \ all went well
+                                \ make sure we mounted a directory.
+                                \ pep parameters(--
+                                \ skip the status
+                                4+
+                                \ copy the attributes into the file handle.
+                                %addr_result @ _#fh_size + _#fattr_length MOVE
+	                        kill_free_buffer
+                                EXIT
+        	        ELSE
+	                        x@ unix_code>string
+		                SWAP kill_free_buffer
+			        $ABORT
+	                THEN
+                ELSE
+	                TRUE ABORT" nfs not responding"
+	        THEN
+        ;
+
+	| : _nfs_remove_file { variable %name_addr
+                                variable %name_count
+	                        variable %addr_fhandle  -- }
+                \ make sure file exists
+                %name_addr @ %name_count @ %addr_fhandle @ nfs_udp_handle _nfs_lookup_call
+                \ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+                                \ all ok file to remove
+				DROP
+				kill_free_buffer
+			ELSE
+				x@
+				unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+
+                \ remove file if it file exists.
+		%addr_fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+		%name_addr @ %name_count @ _string_to_stack R> +    \ data n(--
+		_#nfs_program _#nfs_version _#nfs_remove nfs_udp_handle
+
+		_rpc
+
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				DROP
+				kill_free_buffer
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+	| : _nfs_remove_dir { variable %name_addr
+	                   variable %name_count
+					   variable %addr_fhandle  -- }
+		%addr_fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+		%name_addr @ %name_count @ _string_to_stack R> +    \ data n(--
+		_#nfs_program _#nfs_version _#nfs_rmdir nfs_udp_handle
+
+		_rpc
+
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				DROP
+				kill_free_buffer
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+
+
+	| : _nfs_read { variable %to_addr
+	              variable %to_len
+				  variable %offset
+				  variable %addr_fhandle --  ( len ) }
+		%addr_fhandle @ _#fh_size _data_to_stack
+		%offset @ SWAP 1+
+		%to_len @ SWAP 1+
+		zero SWAP 1+
+		\ data count(--
+		_#nfs_program _#nfs_version _#nfs_read nfs_udp_handle  _rpc
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				4+    \ skip the error code
+				_#fattr_length +   \ skip the attributes
+				DUP 4+ SWAP        \ pep addr_from addr_count(--
+				%to_addr @ SWAP x@ DUP >R MOVE
+				kill_free_buffer
+				R>
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+
+	\ we cannot use the stack based _rpc call as the write data cannot be moved through
+	\ the stack
+	| : _nfs_write { ( addr n )
+				  variable  %offset
+
+				  variable  %addr_fhandle --  }
+		\ addr n (--
+		2>R
+		%addr_fhandle @ _#fh_size _data_to_stack
+		%offset @ SWAP 1+
+		%offset @ SWAP 1+
+		R@ SWAP 1+
+		\ data count_cells(--
+		2R>
+		_#nfs_program _#nfs_version _#nfs_write nfs_udp_handle  _rpc+nfsdata
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				4+    \ skip the error code
+				\ pep addr (--
+				%addr_fhandle @ _#fh_size + _#fattr_length  MOVE   \ skip the attributee
+				kill_free_buffer
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+
+	| : _nfs_create { variable %name_addr
+	                variable %name_count
+	                variable %mode
+	                variable %addr_fhandle  -- }{
+                        \ vsave new handle date here
+                        _#fh_size bytes %new_handle }
+
+                %name_addr @ %name_count @ %addr_fhandle @ nfs_udp_handle _nfs_lookup_call
+                \ pep(--
+		?DUP IF
+			DUP ep_protodata + @
+                       _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+                                \ file exist
+                                DROP
+				kill_free_buffer
+				TRUE ABORT" File exists"
+			ELSE
+                                \ assume all errors are good
+				DROP
+				kill_free_buffer
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+		%addr_fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+		%name_addr @ %name_count @ _string_to_stack R> +
+		\ data n(--
+		[
+			_#mode_world_write
+			_#mode_world_read +
+			_#mode_group_write +
+			_#mode_group_read +
+			_#mode_user_write +
+			_#mode_user_read +
+			_#mode_reg_file +
+		]T LITERAL
+		SWAP 1+
+		zero SWAP 1+ \ uid
+		zero SWAP 1+ \ gid
+		zero   SWAP 1+ \ size
+		-1   SWAP 1+ \ atime
+		-1   SWAP 1+ \ mtime
+		_#nfs_program _#nfs_version _#nfs_create nfs_udp_handle
+		_rpc
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+			        4+
+				%new_handle _#fh_size MOVE
+				kill_free_buffer
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+
+                \ if we get here new file is created
+                %new_handle nfs_udp_handle _get_attr_call
+ 		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				\ all went well
+				DROP
+				kill_free_buffer
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+
+	;
+
+
+	| : _nfs_create_directory { variable %name_addr
+	                variable %name_count
+					variable %mode
+					variable %addr_fhandle  -- }
+		%addr_fhandle @  _#fh_size _data_to_stack \ data n (--
+		>R
+		%name_addr @ %name_count @ _string_to_stack R> +
+		\ data n(--
+		[
+			_#mode_world_write
+			_#mode_world_read +
+                        _#mode_world_ex +
+			_#mode_group_write +
+			_#mode_group_read +
+                        _#mode_group_ex +
+			_#mode_user_write +
+			_#mode_user_read +
+                        _#mode_user_ex +
+			_#mode_dir +
+		]T LITERAL
+		SWAP 1+
+		zero SWAP 1+ \ uid
+		zero SWAP 1+ \ gid
+		-1   SWAP 1+ \ size
+		-1   SWAP 1+ \ atime
+		-1   SWAP 1+ \ mtime
+		_#nfs_program _#nfs_version _#nfs_mkdir nfs_udp_handle
+		_rpc
+		\ pep(--
+		?DUP IF
+			DUP ep_protodata + @ _rpcr_parameters
+			\ pep parameters(--
+			DUP x@ not IF
+				\ all went well
+				DROP
+				kill_free_buffer
+				EXIT
+			ELSE
+				x@ unix_code>string
+				SWAP kill_free_buffer
+				$ABORT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+	\ reads the data into the specified buffer.
+	\ the pep is killed.
+	\ cookie spec where we are up to.
+	\ the buffer is where we want the data
+	| : _nfs_dir {  variable %cookie variable %addr_fhandle variable %buffer -- }{
+		variable %rpc_head_size }
+		%addr_fhandle @  _#fh_size _data_to_stack \ data n
+		%cookie @ SWAP 1+
+		\ maximum size
+		%buffer @ buffer_size SWAP 1+
+		_#nfs_program _#nfs_version _#nfs_readdir nfs_udp_handle _rpc
+		\ pep (--
+		?DUP IF
+			DUP ep_protodata + @
+			\ pep data(--
+			DUP _rpcr_parameters
+			\ pep data parameters(--
+			2DUP SWAP -
+			\ pep data parameters rpc_head_size(--
+			%rpc_head_size !
+			NIP
+			\ pep parametes(--
+			DUP x@ not IF
+				\ pep parameters(--
+				\ all went well
+				\ copy directory data into buffer, it is temting just to copy
+				\ max byte but pep may be last in memory and we may ask for
+				\ a read past memory end ( wouldn't that be a hard bug to find), so.
+				\ Work out the the amount of data supplied
+				\ pep data(--
+				4+ \ skip the status flag
+				OVER ep_protocount + @ 4 - %rpc_head_size @ -
+				DUP 8 < IF  \ >
+					\ pep addr num(--
+					2DROP
+					kill_free_buffer
+					TRUE ABORT" rpc, returned dir details faulty"
+				THEN
+				%buffer @ SWAP MOVE
+				\ pep (--
+				kill_free_buffer
+				EXIT
+			ELSE
+				\ things did not do well
+				DROP
+				kill_free_buffer
+				TRUE ABORT" nfs directory operation failed."
+				EXIT
+			THEN
+		ELSE
+			TRUE ABORT" nfs not responding"
+		THEN
+	;
+
+	zero
+	| DUP CONSTANT _#nfs_dir_next                          4+
+	| DUP CONSTANT _#nfs_dir_fileid                        4+
+	| DUP CONSTANT _#nfs_dir_name_count                    4+
+	| DUP CONSTANT _#nfs_dir_name
+	DROP
+	\ Start again after the variable length data item
+	zero
+	| DUP CONSTANT _#nfs_dir_cookie                        4+
+	| DUP CONSTANT _#nfs_dir_end
+	DROP
+
+	| : _nfs_cookie ( addr -- addr1 )
+		DUP _#nfs_dir_name_count +
+		x@ xdr_aligned +
+		_#nfs_dir_name +
+		_#nfs_dir_cookie +
+	;
+
+
+	io_common class
+
+		cell% instance_variable %%dir_buffer
+		_#fopen_length bytes% instance_variable %%fhandle
+
+
+		protected
+
+
+		\ all openings are liked into here, this includes openings
+		\ of devices and files on the device.
+
+		ram_variable _%opened_files
+
+		ram_create _%device_facility  #facility_length  ram_allot
+
+
+		\ all opened inodes are liked into here
+		ram_variable _%opened_inodes
+
+
+		public
+
+
+		\
+		m:  ( parent_ihandle -- )
+			\ If you want to change the root directory you open it, claim it and
+			\ see that no one else has it. For this to work the open has to
+			\ claim the device also.
+			this :facility grab
+				this [parent] :construct
+			this :facility release
+                        \ increase the buffer size to 2k
+                        #2k this :buffer_size!
+			zero %%dir_buffer !
+		; overrides :construct
+
+		m: ( --)
+			this [parent] :destruct
+			%%dir_buffer @ IF
+				%%dir_buffer @ kill_free_buffer
+			THEN
+		; overrides :destruct
+
+
+		\ After the device is opened by Sopen, the device open method is used
+		\ to consume the reset of the open string.
+		\ As a result the only structure that is fixed is the requirment that
+		\ the open command starts with the driver name.
+		\ On entry this is a device object, here we store the file name
+		\ We make a inode object, this opens the file on the ibm
+		\ with the device locked.
+		\ We then make a file object which we return
+
+		m: ( addr num mode-- handle )
+ 			this :!mode
+
+                        \ this allows us to includse the mount spec in the file string.
+                        \ The mount code is such that multiple mounts of the same point
+                        \ are served by the one mount object.
+                        \ an example:  nfs\192.168.0.112\home\charlese\coldfire\kernel:kernel.html
+                        \ 
+                        [CHAR] : left_split \ mount_addr mount_name rest_addr rest_num(--
+                        DUP IF
+                                \ there is a mount spec
+                                2SWAP Smount
+                                [CHAR] : remove_leading
+                        ELSE
+                                2DROP
+                        THEN
+
+                        \ addr num(--
+			[CHAR] / remove_leading
+			2DUP this :!name
+			[CHAR] / left_split  \ file_addr file_num rest_addr rest_num(--
+			2SWAP
+			\ first open takes the file handle from the mount
+			nfs_fhandle DUP not ABORT" Have to mount file system in this task"
+			%%fhandle
+			_nfs_open_file
+			\ there after stop when we have no file name
+			BEGIN
+				[CHAR] / remove_leading
+				DUP
+			WHILE
+				[CHAR] / left_split
+				2SWAP
+				%%fhandle %%fhandle _nfs_open_file
+			REPEAT
+			2DROP
+			\ (--
+                        \ generates a code from the full file name; it should include the device name.
+                        get_filecode
+                        \ code(--
+                        this :open_inode
+			\ inode_handle(--
+			this file_class heap_object  \ file_handle(--
+			DUP %%file_instance !
+		; overrides :file_open
+
+
+		m: ( --addr)
+			_%opened_files
+		; overrides :list_head
+
+
+		\ device_common
+		m: ( --addr)
+			_%device_facility
+		; overrides :facility
+
+
+		\ ----------------------------------------------------------------------
+		\ this has to be exported for file as file has to know how many bytes in a block
+		\ when deblocking the data. NFS can deal in 8k blocks but remember we can be using
+		\ nfs over networks being used for real time data transfers. This should be set
+		\ to $400. It has been tested at $2000, this tests the defrag and frag software
+		\
+		m:
+			$2000
+		; overrides :bytes_a_zone
+
+
+		\ ----------------------------------------------------------------------
+
+		\ The file offset and disk offset are one the same
+		m:  { ( file_offset ) variable _%inode -- ( disk_offset) }
+		; overrides :file_offset>device_offset
+
+		m: ( addr m -- n )
+			%%seek_pointer @
+			%%fhandle
+			_nfs_read
+			DUP %%seek_pointer +!
+		; overrides :read
+
+                m: ( --)
+                        %%type_buffer_count @ not IF
+                                EXIT
+                        THEN
+
+			%%type_buffer_count @
+
+			%%type_buffer> @ OVER
+                        %%seek_pointer @
+			%%fhandle
+			_nfs_write
+			zero %%type_buffer_count !
+
+                        %%seek_pointer +!
+
+	        ; overrides :flush_file
+
+
+		\ return file size.
+                \ This has to go back to the server as writes do not update the attributes.
+		m:  (  --file_size)
+                        \ update file size from server
+                        %%fhandle %%fhandle _nfs_get_attr
+			%%fhandle [ _#fh_size _#fattr_size + ]T LITERAL + @
+		; overrides :@file_size
+
+
+		\ handle is the file handle; we are in the device object.
+		\ In this code the device object contains the fhandle for the file
+		\ we should create the file, but we should not alter the fhandle of
+		\ this object.
+		m: ( addr n --)
+			this :@mode
+			%%fhandle
+			_nfs_create
+		; overrides :make_file
+
+		\ the local file system can open a file, given only the fileid as stored in the directory.
+		\ The nfs functions return a fileid but there is no open function to use it with.
+		\ String manipulations with the file name is the only way to do a recursive dir.
+		\
+
+
+		\ store directory entry
+		\ m: ( addr num cookie %handle -- )
+		\	TRUE ABORT" Not a directory entry"
+		\ ; method :put_directory_name
+
+
+
+	\ will scan down buffer looking for cookie.
+	| : _nfs_find_cookie { ( cookie ) variable %buffer ( -- addr) }{
+		variable %end_buffer
+		variable %current_entry }
+		%buffer @ buffer_size %buffer @ + %end_buffer !
+		%buffer @
+		BEGIN
+			DUP %current_entry !
+			_nfs_cookie DUP  x@
+			\ cookie_find addr cookie_now(--
+			jump = IF
+				2DROP
+				%current_entry @
+				EXIT
+			THEN
+			\ cookie addr(--
+			_#nfs_dir_end +
+			\ cookie addr(--
+			DUP %end_buffer @ > ABORT" nfs dir record structure fault"
+			DUP x@ not ABORT" Cookie should be in buffer"
+		AGAIN
+	;
+
+
+
+	| : _nfs_next_cookie { variable %cookie variable %buffer  -- ( cookie true | false) }
+		%cookie @ %buffer @ _nfs_find_cookie
+		\ addr(--
+		_nfs_cookie
+		_#nfs_dir_end +
+		DUP x@ IF \ next entry is in buffer
+			_nfs_cookie x@
+			TRUE
+			EXIT
+		THEN
+		\ cookie not in buffer
+		\ is this last buffer
+		4+ x@ IF
+			\ eof
+			FALSE
+			EXIT
+		THEN
+		\ (--
+		\ new buffer. It will have the next entry at start
+		\ we make no assumptions about cookie step size
+		%cookie @ %%fhandle %buffer @ _nfs_dir
+		%buffer @
+		DUP x@ IF
+			_nfs_cookie x@
+			TRUE
+			EXIT
+		ELSE
+			DROP
+			FALSE
+			EXIT
+		THEN
+	;
+
+	| : _nfs_first_cookie {  variable %buffer -- ( cookie ) }
+		 zero %%fhandle %buffer @ _nfs_dir
+		 %buffer @ x@ IF
+		 	%buffer @
+		 	_nfs_cookie x@
+		 	EXIT
+		 THEN
+		 ABORT" Returned nfs record poorly structured"
+	;
+
+	\ have to have next reset and eof reset when we allocate the buffer
+	| : _setup_buffer ( --)
+			%%dir_buffer @ not IF
+				#$buffer get_free_buffer
+				DUP %%dir_buffer !
+				8 ERASE
+			THEN
+	;
+
+		m: ( cookie--cookie true | false)
+			%%dir_buffer @ _nfs_next_cookie
+		; overrides :next_directory_cookie
+
+		m: ( --cookie )
+			\ search current buffer for entry
+			_setup_buffer %%dir_buffer @ _nfs_first_cookie
+		; overrides :first_directory_cookie
+
+
+
+		\ directory entry name
+		m: { ( cookie addr max -- actual) }{
+			variable %dir_entry }
+			ROT %%dir_buffer @ _nfs_find_cookie
+			\ addr max addr_from(--
+			%dir_entry !
+			%dir_entry @ _#nfs_dir_name_count + @ MIN
+			%dir_entry @ _#nfs_dir_name + -rot
+			\ from to num (--
+			DUP >R
+			MOVE
+			R>
+		; overrides :get_directory_name
+		</code></pre>
+		<p>
+		We don't have a seperate rmdir word. If you look at the local file
+		remove word you will see it goes one step further it recursivly cleans
+		out the directory.
+		</p>
+		<pre><code>
+		\ _#fopen_length is 104 bytes long
+		\ we won't want to many of these on the the stack
+		m: { ( addr n -- ) }{
+			_#fopen_length bytes %temp_fhandle }
+			2DUP %%fhandle %temp_fhandle _nfs_open_file
+			%temp_fhandle [ _#fh_size _#fattr_mode + ]T LITERAL + @ _#mode_dir
+			AND 0<>  IF
+				%%fhandle _nfs_remove_dir
+			ELSE
+				%%fhandle _nfs_remove_file
+			THEN
+		; overrides :remove_file
+
+
+
+		m: { ( addr n -- ) }
+			%%fhandle _nfs_create_directory
+		; overrides :make_directory
+
+		</code> </pre>
+		<p>
+		The inode is nothing more than a computer wide facility common to the file
+		</p>
+		<p>
+		When you open multiple copies of a common file they all get there own objects.
+		The only common point is the inode. The inode can be locked by the user.
+		</p>
+		<p>
+		###### We could use the inode here to reduce the number of opens
+		reflected to the remote system to one.
+		</p>
+		<pre> <code>
+		\ head for the device
+		m: ( --addr)
+			_%opened_inodes
+		; overrides :inode_head
+
+		m: ( --flag)
+			%%fhandle
+			[ _#fh_size _#fattr_mode + ]T LITERAL + @ _#mode_dir
+			AND 0<>
+		; overrides :?directory
+
+                \ The seek functions
+		\ ------------------
+		m:      \ compile time ( --xt)
+		        \ runtime ( offset --)
+                        DUP %%seek_pointer @  %%type_buffer_count @  +  <> IF
+                                %%type_buffer_count @ IF
+                                        this :flush_file
+                                THEN
+                                %%seek_pointer !
+                        ELSE
+                                DROP
+                        THEN
+		; overrides :reposition_file
+
+
+		m: ( -- u)
+			%%seek_pointer @
+                        %%type_buffer_count @ +
+		; overrides :file_position
+
+
+		m: ( indent --)
+			CR DUP SPACES ." ibm | " ." Object: " this .h
+				SPACE ." file: " this :@name TYPE
+			CR DUP SPACES ." seek_value: " %%seek_pointer @ .h
+				SPACE ." timeout: " %%timeout @ .h
+				." linked_objects: " this :number_of_links .h
+                        CR DUP SPACES ." type_count : " %%type_buffer_count @ .h
+                                ." type_Buffer : " %%type_buffer> @ .h
+			DROP
+			send
+		; overrides :print
+
+
+target_also
+&drivers
+target_definitions
+
+	end_class nfs
+
+target_previous_definitions
+target_previous
+
+
+
+</code> </pre>
+
+</body>
+</html>

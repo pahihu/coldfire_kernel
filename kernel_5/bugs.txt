@@ -1,0 +1,3 @@
+1) Interrupt level should be lowered to correct level in txy code.
+2) Interupts level lowered in timer routine
+3) Better dynamic memory test.

@@ -1,0 +1,430 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Used to service rti1000 bus file service requests.
+The request goes through the local file system.
+</p>
+<pre> <code>
+
+     0		DUP CONSTANT	#flbus_link 4+	( links into disk service queue)
+    		DUP CONSTANT	#flbus_source 2+ ( tells the disk service routine what function to use)
+    		DUP CONSTANT	#flbus_facility 4+ ( address of task to awake)
+    		DUP CONSTANT	#flbus_count 2+ ( bytes used in buffer)
+    		DUP CONSTANT	#flbus_buffer 4+ ( buffer address)
+    DROP
+
+
+
+        \ moves the data from local buffer to card buffer nothing more.
+	: port_buffer>local_buffer { variable %file_block --  ( count) }{
+		variable %card }
+		%file_block @ $FFFF0000 AND %card !
+
+                \ buffer address from slave point of view
+		%file_block @ #flbus_buffer + @
+		%card @ >local  \ rti_buffer(--
+
+                buffer \ rti_buffer local_buffer(--
+		%file_block @ #flbus_count + W@ >R
+
+                R@ \ rti_buffer local_buffer count(--
+		\ align count to long word so move can deal in long words.
+		3+ -4 AND
+		MOVE
+		R>
+	;
+
+ 	: wake_remote_task { variable %file_block -- }{
+		variable %card  }
+		%file_block @ $FFFF0000 AND %card !
+		%card @ [ %port_wake  _#RTI1000_dual_port_base  - ]T LITERAL + W@
+		\ address of tasks activation area
+		%file_block @ #flbus_facility + @
+		%card @ >local
+		W!
+	;
+
+
+        \ this writes the data to the buffer, updates the count and wakes the receiving task.
+	: local_buffer>remote { ( addr count ) variable %file_block -- }{
+		variable %card }
+
+                DUP %file_block @ #flbus_count + W!
+                \ addr count (--
+                %file_block @ $FFFF0000 AND %card !
+
+		\ buffer address from my point of view
+		%file_block @ #flbus_buffer + @
+		%card @ >local  \ addr count rti_buffer(--
+
+		SWAP
+		\ extend count to long word
+		3 + -4 AND
+		MOVE
+                %file_block @ wake_remote_task
+	;
+
+
+
+
+
+	: transfer_error { ( $ ) variable %file_block -- }{
+		variable %card
+		variable %count }
+		\ to make life interesting we can only do word writes to
+		\ the RTI bus
+		\ We will make the packet in a local buffer round the count up
+		\ to a long word and move the result to the rti buffer
+		\ $ (--
+		DUP COUNT NIP #$count_length +
+                \ $ length (--
+		\ the comand byte
+		#ilan_error_string +
+                \ $ length_total
+		%count !
+	        \ $(--
+                \ write the string
+		buffer #ilan_error_string +  $move
+                \ write the error code
+                #error_ilan buffer C!
+                buffer %count @ %file_block @ local_buffer>remote
+	;
+
+
+
+
+\ file_block bufer --
+CREATE $not_implemented ," Command not implemented"
+: not_implemented { variable %file_block -- }
+        $not_implemented %file_block @ transfer_error
+
+;
+
+\ file open
+\ nfs files require a mount before an open. we don't have such luxery here.
+\ the file spec has to be complete, we perform the mount.
+\ The spec is mount_point:file_name.
+\ eg. nfs/192.168.0.112/home/charlese/coldfire/kernel:ansi_code.html
+\ This form can be used to open a nfs file without a mount locally or remotely.
+\
+\ The open has to have associated with it three values
+\ 1) The handle
+\ 2) The slave
+\ 3) The slaves handle.
+\ We use 1) and 2) to get three
+\ yes we could go to town and make this general but we will allow
+\ 16 open files. If we runout of resources we send back an error
+
+zero
+DUP CONSTANT _#sfh_slave 4+             \ who we are talking too
+DUP CONSTANT _#sfh_code 4+         \ provided by the slave
+DUP CONSTANT _#sfh_handle 4+       \ the handle use to access the file
+DUP CONSTANT _#sfh_references 4+   \ count of users
+    CONSTANT _#sfh_length
+
+$10 CONSTANT _#sfh_max
+
+ram_variable %server_file_handles _#sfh_length _#sfh_max * ram_allot
+
+: find_handle { variable %file_code variable %slave -- ( table true | false ) }
+        %server_file_handles
+        _#sfh_max zero DO
+                DUP _#sfh_references + @ IF
+                        DUP _#sfh_slave + @ %slave @ = IF
+                                DUP _#sfh_code + @ %file_code @ = IF
+                                        UNLOOP
+                                        TRUE
+                                        EXIT
+                                THEN
+                        THEN
+                THEN
+                _#sfh_length +
+        LOOP
+        DROP
+        FALSE
+;
+
+CREATE $no_spare_handle_slots ," No spare server slots"
+
+: save_handle ( handle file_code slave --$)
+        %server_file_handles
+        _#sfh_max zero DO
+                DUP _#sfh_references + @ not IF
+                        >R
+                        I _#sfh_slave + !
+                        I _#sfh_code + !
+                        I _#sfh_handle + !
+                        1 I _#sfh_references + !
+                        r>drop
+                        UNLOOP
+                        zero
+                        EXIT
+                THEN
+                _#sfh_length +
+        LOOP
+        \ handle file_code slave addr(--
+        2DROP
+        2DROP
+        $no_spare_handle_slots
+;
+
+\ On open we have to search if the file is opened.
+\ We assume the client is smart enough to give different files
+\ differnet codes. If the codes are the same then it is the same
+\ file opened by two different tasks. For such a case we
+\ need to only keep one file open.
+
+: file_open { variable %file_block -- }{
+        variable %handle
+        variable %card
+        }
+
+        \ the file block is an address on the slave it will do as the slave code
+        %file_block @ $FFFF0000 AND %card !
+        buffer #ilan_disk_i/o_id + unaligned@ %card @ find_handle IF
+                \ table (--
+                1 SWAP _#sfh_references + +!
+                %file_block @ local_buffer>remote
+                EXIT
+        THEN
+
+
+        \ otherwise we have to open the file
+        buffer  #ilan_open_header_length + COUNT \ add n (--
+        buffer  #ilan_disk_mode + unaligned@
+        \ addr n mode(--
+        ['] Sopen CATCH ?DUP IF
+                >R
+                DROP
+                2DROP
+                R>
+                %file_block @ transfer_error
+                EXIT
+        THEN
+
+        \ handle(-
+        \ save the handle in the list of open files, if that fails report error and close file.
+        %handle !
+
+        %handle @
+        buffer  #ilan_disk_i/o_id + unaligned@
+        %card @ save_handle ?DUP IF
+                %handle @ close
+                %file_block @ transfer_error
+                EXIT
+        THEN
+        %file_block @ local_buffer>remote
+;
+
+
+CREATE $no_handle ," File not opened."
+
+: file_close { variable %file_block -- }{
+        variable %card }
+
+        \ the file block is an address on the slave it will do as the slave code
+        %file_block @ $FFFF0000 AND %card !
+        buffer #ilan_disk_i/o_id + unaligned@ %card @ find_handle IF
+                \ table(--
+                -1 OVER  _#sfh_references + +!
+                DUP _#sfh_references + @ 0= IF
+                        \ table(--
+                        DUP _#sfh_handle + @
+                        \ table handle(--
+                        ['] close CATCH ?DUP IF
+                                >R
+                                2DROP
+                                R> %file_block @ transfer_error
+                                EXIT
+                        THEN
+                THEN
+                \ table(--
+                DROP
+                %file_block @ local_buffer>remote
+        ELSE
+                \ (--
+                \ what can you do
+                $no_handle %file_block @ transfer_error
+        THEN
+;
+
+$2000 CONSTANT #8k
+
+\ set the file position, and then read.
+: file_read { variable %file_block -- }{
+        variable %handle }
+
+        \ the file block is an address on the slave it will do as the slave code
+        %file_block @ $FFFF0000 AND
+        buffer #ilan_disk_i/o_id + unaligned@ find_handle IF
+                \ table_entry(--.
+                \ file reads are not designed for dual port buffers
+                \ we must first read into a local buffer and then do the correct move.
+                _#sfh_handle + @ %handle !
+                \ (--
+                buffer #ilan_disk_where  + unaligned@ %handle @ ['] :reposition_file CATCH ?DUP IF
+                        >R
+                        2DROP
+                        R> %file_block @ transfer_error
+                        EXIT
+                THEN
+                buffer #ilan_disk_header_length + \ address
+                buffer @ #ilan_disk_length + unaligned@ #8k MIN \ addr count(--
+                %handle @ ['] :read CATCH ?DUP IF
+                        >R
+                        DROP
+                        2DROP
+                        R> %file_block @ transfer_error
+                        EXIT
+                THEN
+                \ length_read(--
+                buffer SWAP     \ buffer count
+                DUP buffer #ilan_disk_length + unaligned!
+
+                #ilan_disk_header_length + %file_block @ local_buffer>remote
+        ELSE
+                \ (--
+                \ what can you do
+                $no_handle %file_block @ transfer_error
+        THEN
+;
+
+\ set the file position, and then write.
+: file_write { variable %file_block -- }{
+        variable %handle }
+
+        \ the file block is an address on the slave it will do as the slave code
+        %file_block @ $FFFF0000 AND
+        buffer #ilan_disk_i/o_id + unaligned@ find_handle IF
+                \ table_entry(--.
+                \ file reads are not designed for dual port buffers
+                \ we must first read into a local buffer and then do the correct move.
+                _#sfh_handle + @ %handle !
+                \ (--
+                buffer #ilan_disk_where  + unaligned@ %handle @ ['] :reposition_file CATCH ?DUP IF
+                        >R
+                        2DROP
+                        R> %file_block @ transfer_error
+                        EXIT
+                THEN
+                buffer #ilan_disk_header_length + \ address
+                buffer @ #ilan_disk_length + unaligned@ #8k MIN \ addr count(--
+                %handle @ ['] :write CATCH ?DUP IF
+                        >R
+                        DROP
+                        2DROP
+                        R> %file_block @ transfer_error
+                        EXIT
+                THEN
+                \ (--
+                buffer zero     \ buffer count
+                buffer #ilan_disk_length + unaligned!
+
+                #ilan_disk_header_length %file_block @ local_buffer>remote
+        ELSE
+                \ (--
+                \ what can you do
+                $no_handle %file_block @ transfer_error
+        THEN
+;
+
+
+ CREATE  file_operations
+        7 W,
+        ' not_implemented t,
+        ' not_implemented t,
+        ' not_implemented t,
+        ' file_read t,
+        ' file_write t,
+        ' file_close t,
+        ' file_open t,
+        \ code $FF is an error, but we are not interested in such things.
+        ' not_implemented t,
+
+ 				\ count(--
+\				\ make sure we and not the file system is using IBM
+\				1 %test5 +!
+\				ibm_facility get
+\					#ether_port sc_table #sc3 + @ %sc3_addr !
+\					%buffer @ %sc3_addr @ #sc3_pointer + !
+\					\ count(--
+\					%sc3_addr @ #sc3_count + W!
+\					( start interrupt action)
+\					xsleep
+\					user_base %sc3_addr @ #sc3_task + !
+\					%buffer @ C@ %sc3_addr @ #sc3_tsk_cmd + C!
+\					xnext
+\					( interrupt routine has now finished)
+\					( transfer data out of buffer)
+\					( interrupt routine swapped buffers)
+\					( have to read new buffer address from #sc3_pointer)
+\					%sc3_addr @ #sc3_pointer + @ %buffer !
+\					%buffer @ #sc3_count %sc3_addr @ + W@
+\				ibm_facility release
+                        EXIT
+
+
+    CREATE $no_command ," Slave didn't provide a command
+    ram_variable %rti_disk_requests
+    : bus_file_service_request  {  variable %file_block -- }
+                1 %rti_disk_requests +!
+		#ilan_packet_max ['] get_buffer CATCH ?DUP IF
+                        \ this leaves the request unserviced
+                        \ the slave will time it out.
+			EXIT
+		THEN
+
+		%file_block @ buffer port_buffer>local_buffer DUP IF
+			\ zero command is dealt with here
+			%file_block @ buffer C@ file_operations vector
+
+                ELSE
+                        \ we transfered zero bytes from slave
+                        \ Where is the command?
+		        $no_command %file_block @ transfer_error
+                THEN
+                kill_buffer
+	;
+
+
+    ( Disk service routine)
+    \ -----------------------------------------------------
+    : service_request ( addr --)
+    	DUP #flbus_source + W@ #bus_file = IF
+    		bus_file_service_request
+    		EXIT
+    	THEN
+    	DROP
+    ;
+
+    ram_variable %test3
+    : disk_action
+    		disk_queue xawait
+    		disk_queue dequeue
+    		service_request
+    ;
+
+	target_also
+    &tasks
+	target_definitions
+
+    #clock_low task: rti_disk_serve
+		BEGIN
+			disk_action
+		AGAIN
+	;task
+
+	target_previous_definitions
+	target_previous
+	</code> </pre>
+</body>
+</html>

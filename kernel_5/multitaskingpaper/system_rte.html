@@ -1,0 +1,212 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+.S .( Into system_rte.com)
+The coldfire doesn't have hardware to support the supervisor 
+stack pointer. This is done in software as tasks should not 
+have to make allowances for interrupt code. As it is tasks 
+will have 8 bytes put on there stacks by interrupt code.
+</p>
+<p>Describe the user return stack</p>
+	<pre> <code>
+	zero 
+	DUP  CONSTANT _#int_user_A0     4+
+	DUP  CONSTANT _#int_user_format 2+
+	DUP  CONSTANT _#int_user_status 2+
+	DUP  CONSTANT _#int_user_return 4+
+	DROP
+	</code> </pre>	
+<p>Support word</p>
+	<pre> <code>
+	CODE _set_new_task_level ( level --)
+		S )+ D1 MOV
+		7 100 * 2000 + # SR W. MOV
+		_xlevel_next AB D0 MOV
+		D1 D0 CMP GT IF
+			D1 _xlevel_next AB  MOV
+		THEN
+	NEXT
+	</code> </pre>
+<p> 
+Variable to save the return stack value when we switch back to
+user state
+</p>
+	<pre> <code>
+	ram_variable _%int_stack_pointer
+	</code> </pre> 
+<p>
+Without hardware support for the user stack pointer interrupt entry is a little
+more complex
+</p>
+<p>
+You have to swap to interrupt stack on interrupt, to do otherwise is to
+require very large task stacks.
+</p>
+<p>
+_%int_stack_pointer and _%int_stack_in_use have to be indivisiable correct
+so when being altered interrupts have to be disabled. Also level seven cannot
+use the interrupts stack.
+</p> 
+<p>
+Level 7 cannot use the super stack
+</p>
+<p>
+We leave thsi word with interrupts disabled, it is up to the rest of the code
+to set interrupts at the required level.
+</p>
+	<a name="system_entry"></a>
+<p>
+Other code counts on A0 containing the user stack pointer
+</p>
+	<pre> <code>
+	: system_entry
+		\ disable interrupts
+		46FC W, 2700 W,                   \ 2700 # SR MOV
+		\ need a register, saved value is part of the system_rte stack frame
+		2F08 W,                           \ A0 R -) MOV
+		\ current return stack value
+		204F W,                           \ R A0 MOV
+		\ If we move from user to super change stack
+		082F W, 05 W, _#int_user_status W, \ 5 # _#int_user_status R) BTST 
+		6606 W,                           \ EQ IF
+		2E79 W, _%int_stack_pointer ,     \      _%int_stack_pointer AB R MOV
+		                                  \ THEN
+		2F08 W,                           \ A0 R -) MOV
+	;
+
+	forth : system_entry
+		\ disable interrupts
+		46FC tw, 2700 tw,                    \ 2700 # SR MOV
+		\ need a register, saved value is part of the system_rte stack frame
+		2F08 tw,                             \ A0 R -) MOV
+		\ current return stack value
+		204F tw,                             \ R A0 MOV
+		\ If we move from user to super change stack
+		082F tw, 05 tw, _#int_user_status tw, \ 5 # _#int_user_status R) BTST 
+		6606 tw,                             \ EQ IF
+		2E79 tw, HOST _%int_stack_pointer t,      \      _%int_stack_pointer AB R MOV
+		                                     \ THEN
+		2F08 tw,                             \ A0 R -) MOV
+	forth
+	;
+	HOST
+
+	</code> </pre>
+	<a name="_system_rte"></a>
+
+<p>
+The interrupt code can raise the multitasker priority level. When you switch from interrupt
+to user state you have to check and if that has occured, raise the multitasker priority.
+</p>
+	<pre> <code>    
+
+	\ the _system_rte stack frame will remain on stack and get used when the level
+	\ is restarted.
+	CODE  _system_rte  assembler  
+		( we have to test the SUP bit in the supervisor byte of the cpu_status word.)
+		( We can use A0)
+		( we must retain R value just in case we have to suspend)
+		R )+ A0 MOV
+		5 # _#int_user_status 0) B. BTST NE IF
+			\ return to another supervisor state leave things alone)
+			\ A0 AND R contain the same value
+			R )+ A0 MOV
+			RTE
+		ELSE
+			( We need another register )
+			D0 R -) MOV
+
+			( we need to stop interrupts, _xlevel_next and _xlevel)
+			( next to be stable once we have entered this code.)
+			( if we don't do this we could miss a level raise)
+			7 $100 * $2000 + # SR W. MOV
+
+			_xlevel_next AB D0 MOV
+			_xlevel AB D0 CMP
+			GE IF   ( we don't have to suspend what we are doing and start a higher level)
+				R )+ D0 MOV
+				\ _%int_stack_pointer will have same value as when we
+				\ entered
+
+				A0 R MOV
+				R )+ A0 MOV
+				RTE
+			ELSE
+				\ Save CPU state
+				R )+ D0 MOV
+				A0 R -) MOV  \ User return stack
+				8 7 + 4 * NEGATE R) R LEA
+				\ we don't have to save A0, but its quicker than two seperate 
+				\ MMOV instructions
+				\\ D0 A6 \\ R ) MMOV  
+				\ save the MAC registers
+				MACSR D0 MOV
+				D0 R -) MOV
+				MASK D0 MOV 
+				D0 R -) MOV
+				ACC D0 MOV
+				D0 R -) MOV
+				_xlevel AB R -) MOV 
+
+				\ swap to user stack, the user stack will be used for task switching
+				R _%int_stack_pointer AB MOV
+				A0 R MOV
+
+				\ Set _xlevel to required value			 
+				_xlevel_next AB D0 MOV
+				D0 _xlevel AB  MOV
+				
+				\ Set back to low value as restart has occured.
+				#clock_low # D0 MOV
+				D0 _xlevel_next AB MOV
+				
+
+				\ start the new level, note no level will be previously saved on stack 
+				\ as we are raising the level.
+				_xheads # A0 MOV
+				_xlevel AB D0 MOV
+				( Value stored in _xheads, this points to level switching entry)
+				[ A0 D0 cell ] A1 MOV        ( first task address)
+
+
+				\ We didn't test flag as it is asssumed that the level to be restarted
+				\ required activation. But we have to reset the flag. The flag
+				\ has to be set initially just in case the activation level gets raised
+				\ once again.
+				FALSE # _#level_head_restart_flag _#level_head_trap - 1) W. MOV
+
+				\ fake stack frame to force return to task starting code
+				#activation_task_link 1) R -) MOV
+				0 # R -) W. MOV                ( cpu_status)
+				$4000 # R -) W. MOV             ( format code)
+				RTE
+			THEN
+		THEN
+	NEXT
+	HOST		  
+		
+forth : system_rte	
+		4EF9 tw,   \ ##code JMP
+		HOST ['] _system_rte t,
+	;
+
+
+
+HOST
+	: system_rte
+		4EF9 W,   \ ##code JMP
+		['] _system_rte ,
+	;
+.S .( out system_rte.com)
+	</code> </pre>
+</body>
+</html>

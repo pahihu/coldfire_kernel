@@ -1,0 +1,1523 @@
+<html>
+<head>
+<title>BVP6552_constants.html</title>
+<META NAME="Author" CONTENT="Charles Esson, GB">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Base for baud rate and timer calculations.
+</p>
+	<pre> <code>
+	#132000000 CONSTANT _#bus_clock
+	</code> </pre>
+<h3>BVP665 Stage2 Memory map</h3>
+<p>
+Very early in the startup routine we test the dynamic ram. To have this happen in a 
+resonable time the boot prom needs to be cached. The minimum cache size is 16 meg. So 
+the boot prom is mapped into a 16 meg region at the start of memory. The rest of the 
+memory areas follow from there.
+</p>
+<table>
+<tr><th>From</th>        <th>To</th>           <th>Size</th>       <th>Comment</th></tr>
+<tr><td>0x00000000</td>  <td>0x07FFFFFE</td>   <td>0x8000000</td>  <td>DRAM0</td></tr>
+<tr><td>0xf0010000</td>  <td>0xf03FFFFE</td>   <td>0x3F0000</td>   <td>CS0, Flash</td></tr>
+<tr><td>0x40000000</td>  <td>0x40FFFFFE</td>   <td>0x1000000</td>  <td>CS2, stage1,2 dual port</td></tr>
+<tr><td>0x50000000</td>  <td>0x50003FFE</td>   <td>0x4000</td>     <td>CS6, RTI dual port memory</td></tr>
+<tr><td>0x60000000</td>  <td>0x6000003F</td>   <td>0x40</td>       <td>CS7, Hardware function</td></tr>
+<tr><td>0x10000000</td>  <td>0x1000FFF</td>    <td>0x1000</td>     <td>MBAR, any 4kbyte boundry</td></tr>
+<tr><td>0x20000000</td>  <td>0x2000FFF</td>    <td>0x1000</td>     <td>Internal ram</td></tr>
+</table>
+
+<h4>Dynamic memory</h4>
+	<pre> <code>
+	$00000000 CONSTANT _#sdram0_base
+	$07000000 CONSTANT _#sdram0_size
+
+	_#sdram0_base CONSTANT _#start_dynamic
+	_#start_dynamic _#sdram0_size + CONSTANT _#end_dynamic
+	</code> </pre>
+	
+<h4>Chip select 0, flash</h4>
+	<pre> <code>
+	$F0000000 CONSTANT _#application_flash_base
+	$02000000 CONSTANT _#application_flash_size
+        $F1FFFFFF CONSTANT _#application_flash_end
+        $00010000 CONSTANT _#sector_size
+        $200	  CONSTANT _#number_sectors
+        $08	  CONSTANT _#boot_sectors	\ Sectors 16 to 23 used for kernel boot by boot loader.
+
+	\ the flash has many sub areas.
+
+	\ This code read the switch if cold it goes no further.
+	\ If warm it loads the warn fpga and boot code. This is always forth
+	\ The warm boot code can be used to load the normal boot flash and pfga.
+	\ This can be forth or uClinux.
+
+	$F0000000 CONSTANT _#flash_boot
+	$F0100000 CONSTANT _#flash_boot_data    \ last 16 bytes of this sector is altered by us
+
+	\ offset back from end of the _#flash_boot_data
+	-$10 CONSTANT _#bd_from_addr
+	-$0C CONSTANT _#bd_to_addr
+	-$08 CONSTANT _#bd_copy_size
+	-$04 CONSTANT _#bd_jmp_addr
+
+\	$f0010000 CONSTANT _#flash_fpga
+
+	\ this files has to bring us up enough to allows us to set the normal files.
+	$F0090000 CONSTANT _#flash_boot_warm
+
+	\ these are the files updated when the card is developed.
+\	$F0110000 CONSTANT _#flash_boot_normal
+\	$f0190000 CONSTANT _#flash_file_base
+\	$00270000 CONSTANT _#flash_file_size
+
+	\ these are the files updated when the card is developed.
+	$F0100000 CONSTANT _#flash_boot_normal
+	$F0180000 CONSTANT _#flash_file_base
+	$00280000 CONSTANT _#flash_file_size
+
+	</code> </pre>
+
+<h4>Chip select 2, </h4>
+<p>
+16 Mbytes of dual port ram
+</p>
+	<pre> <code>
+	\ this defines the chip select range.
+	\ Within the range is a table setup area, a dual port area and a VGA monitor area.
+	_#FPGA_BASE_DUAL_ADDRESS CONSTANT _#cpu1,2_comms_base
+	$01000000 CONSTANT _#cpu1,2_comms_size
+
+	_#FPGA_DUAL_START CONSTANT _#bank_mem_start
+	_#FPGA_DUAL_END   CONSTANT _#bank_mem_end    
+	_#bank_mem_end _#bank_mem_start - 1 + CONSTANT _#bank_mem_size                      
+
+
+	</code> </pre>
+
+<h4>Chip select 3, RTI1000 dual port memory</h4>
+	<pre> <code>
+	$70000000  CONSTANT _#RTI1000_dual_port_base
+	$00004000  CONSTANT _#RTI1000_dual_port_size
+	</code> </pre>
+
+
+<h4>Chip select 4, function data</h4>
+	<pre> <code>
+	$80000000 CONSTANT _#function_data_base
+	$00004000 CONSTANT _#function_data_size
+	</code> </pre>
+<h3>MBAR</h3>
+<p>
+MBAR ( Module Base Address Register) is set with the code:
+</p>
+<pre> <samp>
+#mba _#mbar_valid_bit + #  D0   MOV
+D0      MBAR MOV
+</samp> </pre>
+<p>
+Once the MBA is set the registers are located in a specific 
+spot in memory.
+</p>
+	<pre> <code>
+	$10000000 CONSTANT #mba
+		\ set to zero on a reset, must be set to one for access
+		\ to system integration module
+		$00000001 CONSTANT _#mbar_valid_bit
+
+		\ every address has an address modifier associated 
+		\ with it. Setting the following bits [revent access
+		\ to the system modules in particular address spaces.
+		\ In this system access is allowed in all spaces.
+		$00000002 CONSTANT _#mbar_block_user_data
+		$00000004 CONSTANT _#mbar_block_user_code
+		$00000008 CONSTANT _#mbar_block_system_data
+		$00000010 CONSTANT _#mbar_block_system_code
+		$00000020 CONSTANT _#mbar_block_c/i
+		$00000040 CONSTANT _#mbar_allow_alternate
+	</code> </pre> 
+
+<h3>RAMBAR</h3>
+<p>
+Base address of the on board static ram. Set with the instruction:<br>
+<pre> <samp>
+D0 RAMBAR MOV
+</samp> </pre>
+<p>
+Section 6.3.4 talks about reducing power consumption, in our case the on board ram
+is not used for code so we block code accesses
+	<pre> <code>
+	$20000000           CONSTANT _#rambar_base     \ coldfire ram
+		$00000001 CONSTANT _#rambar_valid
+		$00000002 CONSTANT _#rambar_block_user_data
+		$00000004 CONSTANT _#rambar_block_user_code
+		$00000008 CONSTANT _#rambar_block_system_data
+		$00000010 CONSTANT _#rambar_block_system_code
+		$00000020 CONSTANT _#rambar_block_c/i
+		$00000100 CONSTANT _#rambar_write_protect
+  	$1000 CONSTANT _#rambar_block_size
+	$2000 CONSTANT _#rambar_size
+	</code> </pre>
+
+
+<h3>CACHE</h3>
+<p>
+We are running a 5407; the 5407 uses a harvard achectecture; seperate data and instruction buses. We run a FORTH systems; forth systems generate data that is code. Something like a C compiler compiles links and saves an executable. The process of loading the executable converts data to code. In a forth system the code is laid down into a dictionary; after the code is layed down it has to be excutable.
+<p>
+The memory space can be divided up into five modes. This system has
+a lot of memory areas devoted to I/O, the default mode shall be suitable
+for that type of operation. That is non-cachable. Imprecise is the default
+mode. If a location access resets an interrupt it must be written to. Read
+imprecise mode allows multiple reads under some circumstances. 
+Oh how I wish for the simple days, when computers did what they where told.
+</p>
+<h4>CACR ( Cache Control register) </h4>
+	<pre> <code>
+	$80000000 CONSTANT _#cacr_DEC   	\ Data enable cache
+\   	$40000000 CONSTANT _#cacr_DW    	\ write protect; not what we want
+	$20000000 CONSTANT _#cacr_DESB  	\ Enable data store buffer
+	$10000000 CONSTANT _#cacr_DDPI   	\ Disable data CPUSHL invalidate. This is what we want. We have to
+						\ clear the data cache when compiling we want it to run as quickly as possible.
+\	$08000000 CONSTANT _#cacr_DHLCK  	\ Half lock data cache; don't use.
+    	$04000000 CONSTANT _#cacr_DCM    	\ Data cache mode; non cachable precise  ( changed CE 28 Nov 2001 CE)
+	$01000000 CONSTANT _#cacr_DCINVA 	\ cache invalidate all, needed to get started
+
+\       $00800000 CONSTANT _#cacr_DDSP		\ Supervisor protected; don't use.
+
+	$00080000 CONSTANT _#cacr_BEC   	\ branch cache enable
+	$00040000 CONSTANT _#cacr_BCINVA 	\  Branch cache invalidate
+
+	$00008000 CONSTANT _#cacr_IEC   	\ Enable instruction cache
+\       $00004000 CONSTANT _#cacr_IDNFB         \ inhibited fill buffer; don't use.
+	$00001000 CONSTANT _#cacr_IDPI  	\ Disable instruction CPUSHL invalidate.
+
+\	$00000800 CONSTANT _#cacr_IHLCK 	\ half lock
+	$00000400 CONSTANT _#cacr_IDCM		\ inhibit cache outside ACR's.
+
+	$00000100 CONSTANT _#cacr_ICINVA 	\ instruction cache invalidate
+
+\       $00000080 CONSTANT _#cacr_DDSP		\ Supervisor protected; don't use.
+\	$00000020 CONSTANT _#cacr_EUSP		\ Enable USP, user stack pointer; don't use.
+	$00000010 CONSTANT _#cacr_DF		\ FPU disabled.
+
+	</code> </pre>
+<h4>ACR0</h4>
+<p>You can cache dynamic in the data cache</p>
+	<pre> <code>
+	_#sdram0_base CONSTANT _#acr0_address_base
+	$00070000	CONSTANT _#acr0_address_mask	\ cache up to 128 Meg Dram
+	$8000  CONSTANT _#acr0_enable
+	$6000  CONSTANT _#acr0_SFIELD 		\ ignore FC2 when matching
+	$0060  CONSTANT _#acr0_CM_inhibited
+	$0020  CONSTANT _#acr0_CM_cached
+	</code></pre>
+<h4>ACR1 - used to be used for sync static ram. No longer exists </h4>
+
+<h4>ACR2</h4>
+<p>You can cache dynamic in the instruction cache.
+	<pre> <code>
+	_#sdram0_base CONSTANT _#acr2_address_base
+\	_#sdram0_size 1 - $FE000000 AND 8 RSHIFT CONSTANT _#acr2_address_mask
+	$00030000 CONSTANT _#acr2_address_mask
+	$8000  CONSTANT _#acr2_enable
+	$6000  CONSTANT _#acr2_SFIELD 		\ ignore FC2 when matching
+        $0400  CONSTANT _#acr2_AMM
+	$0020  CONSTANT _#acr2_CM_cached
+	</code> </pre>
+<h4>ACR3</h4>
+	<pre> <code>
+
+	</code> </pre>
+<h3>System integration module</h3>
+<p>
+Describe the 537x memory map in byte offsets. Names are taken
+from the 537x users manual, but are preceeded with a size code.<br>
+b = byte<br>
+w = word<br>
+l = long<br>
+</p>
+<p> See section 8 of the users manual</p>
+<h4>reset status register</h4>
+<p>
+Read only register. Read if you want to find out reset reason.
+</p>
+	<pre> <code>
+	$000	#mba + CONSTANT _breg_RSR
+		$80 CONSTANT _#rst_hard_reset
+		$20 CONSTANT _#rst_soft_reset
+	</code> </pre>
+<h4>System protection control register</h4>
+	<pre> <code>
+	$001 #mba + CONSTANT _breg_SYPCR
+		\ doesn't work
+		$80 CONSTANT _#sypcr_watchdog_enable
+		$40 CONSTANT _#sypcr_timeout_enable_reset
+		$20 CONSTANT _#sypcr_prescale \ clock divided by 8192
+		\ prescale = 0
+		\ 00 = 2**9 01 = 2**11 10 = 2**13 11 = 2**15
+		\ prescale = 1
+		\ 00 = 2**22 01 = 2**24 10 = 2**26 ( aprox 1 sec) 11 = 2**28 ( aprox 4 sec)
+		$18 CONSTANT _#sypcr_swt
+		$04 CONSTANT _#sypcr_swta
+		$02 CONSTANT _#sypcr_swtaval
+	\ software watchdog interrupt vector register
+	$002 #mba + CONSTANT _breg_SWIVR
+	\ Software watchdog service register
+	$003 #mba + CONSTANT _breg_SWSR
+	\ Pin assignment register
+	\ see section 10 of the users manual see also
+	\ _wreg_PADDR and _wreg_PADAT
+	$004 #mba + CONSTANT _wreg_PAR
+	$07F CONSTANT _#par_value
+	\ Interrupt assignment register
+	$006 #mba + CONSTANT _breg_IRQPAR
+	\ PLL control register
+	$008 #mba + CONSTANT _breg_PLLCR
+		$80 CONSTANT _#pllcr_ENBSTOP  \ enable stop
+		07 4 LSHIFT  CONSTANT _#pllcr_PLLIPL 
+	\ master bus control register
+	$00C #mba + CONSTANT _breg_MPARP
+		$20 CONSTANT _#mpark_IARBCTRL
+		$10 CONSTANT _#mpark_EARBCTRL
+		$08 CONSTANT _#mpark_SHOWDATA
+	</code> </pre>
+<h4>Interrupt controller</h4>
+<p>
+See chapter 13 of the user manual
+</p>
+<table>
+<caption><b>Interrupt source</b></caption>
+<tr><th>source</th>  <th>AVEC</th><th>Level</th><th>IP</th><th>Vector</th><th>comment</th></tr>
+<tr><td>SWT</td>     <td>0</td>   <td>7</td>    <td>00</td><td>40    </td><td>       </td></tr>
+<tr><td>Timer 1</td> <td>1</td>   <td>4</td>    <td>00</td><td>1C    </td><td>10 msec</td></tr>
+<tr><td>Timer 2</td> <td>1</td>   <td>6</td>    <td>11</td><td>1E    </td><td>user</td></tr>
+<tr><td>MBUS</td>    <td>1</td>   <td>2</td>    <td>11</td><td>1A    </td><td>Not used</td></tr>
+<tr><td>UART1</td>   <td>0</td>   <td>5</td>    <td>01</td><td>60    </td><td>       </td></tr>
+<tr><td>UART2</td>   <td>0</td>   <td>4</td>    <td>01</td><td>61    </td><td>       </td></tr>
+<tr><td>DMA0</td>    <td>0</td>   <td>6</td>    <td>01</td><td>62    </td><td>User</td></tr>
+<tr><td>DMA1</td>    <td>0</td>   <td>6</td>    <td>10</td><td>63    </td><td>User   </td></tr>
+<tr><td>DMA2</td>    <td>0</td>   <td>5</td>    <td>10</td><td>64    </td><td>Uart1</td></tr>
+<tr><td>DMA3</td>    <td>0</td>   <td>4</td>    <td>10</td><td>65    </td><td>Uart2</td></tr>
+<tr><td>EINT7</td>   <td>1</td>   <td>7</td>    <td>- </td><td>1F    </td><td>Bus error</td></tr>
+<tr><td>EINT6</td>   <td>-</td>   <td>-</td>    <td>- </td><td>-     </td><td></td></tr>
+<tr><td>EINT5</td>   <td>1</td>   <td>5<td>     <td>00</td><td>1D    </td><td>Frame2</td></tr>
+<tr><td>EINT4</td>   <td>-</td>   <td>-</td>    <td>- </td><td>-     </td><td>       </td></tr>
+<tr><td>EINT3</td>   <td>1</td>   <td>3</td>    <td>00</td><td>1B    </td><td>Frame1</td></tr>
+<tr><td>EINT2</td>   <td>-</td>   <td>-</td>    <td>- </td><td>-     </td><td>       </td></tr>
+<tr><td>EINT1</td>   <td>1</td>   <td>1</td>    <td>00</td><td>19    </td><td>rti-int</td></tr>
+<tr><td></td>
+</table>
+
+
+<h4>Interrupt pending register</h4>
+<p>
+Two read only interrupt pending registers.
+</p>
+	<pre> <code>
+	$700 #mba + CONSTANT _lreg_IPR_h	\ high, bits 63:32.
+	$704 #mba + CONSTANT _lreg_IPR_l	\ low, bits 31:00.
+	</code> </pre>
+<h4>Interrupt mask register</h4>
+<p>
+You set a bit to disable the interrupt.
+</p>
+
+	<pre> <code>
+        -1 CONSTANT #No_interrupts
+        $01 CONSTANT #No_global_mask
+
+	$708 #mba + CONSTANT _lreg_IMR_h		\ interrupts 32 to 62, high register
+                $40000000 CONSTANT _#imr_GPT0
+                $20000000 CONSTANT _#imr_GPT1
+                $10000000 CONSTANT _#imr_GPT2
+                $08000000 CONSTANT _#imr_GPT3
+                $00400000 CONSTANT _#imr_SLT0
+                $00200000 CONSTANT _#imr_SLT1
+                $00010000 CONSTANT _#imr_DMA
+                $00008000 CONSTANT _#imr_XLBARB
+                $00000800 CONSTANT _#imr_XLBPCI
+                $00000400 CONSTANT _#imr_CBPCI
+                $00000200 CONSTANT _#imr_PCIARB
+                $00000100 CONSTANT _#imr_I2C
+		$00000080 CONSTANT _#imr_FEC0
+		$00000040 CONSTANT _#imr_FEC1
+		$00000020 CONSTANT _#imr_SEC
+		$00000010 CONSTANT _#imr_TC
+		$00000008 CONSTANT _#imr_PSC0
+		$00000004 CONSTANT _#imr_PSC1
+		$00000002 CONSTANT _#imr_PSC2
+                $00000001 CONSTANT _#imr_PSC3
+	</code> </pre>
+
+ 	<pre> <code>
+	$70C #mba + CONSTANT _lreg_IMR_l 		\ interrupts 1 to 31, low register.
+                $80000000 CONSTANT _#imr_EOQF
+                $40000000 CONSTANT _#imr_TFFF
+                $20000000 CONSTANT _#imr_TCF
+                $10000000 CONSTANT _#imr_TFUF
+                $08000000 CONSTANT _#imr_RFDF
+                $04000000 CONSTANT _#imr_RFOF
+                $02000000 CONSTANT _#imr_RFOF_TFUF
+                $01000000 CONSTANT _#imr_USBALL
+                $00800000 CONSTANT _#imr_USBAISR
+                $00400000 CONSTANT _#imr_USBISR
+                $00200000 CONSTANT _#imr_EP6ISR
+                $00100000 CONSTANT _#imr_EP5ISR
+                $00080000 CONSTANT _#imr_EP4ISR
+                $00040000 CONSTANT _#imr_EP3ISR
+                $00020000 CONSTANT _#imr_EP2ISR
+                $00010000 CONSTANT _#imr_EP1ISR
+                $00008000 CONSTANT _#imr_EP0ISR
+		$00000080 CONSTANT _#imr_EINT7
+		$00000040 CONSTANT _#imr_EINT6
+		$00000020 CONSTANT _#imr_EINT5
+		$00000010 CONSTANT _#imr_EINT4
+		$00000008 CONSTANT _#imr_EINT3
+		$00000004 CONSTANT _#imr_EINT2
+		$00000002 CONSTANT _#imr_EINT1
+	</code> </pre>
+
+<h4>Interrupt force register</h4>
+<p>
+Two read/write interrupt force registers.
+</p>
+	<pre> <code>
+	$710 #mba + CONSTANT _lreg_IFR_h	\ high, bits 63:32.
+	$714 #mba + CONSTANT _lreg_IFR_l	\ low, bits 31:00.
+	</code> </pre>
+
+<h4>Interrupt Request Level register</h4>
+
+	<pre> <code>
+	$718 #mba + CONSTANT _breg_IRLR		\ 8 bits, read only
+	</code> </pre>
+
+<h4>Interrupt Ack Level and Priority register</h4>
+
+	<pre> <code>
+	$719 #mba + CONSTANT _breg_IACKLPR	\ 8 bits, read only
+	</code> </pre>
+
+<h4>Interrupt control register EPF1...7</h4>
+<p>
+External priority is fixed between 3 and 4.
+Refer to manual, chapter 13. The ICR is a read only register and requires no setup.
+<p>
+	<pre> <code>
+        #5 CONSTANT _#int_source_05		\ from CPU1 via FPGA.
+	$0745 #mba + CONSTANT _breg_ICR05 	\ int control reg 05.
+
+        #6 CONSTANT _#int_source_06		\ from CPU1 via FPGA.
+	$0746 #mba + CONSTANT _breg_ICR06 	\ int control reg 06.
+	</code> </pre>
+
+<h4>Interrupt control register 8, mapped reg 3</h4>
+<p>
+Not used, was MBUS
+</p>
+	<pre> <code>
+        #8 CONSTANT _#int_source_08		\ int source number
+	$0748 #mba + CONSTANT _breg_ICR8   	\ int control reg 8.
+	_breg_ICR8 CONSTANT _breg_int_CR3   	\ use control reg 3 for init.
+		$00 CONSTANT _#icr3_AVEC
+		$02 3 LSHIFT CONSTANT _#icr3_IL
+		$00 CONSTANT _#icr3_IP
+	</code> </pre>
+
+<h4>Interrupt control register 35, mapped reg 4</h4>
+<p>
+Uart0, PSC0
+</p>
+	<pre> <code>
+        #35 CONSTANT _#int_source_35 		\ int source number
+	$0763 #mba + CONSTANT _breg_ICR35   	\ int control reg 35.
+	_breg_ICR35 CONSTANT _breg_int_CR4   	\ use control reg 4 for init.
+        	$00 CONSTANT _#icr4_AVEC
+		$05 3 LSHIFT CONSTANT _#icr4_IL
+		$01 CONSTANT _#icr4_IP
+	</code> </pre>
+
+<h4>Interrupt control register 34, mapped reg 5</h4>
+<p>
+Uart1, PSC1
+</p>
+	<pre> <code>
+        #34 CONSTANT _#int_source_34		\ int source number
+	$0762 #mba + CONSTANT _breg_ICR34   	\ int control reg 34.
+	_breg_ICR34 CONSTANT _breg_int_CR5   	\ use control reg 5 for init.
+        	$00 CONSTANT _#icr5_AVEC
+		$04 3 LSHIFT CONSTANT _#icr5_IL
+		$01 CONSTANT _#icr5_IP
+	</code> </pre>
+
+<h4>Interrupt control register 48, mapped reg 6</h4>
+<p>
+DMA all channels
+</p>
+	<pre> <code>
+        #48 CONSTANT _#int_source_48		\ int source number
+	$0770 #mba + CONSTANT _breg_ICR48   	\ int control reg 48.
+	_breg_ICR48 CONSTANT _breg_int_CR6   	\ use control reg 6 for init.
+        	$00 CONSTANT _#icr6_AVEC
+		$06 3 LSHIFT CONSTANT _#icr6_IL
+		$01 CONSTANT _#icr6_IP
+	</code> </pre>
+
+<h4>Interrupt control register 60, mapped reg 2</h4>
+<p>
+TIMER 2, general purpose.
+</p>
+	<pre> <code>
+        #60 CONSTANT _#int_source_60		\ int source number
+	$077C #mba + CONSTANT _breg_ICR60   	\ int control reg 60.
+	_breg_ICR60 CONSTANT _breg_int_CR2   	\ use control reg 2 for init.
+        	$00 CONSTANT _#icr2_AVEC
+		$06 3 LSHIFT CONSTANT _#icr2_IL
+		$00 CONSTANT _#icr2_IP
+	</code> </pre>
+
+<h4>Interrupt control register 54, mapped reg 1</h4>
+<p>
+TIMER 1, real time clock
+</p>
+	<pre> <code>
+        #54 CONSTANT _#int_source_54		\ int source number
+	$0776 #mba + CONSTANT _breg_ICR54   	\ int control reg 54.
+	_breg_ICR54 CONSTANT _breg_int_CR1   	\ use control reg 1 for init.
+        	$00 CONSTANT _#icr1_AVEC
+		$04 3 LSHIFT CONSTANT _#icr1_IL
+		$00 CONSTANT _#icr1_IP
+	</code> </pre>
+
+<h4>Interrupt control register 62, mapped reg 0</h4>
+<p>
+Timer0, Watchdog.
+</p>
+	<pre> <code>
+        #62 CONSTANT _#int_source_62		\ int source number
+	$077E #mba + CONSTANT _breg_ICR62   	\ int control reg 62.
+	_breg_ICR62 CONSTANT _breg_int_CR0   	\ use control reg 0 for init.
+        	$00 CONSTANT _#icr0_AVEC
+		$07 3 LSHIFT CONSTANT _#icr0_IL
+		$00 CONSTANT _#icr0_IP
+	</code> </pre>
+
+<h4>Interrupt control register 63, mapped reg 10</h4>
+<p>
+Not used
+</p>
+	<pre> <code>
+        #63 CONSTANT _#int_source_63		\ int source number
+	$077F #mba + CONSTANT _breg_ICR63   	\ int control reg 63.
+	_breg_ICR63 CONSTANT _breg_int_CR10   	\ use control reg 10 for init.
+		$00 CONSTANT _#icr10_AVEC
+		$03 3 LSHIFT CONSTANT _#icr10_IL
+		$10 CONSTANT _#icr10_IP
+	</code> </pre>
+
+<h4>Interrupt control register 55, mapped reg 11</h4>
+<p>
+Not used
+</p>
+	<pre> <code>
+        #55 CONSTANT _#int_source_55		\ int source number
+	$0777 #mba + CONSTANT _breg_ICR55   	\ int control reg 55.
+	_breg_ICR55 CONSTANT _breg_int_CR11   	\ use control reg 11 for init.
+		$00 CONSTANT _#icr11_AVEC
+		$03 3 LSHIFT CONSTANT _#icr11_IL
+		$10 CONSTANT _#icr11_IP
+	</code> </pre>
+
+<h3>Edge Port Module (EPORT)</h3>
+<p>
+External interrupt pins IRQ[7:1] are controlled with this module.
+See chapter 14 of the users manual
+</p>
+
+	<pre> <code>
+	$F00 #mba + CONSTANT _wreg_EPPAR	\ Pin assignment register
+	$F04 #mba + CONSTANT _breg_EPDDR	\ Data direction register
+        $F05 #mba + CONSTANT _breg_EPIER	\ Interrupt enable register
+        $F08 #mba + CONSTANT _breg_EPDR		\ Data reg.
+        $F09 #mba + CONSTANT _breg_EPIER	\ pin data reg.
+	$F0C #mba + CONSTANT _breg_EPFR		\ flag reg.
+
+        	$020 CONSTANT #enable_IRQ5
+	</code> </pre>
+
+
+<h3>Chip select module</h3>
+<p>See section 9 of the users manual</p>
+<h4>CHIP-SELECT ADDRESS REGISTER (CSAR0, CSAR1)</h4>
+<p>
+Each CSARx and CSBAR determines the base address of the corresponding chip-select pin.
+CSAR0 and CSAR1 determine the base addresses from which chip-selects 0 and 1 will be
+offset, respectively. CSBAR determines the base address from which chip-selects 2 through
+7 will be offset.
+</p>
+<p>
+CSAR0 and CSAR1 are 16-bit read/write registers.<br>
+CSBAR is a 8-bit read/write register.<br>
+The value stored in each CSAR register corresponds to A[31:16]. The value stored in
+the CSBAR register corresponds to A[31:24].<br>
+CSAR0, CSAR1 and CSBAR are uninitialized by reset
+</p>
+	<pre> <code>
+	\ Chip select address register bank0
+	$080 #mba + CONSTANT _wreg_CSAR0
+	</code> </pre>
+
+<a name="CSMR0-7"></a>
+<h4>Chip Select Mask Register ( CSMR0 -> CSMR7 )</h4>
+<table>
+<tr valign=top><th>Bit</th><th>Name</th><th>Comment</th></tr>
+<tr valign=top><td>31->16</td><td> BAM - Base address mask</td>
+<td>
+This field defines the chip-select block size through the 
+use of address mask bits. Any set bit masks the corresponding 
+base address register (CSAR) bit (the base address bit becomes a 
+dont care in the decode).
+0 = Corresponding address bit is used in chip select decode
+1 = Corresponding address bit is a dont care in chip select decode
+</td></tr>
+<tr valign=top><td>15->9</td><td>Reserved</td><td></td></tr>
+<tr valign=top><td>8</td><td>WP - Write protect</td>
+<td>The WP bit can restrict write accesses to the address range in a CSAR. 
+An attempt to write to the range of addresses specified in a CSAR
+that has this bit set will result in the appropriate chip-select not being selected.
+1 = Only read accesses are allowed
+0 = Either read or write accesses are allowed
+</td>
+</tr>
+<tr valign=top><td>6</td><td>AM - alternate master</td>
+<td>
+When AM=0 and an alternate master access occurs, SC, SD, UC, and UD are dont
+cares in the chip-select decode. 
+</td></tr>
+<tr valign=top><td>5</td><td>C/I = CPU space and Interrupt Acknowledge Cycle mask</td>
+<td>
+CS0, CS1, and CS7 only. Set to one to mask out.
+</td></tr>
+<tr valign=top><td>4</td><td>SC = Supervisor Code address space mask</td><td>Set to one to mask out.</td></tr>
+<tr valign=top><td>3</td><td>SD = Supervisor Data address space mask</td><td>Set to one to mask out.</td></tr>
+<tr valign=top><td>2</td><td>UC = User Code address space mask</td><td>Set to one to mask out.</td></tr>
+<tr valign=top><td>1</td><td>UD = User Data address space mask</td><td>Set to one to mask out.</td></tr>
+<tr valign=top><td>4</td><td>V - Valid bit</td><td>
+The Valid bit indicates that the contents of its address register, 
+mask register, and control register are valid. 
+The programmed chip selects do not assert until the V-bit is set (except
+for CS0 which acts as the global (boot) chip select.
+</td></tr>
+</table>
+	
+	<pre> <code>
+	\ chip select mask register bank0
+	$084 #mba + CONSTANT _lreg_CSMR0
+		$00100 CONSTANT _#csmrx_WP  \ write protect
+		$00040 CONSTANT _#csmrx_AM  \ alternate master
+		$00020 CONSTANT _#csmrx_C/I \ No cpu/iack select 1,2 and 7
+		$00010 CONSTANT _#csmrx_SC  \ No supervisor code
+		$00008 CONSTANT _#csmrx_SD  \ No supervisor data
+		$00004 CONSTANT _#csmrx_UC  \ No User code
+		$00002 CONSTANT _#csmrx_UD  \ No User data
+		$00001 CONSTANT _#csmrx_V   \ valid bit.
+	</code> </pre>
+
+<a name="CSCR0-7"></a>
+<h4>CHIP-SELECT CONTROL REGISTER (CSCR0 - CSCR7).</h4>
+<p>
+Each CSCR controls the auto acknowledge, external master support, port size, 
+burst capability, and activation of each of the chip-selects.
+</p>
+<table>
+<caption><b>Chip Select Control Register(CSCR0-7)</b> </caption>
+<tr valign=top><th>Bit</th><th>Name</th><th>Comment</th></tr>
+
+<tr valign=top><td>15,14</td><td>Reserved</td><td></td></tr>
+
+<tr valign=top><td>13->10</td><td>WS - Wait States</td><td>
+This field defines the number of wait states that will be 
+inserted before an internal transfer acknowledge is generated. 
+If the AA bit is set to 0, TA is asserted by the external system
+regardless of the number of wait states generated. In that case the external transfer
+acknowledge will end the cycle.
+</td></tr>
+
+<tr valign=top><td>8</td><td>AA - Auto-Acknowledge Enable</td>
+<td>
+This field controls the assertion of the internal transfer-acknowledge 
+during all accesses that hit in the corresponding chip-select address space. 
+If AA=1, the internal transfer-acknowledge will be asserted at 
+the time determined by the value of WS[3:0]. If AA=0, the Chip-Select 
+Module will not cause the internal transfer acknowledge to be asserted and the
+cycle will have to be terminated by the external system.
+</td></tr>
+
+<tr valign=top><td>7,6</td><td>PS - Port Size</td><td>
+This field specifies the width of the data associated with each chip-select. 
+It determines where data will be driven during write cycles 
+and where data will be sampled during read cycles.<br>
+00 = 32-bit port size - Data sampled and driven on D[31:0]<br>
+01 = 8-bit port size - Data sampled and driven on D[31:24] only<br>
+10 = 16-bit port size - Data sampled and driven on D[31:16] only<br>
+11 = 16-bit port size - Data sampled and driven on D[31:16] only<br>
+</td></tr>
+
+<tr valign=top><td>4</td><td>BSTR - Burst Read Enable</td> 
+<td>
+This field specifies the read burst capability of the memory 
+associated with each chip- select. If BSTR=1, all reads from 
+port sizes smaller than the requested transfer size will be bursted,
+including longword reads from 8 and 16-bit ports, word reads from 
+8-bit ports as well as line reads from 8-, 16-, and 32-bit ports. 
+If BSTR=0, all reads from port sizes smaller than the
+requested transfer size will be broken into individual reads 
+that are no larger than the specified port size. For example, 
+a longword read from an 8-bit port would be broken into
+four individual byte reads. 0 = Break all reads that are larger
+than the specified port size into individual nonburst reads
+that are no larger than the specified port size
+</td></tr>
+<tr valign=top><td>3</td><td>BSTW - Burst Write Enable</td>
+<td>
+This field specifies the write burst capability of the
+memory associated with each chip-select.
+If BSTW=1, all writes to port sizes smaller than
+the requested transfer size will be bursted,
+including longword writes to 8 and 16-bit ports,
+word writes to 8-bit ports as well as line writes
+to 8-, 16-, and 32-bit ports. If BSTW=0, all writes
+to port sizes smaller than the requested
+transfer size will be broken into individual writes
+that are no larger than the specified port
+size. For example, a longword write to an 8-bit port would
+be broken into four individual byte writes.
+</td></tr>
+<tr valign=top><td>3</td><td>BEM - Byte Enable Module</td>
+<td>
+This field specifies the mode of functionality for byte enables.
+Certain SRAMs have byte enables that must be asserted during reads
+(in addition to writes.) The BEM bit may be set in the relevant
+CSCR to provide the appropriate mode of byte enable in support of these
+SRAMS. The default mode after reset is 0 for CS7 -                                                                                                                                                                                    and 1 for CS0.<br>
+1 = BE/BWE signals generated for data reads and writes<br>
+0 = BWE signals generated for data writes only<br>
+</td></tr>
+</table>
+	<pre> <code>
+	\ chip select control register bank0
+	\ Boot flash
+	$08A #mba + CONSTANT _wreg_CSCR0
+		$2000 CONSTANT _#cscr0_wait_states \ eight wait states
+		$0100 CONSTANT _#cscrx_AA   \ auto acknowledge
+		$0040 CONSTANT _#cscr0_port_size   \ 8 bit
+		$0020 CONSTANT _#cscrx_BEM  \ Byte enable module
+		$0010 CONSTANT _#cscrx_BSTR \ Burst read enable
+		$0008 CONSTANT _#cscrx_BSWE \ Burst write enable
+
+	\ dual port stage 1 and 2
+	$0A4 #mba + CONSTANT _wreg_CSAR3
+	$0A8 #mba + CONSTANT _lreg_CSMR3
+	$0AE #mba + CONSTANT _wreg_CSCR3
+
+	$0800  CONSTANT _#cscr3_wait_states \ two wait states
+	$0080 CONSTANT _#cscr3_port_size    \ 16 bit
+
+
+	\ Chip select address register bank6
+	\ Duel port memory
+	$0C8 #mba + CONSTANT _wreg_CSAR6
+	\ chip select mask register bank6
+	$0CC #mba + CONSTANT _lreg_CSMR6
+	\ chip select control register bank6
+	$0D2 #mba + CONSTANT _wreg_CSCR6
+		$1000 CONSTANT _#cscr6_wait_states \ four wait states
+		$0080 CONSTANT _#cscr6_port_size   \ 16 bit
+
+
+	\ Chip select address register bank7
+	\ System control registers.
+	$0D4 #mba + CONSTANT _wreg_CSAR7
+	\ chip select mask register bank7
+	$0D8 #mba + CONSTANT _lreg_CSMR7
+	\ chip select control register bank7
+	$0DE #mba + CONSTANT _wreg_CSCR7
+		$0C00 CONSTANT _#cscr7_wait_states \ three wait states
+		$0040 CONSTANT _#cscr7_port_size   \ 08 bit
+	</code> </pre>
+
+<h3>DRAM controller</h3>
+<p>See section 11 of the users manual</p>
+<h4>Address mutiplexing</h4>
+<table>
+<caption>Address Muxing Scheme (32 bit)</caption>
+<tr><th>Sdram Address Pin</th><th>Coldfire Address Pin</th><th>ROW ADDRESS</th><th>COLUMN ADDRESS</th><tr>
+<tr><td></td><td>16</td><td>16</td><td>1</td></tr>
+<tr><td>A0</td><td>15</td><td>15</td><td>2 used</td></tr>
+<tr><td>A1</td><td>14</td><td>14</td><td>3 used</td></tr>
+<tr><td>A2</td><td>13</td><td>13</td><td>4 used</td></tr>
+<tr><td>A3</td><td>12</td><td>12</td><td>5 used</td></tr>
+<tr><td>A4</td><td>11</td><td>11</td><td>6 used</td></tr>
+<tr><td>A5</td><td>10</td><td>10</td><td>7 used</td></tr>
+<tr><td>A6</td><td>9</td><td>9</td><td>8 used</td></tr>
+<tr><td>A7</td><td>17</td><td>17</td><td>16 used</td></tr>
+<tr><td>A8</td><td>18</td><td>18</td><td>17</td></tr>
+<tr><td>A9</td><td>19</td><td>19</td><td>18</td></tr>
+<tr><td>A11</td><td>20</td><td>20</td><td>19</td></tr>
+<tr><td>A10(precharge command)</td><td>21</td><td>21</td><td>20</td></tr>
+<tr><td>BA0</td><td>22</td><td>22</td><td>21</td></tr>
+<tr><td>BA1</td><td>23</td><td>23</td><td>22</td></tr>
+<tr><td></td><td>24</td><td>24</td><td>23</td></tr>
+<tr><td></td><td>25</td><td>25</td><td>24</td></tr>
+</table>
+<p>
+We are using two 1Meg*16*4 per bank.
+</p>
+<p>
+Memory chips with a page size below 512 byts are not supported.
+Chips with a page size greater than 512 bytes will have the page split up
+and placed all over tha place.
+</p>
+<p>
+In our arrangment each chip has a page size of 512 bytes but two are
+used to give us a 32 bit wide data path resulting in a page size of 1024 bytes.
+</p>
+<p>
+In our example the additional bit multiplexed with the column addess is address
+bit 16. So the second half of the sdram memory page is found 64k away in the coldfire
+memory map.
+</p>
+<p>
+The generation of the required row address is the problem of the memory controller.
+So the net effect is a few more row address generations when long data structures 
+are being delt with.
+</p>
+<p>
+We have a 32 bit data path, we therfore don't need address bits 0 and 1 in the
+column address. Looking at the above table we need coldfire address pin 15 connected
+to the sdram address pin 0, coldfire address pin 14 to sdram address pin 1 and so on
+until address pin 9. This deal with address bits 2 to 15. Coldfire address pins 17 to 
+21 are then connected to the sdram address pins 7 to 11, this deals with address bits
+16 ( as part of the column address) to 21. 
+Coldfire address pins 20 and 21 are used as the bank selects. 
+</p>
+<p>There is one small complication. In 32 bit mode coldfire address A21 has the 
+precharge command on it, this must be connected to sdram adress pin 10.
+<p>
+
+
+
+
+<a name="DCR"></a>
+<h4>DRAM control register ( DCR )</h4>
+
+<table>
+<tr><th>bit</th><th>name</th><th>Comment</th><th>BCM550</th></tr>
+<tr valign=top><td>15</td><td>SO - Synchronous Operation</td>
+<td>This bit determines if the SADRAMC is in synchronous operation mode. 
+For synchronous DRAMs, this bit must be set to one. 
+Note that once the part has entered into synchronous operation, 
+it cannot be returned to asynchronous operation except by a reset. </td><td>1</td></tr>
+
+<tr valign=top><td>14</tr><td></td><td>Reserved</td><td>0</td></tr>
+
+<tr valign=top><td>13</td><td>NAM - No Address Multiplexing</td>
+<td>Some implementations will require external multiplexing support. 
+For instance, if there is an external master accessing the DRAM or 
+if a linear addressing scheme is required the SADRAMC multiplexing 
+may not be sufficient. In these cases, it would be advantageous
+to prevent the SADRAMC from multiplexing the addresses on a DRAM access. 
+If this bit is set to a 1, the SADRAMC will not multiplex the 
+external address bus to provide column addresses.</td><td>0</td></tr>
+
+<tr valign=top><td>12</td><td>COC - Command On Clock enable</td>
+<td>
+Implementations that utilize external multiplexing must have support for command
+information to be multiplexed onto the SDRAM address bus. This bit allows the command
+information to be driven out on what is normally the SDRAM clock enable (SCKE). In this
+case, the SADRAMC will not support self refresh operation, but external support may be
+generated. If the COC bit is set, the address command bit information will be generated
+on the SCKE pin. External multiplexing will be responsible for putting the command
+information on the proper address bit.</td><td>0</td></tr>
+
+<tr valign=top><td>11</td><td>IS - Initiate Self-refresh command</td>
+<td>
+This bit tells the DRAM controller to send the SELF command to both banks to cause the
+SDRAMs to enter into low-power self-refresh state where they will remain until the IS bit
+is cleared. When the IS bit is cleared, the DRAM controller will send the SELFX command
+to the SDRAMs to tell them to exit the self-refresh state. The refresh counter is suspended
+while the SDRAMs are in self-refresh. This bit is only relevent if the CPU is to be placed
+in low power mode. The BCM550 doesn't do this.</td><td>0</td></tr>
+
+<tr valign=top><td>10,9</td><td>RTIM - Refresh TIMing</td><td>
+These bits will determine the timing operation of Auto-Refresh in the SADRAMC.
+Specifically, it will determine the number of clocks inserted between the REF command
+and the next possible ACTV command. This same timing is used for both banks of the
+SADRAMC. This corresponds to tRC in the SDRAM specifications. It is given as 90nsec.
+1/45mhz = 22nsec a cycle. Options are 3 and 6cycles, 3 gives 66 nsec, which is too short. 
+6 gives gives 133 nsec which is heaps.</td><td>01</td></tr>
+<tr valign=top><td>8->0</td><td>Refresh Count - RC</td>
+<td>
+This field controls the frequency of refresh performed by the SADRAMC. 
+One is added to the value stored in these register locations and
+multiplied by 16 bus clocks to determine the refresh period. The 
+Refresh count is obtained from the SDRAM refresh cycle timing which states:<br> 
+4096 refresh cycles in 64msecs.<br>
+64/4096 = .015625 msec a refresh <br>
+1/45mhz = .0000222 msec<br>
+0.015625/0.0000222 = 703.125 bus clocks.<br>
+To convert this to a RC field value, RC = (703.125/16)-1=42.945.<br> 
+You round down as refresh have to be occure faster than minimum. A value of 42 is used.<br>
+The actual refresh time will be (42 +1)*16/45mhz = 15.28 usec
+</td><td>00101011</td></tr>
+</table>
+	
+	<pre> <code>
+	\ dram control register
+	$100 #mba + CONSTANT _wreg_DCR
+		$8000 CONSTANT _#dcr_syncronous_mode
+		$0200 CONSTANT _#dcr_refresh_timing
+		$002A CONSTANT _#dcr_refresh_count
+	</code> </pre>
+
+<a name="DACRx"></a>
+<h4>Address and Control Register ( DACRx ) </h4>
+<p>
+DARRx contain base address compare value and the control bits for both
+banks 0 and 1 of the DRAM controller.
+Address and timing are also controlled by bits in
+the DACRx registers.
+</p>
+<table>
+<caption>DACRx</caption>
+<tr><th>bit</th><th>name</th><th>Comment</th><th>BCM550</th></tr>
+<tr valign = top><td>31->18</td><td>BA - Base Address Register</td><td> 
+These register bits are used in conjunction with the BAM bits 
+in the DCMR to determine the address range in which the associated 
+bank of DRAM will be located. Each bit is compared with the 
+corresponding address of the bus cycle in progress. If each bit matches, 
+or if bits that do not match are masked in the BAM, the address hits in the
+associated banks DRAM block.</td>
+<td>DACR0 0001 0000 0000 00<br>DACR1 0001 0001 0000 00</td></tr>
+
+<tr valign=top><td>17,16</tr><td></td><td>Reserved</td><td>00</td></tr>
+
+<tr valign=top><td>15</td><td>RE - Refresh Enable</td>
+<td> 
+This bit determines if the SADRAMC will generate a refresh cycle 
+to the associated DRAM bank. This bit is reset to zero to ensure that
+the refresh function is disabled at reset. In the end this bit will be set
+</td> <td>1</td></tr>
+
+<tr valign=top><td>14</tr><td></td><td>Reserved</td><td>00</td></tr>
+
+<tr valign=top><td>13,12</td><td>CASL - Column Address Strobe Latency</td>
+<td> 
+These bits determine how long the data is delayed after the CAS signal (or the read
+command) is asserted during a SDRAM access. This data delay corresponds to the tRCD 
+( 30nsec = 2 cycles) specification in most SDRAMs. 
+This also implies other timings with respect to the SDRAM.
+These include active command to precharge command (tRAS ?? ), precharge command to
+active command (tRP 30nsec=2 cycles ), last data input to precharge command (tRWL ??), 
+and last data out to early precharge (tEP ?? ). 
+	<table>
+	<tr><th>CASL[1:0]</th><th>tRCD</th><th>tRAS</th><th>tRP</th><th>tRWL</th><th>tEP</th>
+	<tr><td>00</td><td>1</td><td>2</td><td>1</td><td>1</td><td>1</td></tr>
+	<tr><td><b>01</b></td><td>2</td><td>4</td><td>2</td><td>1</td><td>1</td></tr>
+	<tr><td>10</td><td>3</td><td>6</td><td>3</td><td>2</td><td>1</td></tr>
+	<tr><td>11</td><td>3</td><td>6</td><td>3</td><td>2</td><td>1</td></tr>
+	</table>
+Note the last column of the above table changed from early to late 
+revisions of the user's manual.
+
+</td>
+<td>01</td></tr>
+
+<tr valign=top><td>11</tr><td></td><td>Reserved</td><td>00</td></tr>
+
+<tr valign=top><td>10,9,8</td><td><a name="CBM">CBM</a> - Command and Bank Mux</td>
+<td>
+Because different SDRAM configurations will cause the bank and column bits to
+correspond to different addresses these resources have been made programmable.
+These bits will determine the addresses these onto which these functions will be
+multiplexed. Table below shows the encoding of these bits. 
+This encoding along with the address multiplexing scheme handles common 
+organizations of 16-Mbit SDRAMs, as well as some organizations of 4-Mbit, 
+and allowing room for future 64-Mbit implementations. 
+Note that the bank select bits include a base bit and all address bits above. 
+This is to allow for future implementations of SDRAM that have more than one 
+bank select bit. The selected value has address line 22 and up used for bank select.
+<table>
+<tr><th>CBM[2:0]</th><th>COMMAND BIT</th><th>BANK SELECT BITS</th></tr>
+<tr><td>000</td><td>17</td><td>18 & UP</td></tr>
+<tr><td>001</td><td>18</td><td>19 & UP</td></tr>
+<tr><td>010</td><td>19</td><td>20 & UP</td></tr>
+<tr><td>011</td><td>20</td><td>21 & UP</td></tr>
+<tr><td><b>100</b></td><td>21</td><td>22 & UP</td></tr>
+<tr><td>101</td><td>22</td><td>23 & UP</td></tr>
+<tr><td>110</td><td>23</td><td>24 & UP</td></tr>
+<tr><td>111</td><td>24</td><td>25 & UP</td></tr>
+</table>
+</td><td>100</td></tr>\
+
+<tr valign=top><td>6</td><td>IMRS - Mode Register Set Command</td>
+<td>
+This bit will generate the Mode Register Set (MRS) command to the associated SDRAMs.
+To use this feature, the base address and mask registers must be set. The associated
+<a HREF="#CBM">CBM</a> bits should also be initialized. After the IMRS bit is set, the next access to the
+address space of the SDRAM will cause the MRS command to that SDRAM to be
+generated. The address of the access should be selected in order to place the correct
+mode information on the address pins of the SDRAM. This bit is set to initiate a MRS
+command. The DRAM controller will clear the bit when the command is finished. Table
+11-28 summarizes the function of the IMRS Bit. Any accesses via the IMRS bit should be
+restricted to be no wider than the port size programmed in the PS bits.
+</td><td>-</td><tr>
+
+<tr valign=top><td>5,4</td><td>PS - Port Size</td>
+<td>
+These two bits will determine the port size of the associated bank of SDRAM which will
+allow for dynamic sizing of the associated accesses.
+<table>
+<tr><th>PS[1:0]</th><th>PORT SIZE</th><tr>
+<tr><td><b>00</b></td><td>32-Bit Port</td></tr>
+<tr><td>01</td><td>8-Bit Port</td></tr>
+<tr><td>10</td><td>16-Bit Port</td></tr>
+<tr><td>11</td><td>16-Bit Port</td></tr>
+</table>
+</td>
+<td>00</td></tr>
+
+<tr valign=top><td>3</td><td>IP - Initiate Precharge all command</td>
+<td>
+This bit will cause a Precharge All (PALL) command to be generated to the associated
+SDRAM bank. This is useful in the power up sequence of SDRAMs. In order to use this
+feature, the base address and mask registers must be set. The associated <a HREF="#CBM">CBM</a> bits
+should also be initialized. After the IP bit is set, the next access to the address space of
+the SDRAM will cause the PALL command to that SDRAM bank to be generated. It is
+automatically cleared by the DRAM controller after the PALL command is finished. Any
+accesses via the IP bit should be restricted to be no wider than the port size programmed
+in the PS bits, otherwise two address cycles will be generated and only one is required.
+</td>
+<td>
+-
+</td><tr>
+
+<tr valign=top><td>2</td><td>PM - Page Mode</td>
+<td>
+This bit determines how the associated SDRAM bank supports page mode operation.
+<table>
+<tr><th>PM</th><th>FUNCTION</th></tr>
+<tr><td>0</td><td>Page Mode on Bursts Only</td></tr>
+<tr><td><b>1</b></td><td>Continuous Page Mode</td></tr>
+</table>
+</td><td>1</td></tr>
+
+<tr valign=top><td>1,0</tr><td></td><td>Reserved</td><td>00</td></tr>
+
+</table>
+	<pre> <code>
+	\ address and control register bank 0
+	$108 #mba + CONSTANT _lreg_DACR0
+		$00008000 CONSTANT _#dacrx_RE    \ Refresh enable
+		$00001000 CONSTANT _#dacrx_CASL  \ Column address strobe latency 01 ( 2 cycles)
+		$00000400 CONSTANT _#dacrx_CBM   \ Command and bank mux address line 22 and up
+		$00000040 CONSTANT _#dacrx_IMRS  \ Initiate mode register set
+		$00000008 CONSTANT _#dacrx_IP    \ Initiate precharge all
+		$00000004 CONSTANT _#dacrx_PM    \
+		$00000000 CONSTANT _#dacrx_PS    \ Port size 32 bit
+	\ mask register bank 0
+	</code> </pre>
+<a name="DMRx"></a>
+<h4>Mask Register ( DMRx ) </h4>
+<p>
+DRAM Controller Mask Registers - DMR0 & DMR1 MBAR+$10C,114.
+These registers contain bits to mask off the compare function for addresses as well as to
+control response to certain Transfer Type/Transfer Modifier combinations.
+</p>
+<table>
+<caption>DCR</caption>
+<tr><th>Bit</th><th>Name</th><th>Comment</th><th>BCM550</th></tr>
+<tr valign=top><td>31->18</td><td>BAM - Base Address Mask</td>
+<td>
+This register bits are provided to allow the user to mask or dont care 
+the associated bit in the Base Address (BA) register. 
+If the bit is zero, the associated address is ignored to generate the DRAM hit. 
+This lets you connect various size DRAMs to the SADRAMC. Each sdram bank is 16meg long
+</td><td>00 0000 0011 1111</td><tr>
+
+<tr valign=top><td>17,9</td><td></td><td>Reserved</td><td>00</td></tr>
+
+<tr valign=top><td>8</td>
+<td>WP - Write Protect</td>
+<td>
+This bit determines if the associated bank of DRAM is write protected. If the bit is set, write
+accesses to the block of memory space occupied by the DRAM bank will be ignored by
+the DRAM Controller.</td><td>0</td><tr>
+<tr valign=top><td>7->1</td><td>C/I, AM, SC, SD, UC, UD - Address Modifier Masks</td>
+<td>
+These bits allow the associated type of access to be allowed to access DRAM. Table below 
+shows the definition of the bits. If the bit is one, the associated access type is 
+ignored. If the bit is zero, the associated access type is allowed to 
+hit in the DRAM space. 
+<table>
+<tr><th>ADDRESS MODIFIER BIT</th><th>ASSOCIATED ACCESS TYPE</th></tr>
+<tr><td>C/I</td><td>CPU Space / Interrupt Acknowledge</td></tr>
+<tr><td>AM</td><td>Alternate Master</td></tr>
+<tr><td>SC</td><td>Supervisor Code</td></tr>
+<tr><td>SD</td><td>Supervisor Data</td></tr>
+<tr><td>UC</td><td>User Code</td></tr>
+<tr><td>UD</td><td>User Data</td></tr>
+</table>
+</td>
+<td>100000</td></tr>
+
+<tr valign=top><td>0</td><td>V - Valid</td>
+
+<td>
+This bit is set to show that the registers that control the associated 
+bank of DRAM have been initialized, and that the DRAM Controller can begin 
+to decode DRAM accesses. 
+</td><td>1</td></tr>
+</table>
+	<pre> <code>
+	$10C #mba + CONSTANT _lreg_DMR0
+		$00FC0000 CONSTANT _#dmrx_address_mask
+		$00000040 CONSTANT _#dmrx_addr_modifiers
+		$00000001 CONSTANT _#dmrx_valid
+	</code> </pre>
+<p>
+See bank 0 for full description.
+</p>
+	<pre> <code>
+	\ address and control register bank1
+	$110 #mba + CONSTANT _lreg_DACR1
+	\ mask register bank 1
+	$114 #mba + CONSTANT _lreg_DMR1 
+	</code> </pre>
+<h3>Timer 1</h3>
+<p>
+See section 12 of the user's manual
+</p>
+<a name="timer1"></a>
+<p>
+Even if cpu locks up the 10msec interrupt has to continue.
+</p>
+<h4>Timer 1 mode</h4>
+<table>
+<tr><th>Bit</th><th>Name</th><th>Comment</th><th>Value</th></tr>	
+<tr valign=top><td>15->8</td><td>PS - Prescaler Value</td>
+<td>
+The prescaler is programmed to divide the clock input by values (system bus clock/(16 or 1)
+or clock on TIN pin) from 1 to 256. The binary value 00000000 divides the clock by 1; the
+value 11111111 divides the clock by 256.
+</td><td>00001111 ( 0F)</td></tr>
+<tr valign=top><td>7,6</td><td>CE -Capture Edge and Enable Interrupt</td>
+<td>
+11 = Capture on any edge and enable interrupt on capture event<br>
+10 = Capture on falling edge only and enable interrupt on capture event<br>
+01 = Capture on rising edge only and enable interrupt on capture event<br>
+00 = Disable interrupt on capture event<br>
+</td><td>00</td></tr>
+<tr valign=top><td>5</td><td>OM - Output Mode</td>
+<td>
+1 = Toggle output<br>
+0 = Active-low pulse for one system bus clock cycle (22ns at 45MHz)<br>
+</td><td>0</td></tr>
+<tr valign=top><td>4</td><td>ORI - Output Reference Interrupt Enable</td>
+<td>
+1 = Enable interrupt upon reaching the reference value<br>
+0 = Disable interrupt for reference reached (does not affect interrupt on capture
+function)
+</td><td>1</td></tr>
+<tr valign=top><td>3</td><td>FRR - Free Run/Restart</td>
+<td>
+1 = Restart: Timer count is reset immediately after reaching the reference value<br>
+0 = Free run: Timer count continues to increment after reaching the reference value
+</td><td>1</td></tr>
+<tr valign=top><td>2,1</td><td>CLK - Input Clock Source for the Timer</td>
+<td>
+11 = TIN pin (falling edge)<br>
+10 = System bus clock divided by 16. Note that this clock source is not synchronized
+to the timer; thus successive time-outs may vary slightly in length<br>
+01 = System bus clock divided by 1<br>
+00 = Stop count<br>
+</td><td>01</td></tr>
+<tr valign=top><td>0</td><td>RST - Reset Timer</td>
+<td>
+This bit performs a software timer reset similar to that of an external reset, although while
+this bit is zero, the other register values can still be written, if necessary. Effectively, a
+transition of this bit from one to zero is what resets the register values. The counter/timer/
+prescaler will not be clocked unless the timer is enabled.<br>
+1 = Enable timer<br>
+0 = Reset timer (software reset<br>
+</td>
+<td>1</td></tr>
+</table>
+	<pre> <code>
+	$800 #mba + CONSTANT _lreg_GMS0 		\ timer0, watchdog timer.
+	$810 #mba + CONSTANT _lreg_GMS1 		\ timer1, software clock.
+
+        	$A5 #24 LSHIFT 	CONSTANT _#tmr_WD_rst	\ Reset watchdog timer, GPT0 only.
+                $01 #15 LSHIFT	CONSTANT _#tmr_WDEN	\ Watchdog enable, GPT0 only.
+		$01 #12 LSHIFT 	CONSTANT _#tmr_CE	\ enable
+                $01 #10 LSHIFT 	CONSTANT _#tmr_SC	\ Stop Continuous Mode
+                $01 #08 LSHIFT	CONSTANT _#tmr_IEN	\ interrupt enable
+		$0004 		CONSTANT _#tmr1_TMS     \ timer mode, internal
+
+\		$0F 8 LSHIFT 	CONSTANT _#tmr1_PS  	\ divide by 16
+\		$0020 CONSTANT _#tmr1_OM         \ pulse output
+\		$0010 CONSTANT _#tmr1_ORI        \ interrupt on output
+\		$0008 CONSTANT _#tmr1_FRR        \ free running
+\		$0002 CONSTANT _#tmr1_CLK        \ system clock
+	</code> </pre>
+
+<h4>timer counters input register</h4>
+
+	<pre> <code>
+	$804 #mba + CONSTANT _lreg_GCIR0 		\ GPT0
+        $814 #mba + CONSTANT _lreg_GCIR1  		\ GPT1
+
+        	#16 #16 LSHIFT	CONSTANT _#timer1_prescale
+	</code> </pre>
+
+<h4>timers status register</h4>
+
+	<pre> <code>
+	$80C #mba + CONSTANT _lreg_GSR0			\ GPT0
+        $81C #mba + CONSTANT _lreg_GSR1			\ GPT1
+	</code> </pre>
+
+<h4>Slice Timers - 5474 only</h4>
+<p>See Chapter 12 - the counter value of the GPT timers cannot be read, as this is
+needed for software, we use the SLT (slice timers) instead. This is there purpose
+anyway.
+</p>
+	<pre> <code>
+	$900 #mba + CONSTANT _lreg_STCNT0 		\ slt0, count reg, software clock.
+	$910 #mba + CONSTANT _lreg_STCNT1		\
+
+        $904 #mba + CONSTANT _lreg_SCR0			\ slt0, control reg.
+        $914 #mba + CONSTANT _lreg_SCR1			\ slt1, control reg.
+
+                $01 #26 LSHIFT 	CONSTANT _#slt_RUN	\ Stop Continuous Mode
+                $01 #25 LSHIFT	CONSTANT _#slt_IEN	\ interrupt enable
+                $01 #24 LSHIFT	CONSTANT _#slt_TEN	\ enable
+
+        $908 #mba + CONSTANT _lreg_SCNT0		\ read current timer 0 value
+        $918 #mba + CONSTANT _lreg_SCNT1		\ read current timer 1 value
+
+        $90C #mba + CONSTANT _lreg_SSR0			\ status reg slice timer 0
+        $91C #mba + CONSTANT _lreg_SSR1			\ status reg slice timer 1
+
+        	$01 #24 LSHIFT CONSTANT _#slt_ST	\ timeout occured
+                $01 #25 LSHIFT CONSTANT _#slt_BE	\ Buss Error.
+	</code> </pre>
+<p>
+Calculate the counter for the 10 msec software clock, for timer1
+1/132000000 * 1 * m = .01<br>
+m = 1320000<br>
+</p>
+	<pre> <code>
+		\ COLDFORTH allows # to indicate decimal value
+		#1320000 CONSTANT _#slt0_value
+	</code> </pre>
+<h4>UART</h4>
+<p>See chapter 25 of the users manual<p>
+	<pre> <code>
+	\ register offsets, common code is used to control both uarts
+	| 00 CONSTANT _#m68_mode
+	| 04 CONSTANT _#m68_clock_select
+	| 04 CONSTANT _#m68_status
+	| 08 CONSTANT _#m68_control
+    	| 0C CONSTANT _#m68_data
+	| 10 CONSTANT _#m68_aux_control
+	| 14 CONSTANT _#m68_int_enable
+	| 14 CONSTANT _#m68_int_state
+	| 18 CONSTANT _#m68_prescaler_MSB
+	| 1C CONSTANT _#m68_prescaler_LSB
+	| 34 CONSTANT _#m68_input_port
+	| 38 CONSTANT _#m68_output_set
+	| 3C CONSTANT _#m68_output_reset
+ 	$68 CONSTANT _#pcs_r_fcr
+        $6E CONSTANT _#pcs_r_far
+  	$88 CONSTANT _#pcs_t_fcr
+        $8E CONSTANT _#pcs_t_far
+
+.S .( _#m68_output_reset)
+
+	\ uart1 mode register 1
+	\ Note the mode registers have the same offset.
+	\ A write command issued to _breg_UCR1 will reset the
+	\ register pointer. An access to the mode registers 
+	\ will increment the pointer.  
+	$8600 #mba + CONSTANT _#m68a_base
+	_#m68a_base _#m68_mode +          CONSTANT _breg_UMR11
+	_#m68a_base _#m68_mode +          CONSTANT _breg_UMR21
+	\ uart1 status register, read
+	_#m68a_base _#m68_status +        CONSTANT _breg_USR1
+	\ uart1 clock select register, write
+	_#m68a_base _#m68_clock_select +  CONSTANT _breg_UCSR1
+	\ uart1 command register
+	_#m68a_base _#m68_control +       CONSTANT _breg_UCR1
+	\ uart1 receive buffer, read
+	_#m68a_base _#m68_data +          CONSTANT _breg_URB1
+	\ uart1 transmit buffer, write
+	_#m68a_base _#m68_data +          CONSTANT _breg_UTB1
+	\ uart1 input port change register, read
+	_#m68a_base _#m68_aux_control +   CONSTANT _breg_UIPCR1
+	\ uart1 auxilary control register, write
+	_#m68a_base _#m68_aux_control +   CONSTANT _breg_UACR1
+	\ uart1 interrupt status register, read
+	_#m68a_base _#m68_int_state +     CONSTANT _breg_UISR1
+	\ uart1 interrupt mask register
+	_#m68a_base _#m68_int_enable +    CONSTANT _breg_UIMR1
+	\ uart1 baud rate prescaler ( MSB) 
+	_#m68a_base _#m68_prescaler_MSB + CONSTANT UBG11
+	\ uart1 baud rate prescaler ( LSB)
+	_#m68a_base _#m68_prescaler_LSB + CONSTANT UBG21
+	\ uart1 input port register
+	_#m68a_base _#m68_input_port +    CONSTANT UIP1
+	\ uart1 output port bit set register
+	_#m68a_base _#m68_output_set +    CONSTANT UOP11
+	\ uart1 output port bit reset register
+	_#m68a_base _#m68_output_reset +  CONSTANT UOP01 
+
+
+	\ uart2 mode register 1
+	\ Note the mode registers have the same offset.
+	\ A write command issued to _breg_UCR1 will reset the
+	\ register pointer. An access to the mode registers 
+	\ will increment the pointer.
+	$8700 #mba + CONSTANT _#m68b_base
+	_#m68b_base _#m68_mode +          CONSTANT _breg_UMR12
+	_#m68b_base _#m68_mode +          CONSTANT _breg_UMR22
+	\ uart1 status register, read
+	_#m68b_base _#m68_status +        CONSTANT _breg_USR2     
+	\ uart1 clock select register, write
+	_#m68b_base _#m68_clock_select +  CONSTANT _breg_UCSR2      
+	\ uart1 command register
+	_#m68b_base _#m68_control +       CONSTANT _breg_UCR2
+	\ uart1 receive buffer, read
+	_#m68b_base _#m68_data +          CONSTANT _breg_URB2
+	\ uart1 transmit buffer, write
+	_#m68b_base _#m68_data +          CONSTANT _breg_UTB2
+	\ uart1 input port change register, read
+	_#m68b_base _#m68_aux_control +   CONSTANT _breg_UIPCR2
+	\ uart1 auxilary control register, write
+	_#m68b_base _#m68_aux_control +   CONSTANT _breg_UACR2
+	\ uart1 interrupt status register, read
+	_#m68b_base _#m68_int_state +     CONSTANT _breg_UISR2
+	\ uart1 interrupt mask register
+	_#m68b_base _#m68_int_enable +    CONSTANT _breg_UIMR2
+	\ uart1 baud rate prescaler ( MSB) 
+	_#m68b_base _#m68_prescaler_MSB + CONSTANT UBG12
+	\ uart1 baud rate prescaler ( LSB)
+	_#m68b_base _#m68_prescaler_LSB + CONSTANT UBG22
+	\ uart1 input port register
+	_#m68b_base _#m68_input_port +    CONSTANT UIP2
+	\ uart1 output port bit set register
+	_#m68b_base _#m68_output_set +    CONSTANT UOP12
+	\ uart1 output port bit reset register
+	_#m68b_base _#m68_output_reset +  CONSTANT UOP02 
+	</code> </pre>
+
+	</code> </pre>
+<h4>GPIO</h4>
+<p>
+Use the set (led on) and rst (led_off) registers below as follows -
+xxx_set reg - Write a "0" to the appropriate bit to turn the led on, a "1" is no change.
+xxx_rst reg - Write a "1" to the appropriate bit to turn the led off, a "0" is no change.
+See section 15 of the users manual.
+</p>
+	<pre> <code>
+        $A2E #mba + CONSTANT _#breg_led2_rst		\ PPDSDR_DSPI
+        $A29 #mba + CONSTANT _#breg_led1_rst		\ PPDSDR_PSCIBG
+        $A2C #mba + CONSTANT _#breg_switch		\ PPDSDR_PSC3PSC2 use to read switch.
+        $A3E #mba + CONSTANT _#breg_led2_set		\ PCLRR_DSPI
+        $A39 #mba + CONSTANT _#breg_led1_set		\ PCLRR_PSCIBG
+
+        	$01 CONSTANT _#warm_restart		\ switch input
+                $10 CONSTANT _#cold_restart 		\ switch input
+                $08 CONSTANT _#led1_off
+                _#led1_off $FF XOR CONSTANT _#led1_on
+                $10 CONSTANT _#led2_off
+                _#led2_off $FF XOR CONSTANT _#led2_on
+
+        _#warm_restart _#cold_restart OR CONSTANT _#restart_method_bits
+        _#warm_restart _#cold_restart OR CONSTANT _#normal_restart
+
+	</code> </pre>
+
+<h4>DMA controller</h4>
+<p>
+See section 13 of the users manual
+</p>
+	<pre> <code>
+	\ dma0 source address register 1
+	$300 #mba + CONSTANT _lreg_SAR0
+	\ dma0 destination address register 1
+	$304 #mba + CONSTANT _lreg_DAR0
+	\ dma0 control register 
+	$308 #mba + CONSTANT _wreg_DCR0
+		8000 CONSTANT _#dcrx_INT    \ enable interrupt on termination
+		4000 CONSTANT _#dcrx_EEXT   \ external request
+		2000 CONSTANT _#dcrx_CS     \ cycle steal
+		1000 CONSTANT _#dcrx_AA     \ auto align
+		0100 CONSTANT _#dcrx_SAA    \ single address mode
+		0080 CONSTANT _#dcrx_S_RW   \ one = read
+		0040 CONSTANT _#dcrx_SINC   \ source increment
+		0008 CONSTANT _#dcrx_DINC   \ destination inc
+		0001 CONSTANT _#dcrx_START  \ start
+	\ dma0 count register
+	$30C #mba + CONSTANT _wreg_BCR0
+	\ dma0 status register
+	$310 #mba + CONSTANT _breg_DSR0
+	\ dma0 interrupt vector register
+	$314 #mba + CONSTANT _breg_DIVR0
+
+	\ dma1 source address register 1
+	$340 #mba + CONSTANT _lreg_SAR1
+	\ dma1 destination address register 1
+	$344 #mba + CONSTANT _lreg_DAR1
+	\ dma1 control register 
+	$348 #mba + CONSTANT _wreg_DCR1
+		0006 CONSTANT _#dcr1_DSZE
+		0030 CONSTANT _#dcr1_SSZE
+	\ dma1 count register
+	$34C #mba + CONSTANT _wreg_BCR1
+	\ dma1 status register
+	$350 #mba + CONSTANT _breg_DSR1
+	\ dma1 interrupt vector register
+	$354 #mba + CONSTANT _breg_DIVR1
+
+	\ dma2 source address register 1
+	$380 #mba + CONSTANT _lreg_SAR2
+	\ dma2 destination address register 1
+	$384 #mba + CONSTANT _lreg_DAR2
+	\ dma2 control register 
+	$388 #mba + CONSTANT _wreg_DCR2
+	\ dma2 count register
+	$38C #mba + CONSTANT _wreg_BCR2
+	\ dma2 status register
+	$390 #mba + CONSTANT _breg_DSR2
+	\ dma2 interrupt vector register
+	$394 #mba + CONSTANT _breg_DIVR2
+
+	\ dma3 source address register 1
+	$3C0 #mba + CONSTANT _lreg_SAR3
+	\ dma3 destination address register 1
+	$3C4 #mba + CONSTANT _lreg_DAR3
+	\ dma3 control register 
+	$3C8 #mba + CONSTANT _wreg_DCR3
+	\ dma3 count register
+	$3CC #mba + CONSTANT _wreg_BCR3
+	\ dma3 status register
+	$3D0 #mba + CONSTANT _breg_DSR3
+	\ dma3 interrupt vector register
+	$3D4 #mba + CONSTANT _breg_DIVR3
+	</code> </pre>
+<h3>function_data</h3>
+	<pre> <code>
+
+
+	_#function_data_base $01 + CONSTANT _#interrupt_other_cpu_reset
+	_#function_data_base $03 + CONSTANT _breg_int_reset_bus_error
+	
+	_#function_data_base $0C + CONSTANT _#bank0_direction
+	_#function_data_base $0D + CONSTANT _#bank1_direction
+	_#function_data_base $0E + CONSTANT _#bank2_direction
+	\ Used by the kernel for terminal and disk services
+	_#function_data_base $0F + CONSTANT _#bank3_direction
+
+	_#function_data_base $10 + CONSTANT _#cpu_I_bank0_claim
+	_#function_data_base $11 + CONSTANT _#cpu_II_bank0_claim
+	_#function_data_base $12 + CONSTANT _#cpu_I_bank1_claim
+	_#function_data_base $13 + CONSTANT _#cpu_II_bank1_claim
+	_#function_data_base $14 + CONSTANT _#cpu_I_bank2_claim
+	_#function_data_base $15 + CONSTANT _#cpu_II_bank2_claim
+	_#function_data_base $16 + CONSTANT _#cpu_I_bank3_claim
+	_#function_data_base $17 + CONSTANT _#cpu_II_bank3_claim
+	_#function_data_base $18 + CONSTANT _#interrupt_other_cpu
+
+
+	\ this is decoded by U64
+	_#function_data_base $20 + CONSTANT _#reset_rti1000_interrupt
+	_#function_data_base $21 + CONSTANT _#set_rti1000_interrupt
+
+
+	
+	</code> </pre>
+	<pre> <code>
+        #64 CONSTANT #base_vector				\ non core vectors start here.
+\	$40 CONSTANT #buss_error_vector
+	#base_vector  _#int_source_05 + CONSTANT _#cpu1_vector
+	#base_vector  _#int_source_06 + CONSTANT _#rti_vector
+	#base_vector  _#int_source_35 + CONSTANT _#m68a_vector
+	#base_vector  _#int_source_34 + CONSTANT _#m68b_vector
+	#base_vector  _#int_source_48 + CONSTANT _#dma_vector
+	#base_vector  _#int_source_54 + CONSTANT _#slt_vector 	\ software scheduler clock
+	</code> </pre>
+<p>
+Describe the data cache, needed for cache_flash.
+	<pre> <code>
+	$2000 CONSTANT _#cache_size
+	$0010 CONSTANT _#cache_line_size
+	$0004 CONSTANT _#cache_sets
+	</code> </pre>
+		<pre> <code>
+
+        \ The kernel checksum can't go at the start because that is where the restart
+	\ vector is stored. So it is placed at the end,
+	_prom_kernel_end 4 -                     EQU _prom_kernel_checksum
+	_prom_kernel_end 8 -                     EQU _prom_kernel_count
+
+
+       _#sdram0_base _#kernel_size +        	EQU _prom_dictionary_image_start
+
+	_prom_dictionary_image_start
+	_#dictionary_image_size +                EQU _prom_dictionary_image_end
+
+	_prom_dictionary_image_start             EQU _prom_dictionary_checksum
+	_prom_dictionary_image_start 4 +         EQU _prom_dictionary_count
+
+	_prom_kernel_start CONSTANT _interrupt_vectors  ( Start of interrupt vectors )
+
+	\ Section 3.2.2 of user's manual
+	_interrupt_vectors 0FFFFF AND 0 ??=
+
+	$100000 CONSTANT _#heap_size
+
+
+
+         \ dictionary and kernel into dram
+        \ ----------------------------------------
+        _prom_kernel_start _prom_kernel_size + EQU _#dictionary_start
+        _#dictionary_start $40000 + 1-  EQU _#dictionary_end
+        _#dictionary_end 1+ EQU RMEM4
+        _#sdram0_base _#sdram0_size _#heap_size - + 1 -  EQU RMEM5  ( End of ram area)
+
+
+	\ Buffers must be in non cached area as you must be able to DMA into
+	\ buffers.
+
+	RMEM5 1+ CONSTANT _#heap_start
+	_#heap_start _#heap_size +	CONSTANT _#heap_end
+
+
+	\ describe the interface.
+   	_#Reset_cpu_int5        CONSTANT _#bank_interrupt_reset
+ 	_#Interrupt_Command     CONSTANT _#bank_interrupt_set
+
+        0x12345678 CONSTANT #start_code
+
+  \ ##temp
+         $70000000 $2C + CONSTANT #dpmem
+	</code> </pre>
+</body>
+</html>

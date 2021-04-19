@@ -1,0 +1,690 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<a HREF="./license.html">license</a>
+<body>
+
+	<pre> <code>
+	( variable space)
+    | 8 CONSTANT #command_max
+    | ram_create %command #command_max  ram_allot
+    | ram_variable %small_buffer
+    
+    
+    
+    ( delay)
+    | : delay ( n --) xtest xwait ;
+    
+    ( error messages)
+    | CREATE $bus_locked ," HD Arbitration won't start, no bus free.,"
+    | CREATE $no_req     ," HD Target didn't assert request."
+    | CREATE $no_select  ," HD Device didn't respond to a select."
+    | CREATE $short_data ," HD Phase changed phase early."
+    | CREATE $data_timeout ," HD Timed out waiting for data."
+    | CREATE $sequence_error ," HD Target wants strange sequence."
+    | CREATE $select_error ," HD Select held high."
+    | CREATE $disk_error ," HD Disk reported an error."
+    
+    
+    
+    
+    
+    
+    
+    ( Phase names) HEX
+    | 00 CONSTANT #data_out
+    | 01 CONSTANT #data_in
+    | 02 CONSTANT #command
+    | 03 CONSTANT #status
+    | 06 CONSTANT #message_out
+    | 07 CONSTANT #message_in
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    ( SCSI mode bits combimations)  HEX
+    | 880000 CONSTANT #SCSI
+    | 800000 CONSTANT SCSI_DMA
+    
+    | 00     CONSTANT #SCSI0
+    | 01     CONSTANT #SCSI1
+    | 02     CONSTANT #SCSI2
+    | 03     CONSTANT #SCSI3
+    | 04     CONSTANT #SCSI4
+    | 05     CONSTANT #SCSI5
+    | 06     CONSTANT #SCSI6
+    | 07     CONSTANT #SCSI7
+    
+    
+    
+    
+    ( SCSI driver ) HEX
+    | #SCSI #SCSI0 +  CONSTANT SCSI0      ( Data register)
+    | #SCSI #SCSI1 +  CONSTANT SCSI1      ( Initiator command)
+    | #SCSI #SCSI2 +  CONSTANT SCSI2      ( Mode register)
+    | #SCSI #SCSI3 +  CONSTANT SCSI3      ( Target command)
+    | #SCSI #SCSI4 +  CONSTANT SCSI4      ( Current scsi control)
+    									  ( I/D register)
+    | #SCSI #SCSI5 +  CONSTANT SCSI5      ( Dma status)
+    									  ( Start dma send)
+    | #SCSI #SCSI6 +  CONSTANT SCSI6      ( Input data)
+    									  ( Start dma target recive)
+    | #SCSI #SCSI7 +  CONSTANT SCSI7      ( Reset error/interrupt)
+    
+    
+    
+    
+    DECIMAL ( timeouts)
+    | 25     ( 250 msec ) CONSTANT #select_time
+    | 25                  CONSTANT #request_time
+    | 25                  CONSTANT #arb_time
+    | 25     ( 1 sec)     CONSTANT #data_time
+    | 1                   CONSTANT #select_abort_time
+    
+
+    ( SCSI , some bit tests)  HEX
+    ( True when bus free has occured, and the chip has asserted)
+    ( busy and put the contents of the data reg [0.7-0] on the bus.)
+    
+    CODE aip? ( --f)
+    	6 # D0 MOV
+		D0 SCSI1 AB B. BTST EQ IF 
+			FALSE # S -) MOV 
+		ELSE 
+			TRUE # S -) MOV 
+		THEN 
+	NEXT
+    
+    ( If someone else asserts select, the data read has nothing)
+    ( to do with arbitration, the chip deasserts busy and the)
+    ( data lines and sets the lost bit if it detects select high)
+    
+    CODE lost? ( --f)
+    	5 # D0 MOV
+		D0 SCSI1 AB B. BTST NE IF 
+			TRUE # S -) MOV 
+		ELSE 
+			FALSE # S -) MOV
+		THEN 
+	NEXT
+    
+    ( SCSI , some bit tests)  HEX
+    ( Target asserts request when data byte is to be transfered)
+    ( The initiator has to look at it to determine when data)
+    ( is to be transfered.)
+    CODE req? ( --f)     ( True if request line active)
+    	5 # D0 MOV
+		D0 SCSI4 AB B. BTST EQ IF  
+			FALSE # S -) MOV 
+		ELSE 
+			TRUE # S -) MOV 
+		THEN  
+	NEXT
+    
+    
+    CODE busy? ( --f)
+    	6 # D0 MOV
+		D0 SCSI4 AB B. BTST EQ IF  
+			FALSE # S -) MOV 
+		ELSE 
+			TRUE # S -) MOV 
+		THEN  
+	NEXT
+ 
+    ( Arbitrate) HEX
+    ( arbitration is set when you want to initiate a transfer,)
+    ( or if you are a target, reselect. The reselect option is )
+    ( in the area of lots more complication for little gain)
+    ( and we don't support such rot.)
+    ( The chip looks after arbitration. If waits for bus free)
+    ( and asserts busy and data lines set by [0.1-7] )
+    CODE set_arbitration ( --)
+    	00 # D0 MOV
+		D0 SCSI2 AB B. BSET 
+	NEXT
+    
+    CODE reset_arbitration ( --)
+    	00 # D0 MOV
+		D0 SCSI2 AB B. BCLR 
+	NEXT
+    
+    
+    
+    
+    ( Disk error) HEX
+    CODE !DISK_ERROR ( $ --)
+    	S )+ %DISK_ERROR AB MOV NEXT
+    
+    CODE @DISK_ERROR ( --$)
+    	%DISK_ERROR AB S -) MOV  NEXT
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    ( base words) HEX
+    CODE !id ( id --)
+    	 S )+ D0 MOV  
+		 D0 SCSI0 AB B. MOV 
+	NEXT
+    
+    CODE @id ( --id)
+    	 0 # D0 MOV  
+		 SCSI0 AB D0 B. MOV  
+		 D0 S -) MOV 
+	NEXT
+    
+    CODE myid ( --id)
+    	 %MYID AB A0 W. MOV 
+		 A0 S -) MOV 
+	NEXT
+    
+    
+    
+    
+    
+    
+    
+    ( Wait for request)  HEX
+    CODE wait_req ( --)
+    	xclock+ AB D0 MOV
+		05 # D2 MOV
+    	BEGIN  
+			D2 SCSI4 AB BTST 
+		EQ WHILE
+    		D0 D1 MOV 
+			#request_time # D1 ADD 
+			xclock- AB D1 ADD MI IF
+    			$no_req # D3 MOV  
+				D3 %DISK_ERROR AB MOV 
+				NEXT assembler 
+    		THEN 
+		REPEAT 
+	NEXT
+   
+    ( reg 1 operations) HEX
+    CODE set_data ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		0 # D0 BSET
+    	D0 SCSI1 AB B. MOV  
+	
+	NEXT
+    
+	CODE reset_data ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		0 # D0 BCLR
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE set_busy ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		3 # D0 BSET
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE reset_busy ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		3 # D0 BCLR
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE set_ack ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		4 # D0 BSET
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE reset_ack ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		4 # D0 BCLR
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE set_sel ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		2 # D0 BSET
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+	CODE reset_sel ( --)
+    	SCSI1 AB D0 B. MOV  
+		9F # D0 AND  
+		2 # D0 BCLR
+    	D0 SCSI1 AB B. MOV  
+	NEXT
+    
+    
+    
+    ( SCSI, dma control) HEX
+    CODE reset_dma  ( --)
+    	1 # D0 MOV
+		D0 SCSI2 AB B. BCLR 
+	NEXT
+
+    CODE set_dma   ( --)
+    	1 # D0 MOV
+		D0 SCSI2 AB B. BSET
+	NEXT
+
+    CODE clear_sel_enable ( --)
+    	SCSI4 AB B. CLR 
+	NEXT
+
+    CODE set_sel_enable ( --)
+    	 %MYID AB D0 W. MOV  
+		 D0 SCSI4 AB B. MOV 
+	NEXT
+    
+    CODE @phase ( --8b)
+    	SCSI4 AB D0 B. MOV   
+		2 # D0 ASR
+    	07 # D0 AND  
+		D0 S -) MOV 
+	NEXT
+    CODE !phase ( 8b --)
+    	S )+ D0 MOV   
+		D0 SCSI3 AB B. MOV 
+	NEXT
+    
+    ( SCSI arbitrate) HEX
+CODE arbitrate ( -- f)
+    S -) CLR
+	0 # D3 MOV
+    %MYID AB D3 W. MOV
+    0F # TRAP
+    D3 SCSI0 AB B. MOV   ( write id )
+    0 # D0 MOV
+	D0 SCSI1 AB B. BSET ( enable data bus )
+    D0 SCSI2 AB BSET  ( set arbitrate )
+    20 # D0 MOV
+    BEGIN  
+		6 # D1 MOV
+		D1 SCSI1 AB BTST ( arbitration in progress) NE IF
+			5 # D1 MOV
+			D1 SCSI1 AB BTST NE IF ( lost ) 
+				0 # D1 MOV
+				D1 SCSI2 AB BCLR  
+				D1 SCSI1 AB BCLR
+    			8 # TRAP 
+				NEXT assembler 
+			THEN
+			0 # D0 MOV
+			SCSI0 AB D0 B. MOV  
+			D3 D0 SUB 
+			D3 D0 CMP GT IF ( higher priority id) 
+				0 # D1 MOV
+				D1 SCSI2 AB BCLR
+				D1 SCSI1 AB BCLR  
+				8 # TRAP NEXT assembler   
+			THEN
+			( success )
+			TRUE # S ) MOV ( true to stack )
+			8 # TRAP
+			NEXT assembler  
+		THEN
+	1 # D0 SUB
+	CS UNTIL
+	( failed )
+	0 # D1 MOV
+	D1 SCSI2 AB BCLR
+	D1 SCSI1 AB BCLR  
+	8 # TRAP  
+NEXT  
+ 
+    
+    
+    ( SCSI ARBITRATE) HEX
+    : ARBITRATE ( --)
+		xclock+ @ #arb_time +
+		BEGIN  
+			arbitrate  IF 
+				DROP EXIT 
+			THEN
+    		xtest 1 xwait
+    		DUP xclock- @ + 0< IF
+    			$bus_locked !DISK_ERROR DROP EXIT 
+			THEN
+		AGAIN 
+	;
+    
+    
+    
+    
+    
+    
+    
+    
+    ( reset_scsi)  HEX
+    CODE reset_scsi ( --)
+    	0F # TRAP ( disable interrupts)
+    	  SCSI1 AB D0 B. MOV
+    		9F # D0 AND
+    		7 # D0 BSET
+    		D0 SCSI1 AB B. MOV
+    		NOP NOP NOP NOP NOP NOP NOP NOP NOP NOP
+    		SCSI1 AB D0 B. MOV
+    		1F # D0 AND
+    		D0 SCSI1 AB B. MOV
+    	08 # TRAP
+    NEXT
+    
+.S .( SELECT )    
+    
+    ( SCSI , select) HEX
+    : SELECT ( targetID --)
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+panic" here!!!!!!!!!!!!! " panic_cr
+    0 !phase ARBITRATE @DISK_ERROR IF
+       reset_arbitration
+       DROP EXIT THEN
+    !id               ( [ 0.1-7] no reselection allowed )
+    set_sel           ( [1.2] )
+    reset_arbitration ( [2.0] releases busy line )
+    xclock+ @ #select_time +
+    BEGIN busy? IF ( someone talking)
+    		DROP reset_data reset_sel  wait_req EXIT
+    	THEN DUP xclock- @ + 0< 
+    UNTIL  ( Timout)
+    DROP
+    reset_data ( [1.0] )
+    
+    ( select continued) [  HEX ]T
+    #select_abort_time delay ( aborted sel time)
+    busy? IF ( someone talking)
+    	  reset_sel ( [1.2] ) wait_req EXIT THEN
+    reset_sel ( [1.2] )
+    set_sel_enable
+    reset_scsi
+    $no_select !DISK_ERROR    ;
+    
+    
+    
+    
+    
+    
+    
+    
+( SCSI transfers) HEX
+CODE data_out ( addr count --)
+    S )+ D0 MOV  
+	1 # D0 SUB 
+	S )+ A0 MOV 
+	xclock+ AB D1 MOV
+    BEGIN 
+		BEGIN
+    		5 # D3 MOV
+			D3 SCSI4 AB BTST 
+		( no request ) 
+		EQ WHILE
+    		3 # D3 MOV
+			D3 SCSI5 AB BTST EQ IF ( phase missmatch)
+    		  $short_data # D4 MOV
+			  D4 %DISK_ERROR AB MOV 
+			  NEXT assembler 
+    		THEN
+    		D1 D2 MOV
+    		#data_time # D2 ADD  
+			xclock- AB D2 ADD  MI IF
+    		  $data_timeout # D4 MOV
+			  D4 %DISK_ERROR AB MOV NEXT assembler
+    		THEN
+    	REPEAT
+    	A0 )+ SCSI0 AB B. MOV  ( set data lines)
+    	4 # D3 MOV
+		D3 SCSI1 AB BSET ( set ack)
+    	BEGIN  
+			5 # D3 MOV
+			D3 SCSI4 AB BTST 
+		NE ( request ) WHILE
+    		D1 D2 MOV
+    		#data_time # D2 ADD  
+			xclock- AB D2 ADD  MI IF
+    			$data_timeout # D4 MOV
+				D4 %DISK_ERROR AB MOV 
+				NEXT assembler 
+    		THEN
+    	REPEAT
+    	4 # D3 MOV
+		D3 SCSI1 AB BCLR ( reset ack)
+    1 # D0 SUB
+	CS UNTIL 
+NEXT
+    
+    
+    
+    
+    
+( SCSI transfers) HEX
+CODE data_in ( addr count --)
+    S )+ D0 MOV  
+	1 # D0  SUB 
+	S )+ A0 MOV 
+	xclock+ AB D1 MOV
+    BEGIN  
+		BEGIN
+    		6 # D3 MOV
+			D3 SCSI5 AB BTST 
+		EQ ( no dma reguest.) WHILE
+    		3 # D3 MOV
+			D3 SCSI5 AB BTST EQ IF ( phase missmatch)
+    			$short_data # D4 MOV
+				D4 %DISK_ERROR AB MOV 
+				NEXT assembler
+    		THEN
+    		D1 D2 MOV
+    		#data_time # D2 ADD  
+			xclock- AB D2 ADD  MI IF
+    			$data_timeout # D4 MOV
+				D4 %DISK_ERROR AB MOV 
+				NEXT assembler
+    		THEN
+    	REPEAT 
+		SCSI_DMA AB A0 )+ B. MOV
+    1 # D0 SUB
+	CS UNTIL  
+NEXT
+    
+    
+    ( SCSI dma transfer) HEX
+    CODE start_dma_initiator ( --)
+    	 SCSI7 AB B. CLR NEXT
+    CODE start_dma_target ( --)
+    	 SCSI6 AB B. CLR NEXT
+    : out ( addr # --)
+    	set_data ( [ 1.0] )
+    	data_out
+    	reset_data ( [ 2.1] ) ;
+    : in_initiator ( addr # --)
+    	set_dma start_dma_initiator data_in reset_dma ;
+    : in_target ( addr # --)
+    	set_dma start_dma_target data_in reset_dma ;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    ( make read command)   HEX
+    CODE !sector ( n --)
+       S )+ D0 MOV  1 # D0 ASL ( by 2)
+       D0 %command 4+ AB B. MOV
+       8 # D0 ASR  D0 %command 3+ AB B. MOV
+       8 # D0 ASR  D0 %command 2+ AB B. MOV  NEXT
+    
+    CREATE $read 06080000 t, 00020000 t,
+    : read>%command ( n --)
+    	$read %command #command_max $move !sector ;
+    
+    CREATE $write 060A0000 t, 00020000 t,
+    : write>%command ( n --)
+    	$write %command #command_max $move !sector ;
+    
+    
+    ( sub actions)
+    : in_message ( --)
+    	#message_in !phase %small_buffer 1+ one in_initiator ;
+    : in_status ( --)
+    	#status !phase %small_buffer one in_initiator ;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+     ( scsi interrupt service)
+    CREATE 4off ( --) assembler
+    	SCSI7 AB B. TST (  reset int)
+    	system_rte
+    
+    
+    ( READ_INITIATOR)  HEX
+    ( command in %command)
+    : IN_INITIATOR ( addr count unit --)
+      SELECT @DISK_ERROR IF 2DROP EXIT THEN
+      @phase #command <> IF
+    		$sequence_error !DISK_ERROR reset_scsi 2DROP EXIT THEN
+      #command !phase %command COUNT out
+      @DISK_ERROR IF
+    		2DROP reset_scsi EXIT THEN
+      wait_req @DISK_ERROR IF  2DROP reset_scsi EXIT THEN
+      @phase #data_in = IF
+    	  #data_in !phase  in_initiator
+    	  @DISK_ERROR IF reset_scsi EXIT THEN
+      ELSE 2DROP THEN
+    
+    
+    (  SCSI READ)
+      wait_req @DISK_ERROR IF   reset_scsi EXIT THEN
+      @phase #status = IF
+    		in_status
+    		@DISK_ERROR IF reset_scsi EXIT THEN THEN
+      wait_req @DISK_ERROR IF  reset_scsi EXIT THEN
+      @phase #message_in = IF
+    	  in_message
+    	  @DISK_ERROR IF reset_scsi EXIT THEN THEN
+      %small_buffer W@ IF
+    	$disk_error !DISK_ERROR THEN
+      set_sel_enable
+      ;
+    
+    
+    
+    ( OUT_INITIATOR )  HEX
+    ( command in %command)
+    : OUT_INITIATOR ( addr count unit --)
+      SELECT @DISK_ERROR IF 2DROP EXIT THEN
+      @phase #command <> IF
+    		$sequence_error !DISK_ERROR reset_scsi 2DROP EXIT THEN
+      #command !phase %command COUNT out
+      @DISK_ERROR IF
+    		2DROP reset_scsi EXIT THEN
+      wait_req @DISK_ERROR IF  2DROP reset_scsi EXIT THEN
+      @phase #data_out = IF
+    	  #data_out !phase out
+    	  @DISK_ERROR IF reset_scsi EXIT THEN
+      ELSE 2DROP THEN
+    
+    
+    (  OUT_INITIATOR )
+      wait_req @DISK_ERROR IF   reset_scsi EXIT THEN
+      @phase #status = IF
+    		in_status
+    		@DISK_ERROR IF reset_scsi EXIT THEN THEN
+      wait_req @DISK_ERROR IF  reset_scsi EXIT THEN
+      @phase #message_in = IF
+    	  in_message
+    	  @DISK_ERROR IF reset_scsi EXIT THEN THEN
+      %small_buffer W@ IF
+    	$disk_error !DISK_ERROR THEN
+      ;
+    
+    
+    
+    
+    ( BLOCK READ and WRITE ) HEX
+ \   &DISK GETSPLIT
+    : 1READ_SCSI ( n addr --)
+      +fl_offset  0 !DISK_ERROR
+      DUP ROT read>%command
+      #block_size 1 IN_INITIATOR
+      @DISK_ERROR not IF DROP EXIT THEN
+      0 !DISK_ERROR #block_size 1 IN_INITIATOR ( try twice ) ;
+    
+    : 1WRITE_SCSI ( n addr --)
+      +fl_offset DUP ROT write>%command
+      #block_size 1 OUT_INITIATOR
+      @DISK_ERROR not IF DROP EXIT THEN
+      0 !DISK_ERROR #block_size 1 OUT_INITIATOR ( try twice ) ;
+    
+ \   &DISK ENDSPLIT
+    ( BLOCK READ and WRITE ) HEX
+ \   &DISK GETSPLIT
+    : 2READ_SCSI ( n addr --)
+      +fl_offset  0 !DISK_ERROR
+      DUP ROT read>%command
+      #block_size 2 IN_INITIATOR
+      @DISK_ERROR not IF DROP EXIT THEN
+      0 !DISK_ERROR #block_size 2 IN_INITIATOR ( try twice ) ;
+    
+    : 2WRITE_SCSI ( n addr --)
+      +fl_offset DUP ROT write>%command
+      #block_size 2 OUT_INITIATOR
+      @DISK_ERROR not IF DROP EXIT THEN
+      0 !DISK_ERROR #block_size 2 OUT_INITIATOR ( try twice ) ;
+    
+  \  &DISK ENDSPLIT
+    
+    </code> </pre>
+    
+      
+</body>
+</html>

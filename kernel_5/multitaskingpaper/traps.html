@@ -1,0 +1,498 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+ .S .( Into traps.html)
+	\ Have ago at aborting process
+	: _abort_access_error TRUE ABORT" Access Error" ;
+ 	interrupt: TRAP02
+		save_fault_stack
+
+		panic_cr
+		panic" Access Error" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @ $40 panic_show
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		['] _abort_access_error int_return!
+	;interrupt
+
+	\ Have an attempt at abort the offending process
+	: _abort_address_error TRUE ABORT" Address Error" ; 
+ 	interrupt: TRAP03
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Address Error" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @ $40 panic_show
+
+		['] _abort_address_error int_return!
+
+	;interrupt
+	
+	\ Have an attempt at aborting the offending process
+	: _abort_illegial_instruction TRUE ABORT" Illegal Instruction" ;
+	interrupt: TRAP04
+		save_fault_stack
+[ #BCM550 [IF] ]T		
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Illegal Instruction" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @ $40 panic_show
+
+		['] _abort_illegial_instruction int_return!
+
+	;interrupt
+
+
+	\ have an attempt at aborting offending process
+	: _abort_priv_violation TRUE ABORT" Privilege violation" ;
+	interrupt: TRAP08
+		save_fault_stack
+[ #BCM550 [IF] ]T		
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Privilege violation" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @ $40 panic_show
+
+		['] _abort_priv_violation int_return!
+	;interrupt
+    
+	
+	\ acceptable behavior
+	interrupt: TRAP09
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr 
+		panic" Trace"
+		panic_stack_frame
+	;interrupt
+
+	\ Have a go at aborting offending process
+	: _abort_line_a TRUE ABORT" Unimplemented line A code" ;
+    interrupt: TRAP0A
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Unimplemented line A code" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @  $40 panic_show
+
+		['] _abort_line_a int_return!
+	;interrupt
+
+
+
+	\ have a go at oborting offending process
+	: _abort_line_f  TRUE ABORT" Unimplemented line F code" ;
+	interrupt: TRAP0B
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Unimplemented line F code"
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @  $40 panic_show
+
+		['] _abort_line_f int_return!
+	
+	;interrupt
+    
+	\ This is acceptable behavior
+	interrupt: TRAP0C
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Debug interrupt" 
+		panic_stack_frame
+	;interrupt
+
+	\ we are not likely to be able to recover from this one
+	interrupt: TRAP0E
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic" Format error" 
+		panic_stack_frame
+	;interrupt
+ 
+	\ just return from this
+	interrupt: TRAP0F
+		save_fault_stack
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		panic_cr
+		panic"Unimplemented Interrupt ... "
+		panic_stack_frame
+	;interrupt
+
+	: _abort_bus_error panic" In abort code" TRUE ABORT" Bus error" ;
+
+ 	interrupt: TRAP1F
+		\ reset interrupt, must be a write
+		zero _breg_int_reset_bus_error C! 
+		save_fault_stack
+		panic_cr
+		panic" Bus Error" 
+		panic_stack_frame
+		panic_cr
+		panic" Offending code"
+		_#int_A7 @int_stack_frame _#int_user_return + @ $40 panic_show
+[ #BCM550 [IF] ]T
+		_breg_SS1 C@
+		_#SS1_processor_fault OR
+		_breg_SS1 C!
+[ [THEN] ]T
+		['] _abort_bus_error int_return!
+	;interrupt
+	</code> </pre>
+<a name="trap22"></a>
+<p>
+All this is being done on the stack of the task that was running at
+the time. It really is best done in assembler so the stack space that
+has to be provided by each task to interrupt service is kept to a minimum
+Oh for the 68k.
+</p>
+<p>
+This is a task switch within a loop. The task switch can use registers
+as any normal forth word would. That is A0 A1 and W ok etc. Actually you 
+can use more as LP, and OP have been saved off.
+</p>
+	<pre> <code>
+	CREATE TRAP22 assembler
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled, or switch back to user
+		\ space, all this can be done in user space
+		$0000 # SR MOV
+		R )+ D0 MOV ( pop cpu status and format )
+		R )+ A0  MOV     ( return address)
+		\ the return address points to the instruction after
+		\ the trap instruction, the trap instruction is two bytes.
+		#activation_trap 2+  # A0 SUB  ( activation base address)
+		
+		#activation_task> 0) U MOV
+
+		zero # D1 MOV
+		#activation_status 0) D1 W. MOV  ( status)
+		sleep # D1 CMP EQ IF
+			\ we have to get the next tasks  trap instruction
+			#activation_task_link 0) A0 MOV \ address next instruction
+			A0 ) JMP
+		THEN
+		wake # D1 CMP EQ IF
+			sleep # #activation_status 0) W. MOV    ( only one activation)
+			(S) U) S MOV
+			S )+ R MOV   
+			S )+ OP MOV
+			S )+ LP MOV
+			EXIT
+		THEN
+		test # D1 CMP EQ IF
+			#activation_task_link 0) A1 MOV     ( next task in loop)
+			_task_restart_time user_base - U) D0 MOV    ( activation time)
+			xclock- AB D0 ADD CS IF
+				A1 ) JMP  
+			THEN  ( Go to next task if not ready)
+			(S) U) S MOV   ( stack pointer restored)
+			S )+ R MOV     ( return stack pointer)
+			S )+ OP MOV
+			S )+ LP MOV
+			EXIT
+		THEN
+		\ For unknown codes treat as sleep
+		\ we have to get the next tasks  trap instruction
+ 		#activation_task_link 0) A0 MOV \ address next instruction
+		A0 ) JMP
+	HOST
+
+	??HEX
+	\ stop the CPU    
+	LABEL TRAP25 ( reset) assembler
+		7 100 * 2000 + # STOP
+		BEGIN 
+			D0 D0 ADD 
+		BRA
+	HOST    
+
+    ( Execute code in supervisor mode)
+	LABEL TRAP26
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		8 # R ADD  
+		S )+ R -) MOV 
+		2700 # R -) W. MOV
+		4000 # R -) W. MOV ( format code) 
+	RTE
+	</code> </pre>
+<a name="trap27"></a>
+<h4>Swap task levels</h4> 
+<p>
+We enter this code with R set to a user stack. If there is a suspeneded level
+it will be stored on the system stack.
+</p>
+
+	<pre> <code>
+	\ These two flags are tested as one in the following code.
+	_#level_head_restart_flag 2 + _#level_head_repeat_flag ??=
+	
+	LABEL TRAP27 assembler
+
+		\ if we are in supervisor mode and not using the 
+		\ interrupt stack we have to have interrupts disabled.
+		2700 # SR W. MOV       ( no interrupts)
+		
+		\ hardware interrupt frame. Need the entry address as 
+		\ the switch level is stored in the word pointed to
+
+		4 # R ADD \ don't need status
+		R )+ A0 MOV \ need address for table entry
+
+		\ switch to system stack, we have to save the user stack pointer
+		\ it will be used later on if there is not a user state saved
+		\ for this level.
+
+		R A2 MOV
+		_%int_stack_pointer AB R MOV
+
+		
+		0 # D1 MOV
+		_#level_head_next_level _#level_head_trapPC - 0) D1 W. MOV         ( level to swap to)
+		D1 _xlevel AB MOV       ( save as level we are about to run)
+		 
+		R ) D2 MOV              ( stacked cpu state, with level on top)
+
+		\ level suspended
+
+		D2 D1 CMP EQ IF         ( this level has been suspended)
+			4 # R ADD         ( drop level )
+				\ save the MAC registers
+			R )+ D0 MOV
+			D0 ACC MOV
+			R )+ D0 MOV
+		    D0 MASK MOV 
+			R )+ D0 MOV
+			D0 MACSR MOV
+    		R ) \\ D0 A6 \\ MMOV
+			8 7 + 4 * R) R LEA
+			
+			\ we now have to use the trap return frame that was there when 
+			\ suspended the task.
+			\ Further _%int_stack_pointer has to be updated to 
+			\ point to next frame.
+
+			R )+ A0 MOV          \ user stack
+			R _%int_stack_pointer AB MOV
+			A0 R MOV
+
+			R )+ A0 MOV
+			\ because interrupts are disabled RTE will do
+    		RTE           ( the return state was saved when the level was suspended)
+		THEN
+
+		\ ? level to be restarted, switch back to user stack and get things going
+		A2 R MOV
+		_xheads # A0 MOV
+		[ A0 D1 4 ] A1 MOV        ( first task address)
+
+		_#level_head_restart_flag _#level_head_trap - 1) D2 MOV 
+		NE IF 
+			FALSE # _#level_head_restart_flag _#level_head_trap - 1) W. MOV
+			( First task is linked into the level swiching entry)
+			#activation_task_link  1) R -) MOV    ( next task in loop)
+			$0000 # R -) W. MOV         ( New status)
+			$4000 # R -) W. MOV         ( format code)
+			RTE
+		THEN
+		
+		( execute the head of the new level )
+		( This will have us straight back to deal with the next.)
+		A1 R -) MOV
+		0 # R -) W. MOV  ( New status)
+		4000 # R -) W. MOV
+	RTE
+	HOST   
+    
+    
+	( Change interrupt level)
+	LABEL TRAP28
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+    		F8FF # D0 AND
+			D0 4 R) W. MOV
+			R )+ D0 MOV
+		THEN 
+	RTE
+    HOST
+
+	LABEL TRAP29	
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB  TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+			F8FF # D0 AND  
+			0100 # D0 OR
+			D0 4 R) W. MOV
+			R )+ D0 MOV
+		THEN 
+	RTE
+	HOST
+
+	LABEL TRAP2A
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+    		F8FF # D0 AND  
+			0200 # D0 OR 
+			D0 4 R) W. MOV
+			R )+ D0 MOV 
+		THEN 
+	RTE
+    HOST
+
+	LABEL TRAP2B
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+    		F8FF # D0 AND  
+			0300 # D0 OR 
+			D0 4 R) W. MOV
+			R )+ D0 MOV 
+		THEN 
+	RTE
+    HOST
+
+	LABEL TRAP2C
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB  TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+    		F8FF # D0 AND  
+			0400 # D0 OR
+			D0 4 R) W. MOV
+			R )+ D0 MOV 
+		THEN 
+	RTE
+	HOST
+
+	LABEL TRAP2D     
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB  TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV
+    		F8FF # D0 AND  
+			0500 # D0 OR 
+			D0 4 R) W. MOV
+			R )+ D0 MOV 
+		THEN 
+	RTE
+    HOST
+
+	LABEL TRAP2E
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		%int_enable AB TST NE IF
+			D0 R -) MOV
+			4 R) D0 W. MOV	
+    		F8FF # D0 AND  
+			0600 # D0 OR 
+			D0 4 R) W. MOV
+			R )+ D0 MOV
+		THEN 
+	RTE
+	HOST
+
+	LABEL TRAP2F
+		\ if we are not using the interrupt stack we have
+		\ to have interrupts disabled.
+		2700 # SR MOV
+		D0 R -) MOV
+		4 R) D0 W. MOV                    
+		0700 # D0 OR 
+		D0 4 R) W. MOV
+		R )+ D0 MOV 
+	RTE
+    HOST
+
+    </code> </pre>
+    
+    
+</body>
+</html>
+
+

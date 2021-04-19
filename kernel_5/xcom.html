@@ -1,0 +1,2084 @@
+<html>
+<head>
+<title>Xcom.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h1> Xcompiler </h1> 
+<a HREF="./license.html">license</a>
+
+<pre> <code>
+\ need a version that has nothing to do with current kernel
+ram_variable %input_files
+HEX
+ONLY
+FORTH
+: .context .context CR send ;
+-1 CONSTANT TRUE
+
+\ needed for the object stuff
+ram_variable _%t_current_interface
+ram_variable _%t_last_interface_offset
+ram_variable _%t_save_op
+
+</code> </pre>
+<h5> Assumption tests</h5>
+<p>
+When you write code you make certain assumptions. These words are
+used to test the assumptions at compile time
+</p>
+	<pre> <code>
+	: ?? ( flag --) 
+		ABORT" ?? has to be false" ;
+	: ??= ( n1 n2 --)
+		<> ABORT" ?? these have to be equal." ;
+	: ??< ( n1 n2 --)
+		< not ABORT" ?? ran out of something." ;
+	: ??> ( n1 n2 --)
+		> not ABORT" ?? something is too small" ;
+	: ??<= ( n1 n2 --)
+		> ABORT" ?? something wrong." ;
+
+	: ??HEX  BASE @ 10 <> ABORT" Not in hex" ;
+	</code> </pre>
+<p>
+Test that a value can be represented by a shift.
+</p>
+	<pre> <code>
+	: ??asl ( asl length --)
+		SWAP 2** <> ABORT" ?? asl error" ;
+	</code> </pre>
+<h3>Standard in a COLDFORTH sytem but not in a ANSI system</h3>
+<p>
+Indicate we are dealing with flags not numbers.
+</p>
+	<pre> <code>
+	: not 0= ;
+	</code> </pre>
+
+<p>
+The highest number that is less than the input value and is a power 
+of 2.
+</p>
+	<pre> <code>
+	: >asl ( value -- asl_value)
+		zero SWAP                 \ count value (--
+		BEGIN
+			1 RSHIFT
+			DUP not IF
+				DROP
+				EXIT
+			THEN
+			SWAP 1+ SWAP
+		AGAIN
+	;
+	</code> </pre>
+<p>
+Decribe the type of word we are going to create, we don't want to be tied 
+to the host version.
+</p>	
+	<pre> <code>
+	20 CONSTANT _#smudge_bit
+		\ set true code can be copied to : word
+	40 CONSTANT _#pure_bit
+		\ set true if word is to be executed when compiling
+	80 CONSTANT _#immediate_bit
+		\ Bits used to set the name count
+	1F CONSTANT _#name_count_bits
+
+	
+	.S .( _#head_count)
+	\ The string is stored above the link count first and then the characters
+	zero
+	DUP CONSTANT _#head_count 1+ 
+	DUP CONSTANT _#head_link CELL+
+	DUP CONSTANT _#head_hash CELL+
+	DUP CONSTANT _#head_cfa  
+	DUP CONSTANT _#head_xt   6 +   \ Room for a JSR
+	DUP CONSTANT _#head_pfa  CELL+
+	DROP
+
+	: t_cfa>pfa ( addr1 -- addr2)
+		[ _#head_pfa _#head_cfa - ] LITERAL + ;
+
+	: t_xt>pfa ( addr1 -- addr2)
+		[ _#head_pfa _#head_xt - ] LITERAL + ;
+
+
+	: t_cfa>xt ( addr1 -- addr2) ; 
+
+
+    : t_pfa>cfa ( addr -- addr ) [ _#head_cfa _#head_pfa - ] LITERAL + ;
+
+    : t_pfa>xt ( addr -- addr ) [ _#head_xt _#head_pfa - ] LITERAL + ;
+
+    : t_xt>cfa ( addr -- addr ) ; 
+
+
+	: t_xt>nfa ( lfa -- pfa ) 
+		[ _#head_count _#head_xt - ] LITERAL + 
+	;
+
+	: t_cfa>nfa ( addr --addr)
+		[ _#head_count _#head_cfa - ] LITERAL + ;
+
+
+	: _t_lfa>nfa  ( addr -- addr )
+		[ _#head_count _#head_link - ] LITERAL + ;
+
+
+	: _t_lfa>pfa ( lfa -- pfa ) 
+		[ _#head_pfa _#head_link - ] LITERAL + 
+	;
+
+	: _t_lfa>hash ( addr -- addr )
+		[ _#head_hash _#head_link - ] LITERAL + ; 
+
+	: _t_pfa>nfa ( addr --addr)
+		[ _#head_count _#head_pfa - ] LITERAL + ;
+
+.S .( after _t_pfa>nfa)
+	</code> </pre>
+
+
+<h3>Constants Data areas</h3>
+<p>
+The maximum image size that can be handled.
+</p>
+	<pre> <code>
+	$78000 CONSTANT _#kernel_size
+	\ This area is copied from prom to ram on a restart and is the
+	\ foundation of the application dictionary.
+	$8000 CONSTANT _#dictionary_image_size
+
+	_#kernel_size _#dictionary_image_size + CONSTANT _#prom_size
+	</code> </pre>
+<p>
+The image is created into this area
+</p>
+	<pre> <code>
+	\ these two data areas have to be together
+	\ The two areas are copied to flash as one.
+	ram_variable %image_areas _#prom_size ram_allot
+	%image_areas CONSTANT %NEW_IMAGE
+	\ This area is read/write
+	%image_areas _#kernel_size + CONSTANT %NEW_DICTIONARY_IMAGE 
+	</code> </pre>
+<h3>Target vocabulary</h3>
+<p>
+The vocabularies for manipulating the target have four separate  lists, one contains 
+words that add the required data to the target when a non immediate word is found
+in the target definition, a second contains immediate words that also manipulate
+the target. The third contains forward references, these are resolved at the end
+of the compile. A forth contains the hrads of the linked lists that reside in the
+target. All these are pointed to in one structure. The context and current entrie
+point to the structure.
+</p>
+
+<a name="target_current"></a>
+<h5>target_current ( -- addr )</h5>
+<p>
+The words are added to the wordlist pointed to by the top value. We make current
+a stack so that the kernel can add words to voacabularies without altering the
+applications current value. target_definitions pushes a value. 
+target_definition_previous pops a value.
+</p>
+
+	<pre> <code>
+	4 CONSTANT #target_current_vocs
+	ram_variable target_current  #target_current_vocs 1- CELLS ram_allot
+	</code> </pre>
+
+<p>
+The target context vocabulary. All vocabularies in the search order are searched.
+</p>
+	<pre> <code>
+	10 CONSTANT #target_context_max
+	
+	ram_variable target_context_count
+	\ As the variable allots a cell this are is one cell to large whatever.
+	ram_variable target_context #target_context_max CELLS ram_allot      \ can search multiple vocabularies
+	</code> </pre>
+<a name="target_get_order"></a>
+<h5>target_get_order ( -- widn ... wid1 n )</h5> 
+<p>		
+Returns the number of word lists n in the search order and the word 
+list identifiers widn ... wid1 identifying these word lists. wid1 
+identifies the word list that is searched first, and widn the word 
+list that is searched last. The search order is unaffected. 
+</p>
+
+
+	<pre> <code>
+	: target_get_order
+		target_context_count @ zero ?DO
+			target_context_count @  I - 1- CELLS target_context + @
+		LOOP
+		target_context_count @
+	;
+	</code> </pre>
+
+
+
+<a name="target_set_order"></a>
+<h5>target_set_order( wid1 .. widn n -- ) </h5> 
+<p>
+Set the search order to the word lists identified by widn ... wid1. 
+Subsequently, word list wid1 will be searched first, and word list 
+widn searched last. If n is zero, empty the search order. If n is 
+minus one, set the search order null.
+</p>
+
+
+	<pre> <code>
+	: target_set_order  ( wid1 .. widn n -- )
+		DUP [ #target_context_max 1- ] LITERAL > ABORT" Target vocabulary overload"
+		DUP -1 = IF
+			DROP 0 RECURSE  
+			EXIT
+		THEN
+		DUP target_context_count  !
+		zero ?DO  
+			I CELLS target_context + ! 
+		LOOP
+	;
+	</code> </pre>
+
+
+
+<a name="target_also"></a>
+<h5>target_also ( -- )</h5>
+<p>
+Transform the search order consisting of widn, ... wid2, wid1 
+(where wid1 is searched first) into widn, ... wid2, wid1, wid1. 
+An ambiguous condition exists if there are too many word lists in 
+the search order.
+</p>
+
+
+	<pre> <code>
+	: target_also  ( -- )  
+		target_get_order  
+		OVER SWAP 1+ DUP  [ #target_context_max 1 - ] LITERAL > ABORT" Vocabulary overload"
+		target_set_order
+	;
+	</code> </pre>
+
+
+<a name="target_only"></a>
+<h5>target_only ( -- )</h5>
+<p>( -- )</p>
+<p>
+Set the search order to the implementation-defined minimum search order. 
+</p>
+
+
+	<pre> <code> 
+	: target_only  ( -- )  
+		-1 target_set_order 
+	;
+	</code> </pre>
+
+
+
+<a name="target_previous"></a> 
+<h5>target_previous ( -- )</h5> 
+<p>
+Transform the search order consisting of widn, ... wid2, wid1 
+(where wid1 is searched first) into widn, ... wid2. An ambiguous 
+condition exists if the search order was empty before PREVIOUS 
+was executed.
+</p>
+
+
+	<pre> <code>
+	: target_previous  ( --  )  
+		target_get_order
+		SWAP DROP 1-  
+		target_set_order
+	;
+	.S .( after target_previous)
+	</code> </pre>
+
+<a name="target_definitions"></a>
+<h5>target_definitions( --)</h5>
+
+<p>( -- )</p>
+<p>
+Make the compilation word list the same as the first word list in the 
+search order. Specifies that the names of subsequent definitions
+will be placed in the compilation word list. Subsequent changes in 
+the search order will not affect the compilation word list. 
+</p>	
+
+
+	<pre> <code>
+	: target_push_definitions ( --)
+		target_current target_current CELL+  
+		[ #target_current_vocs 1- CELLS ] LITERAL MOVE
+	;
+
+	: target_definitions
+		target_push_definitions
+		target_context @ target_current !
+	;
+	</code> </pre>
+
+
+<h5>target_previous_definitions(--)</h5>
+<p>
+So you can set a new definition vocabulary and then return to what was. 
+I think a stack with two entries is really enough, we will know when
+all is finished.
+As target_definitions is ofen used without previous_definition it is expected 
+the stack will overflow and stay that way. But it is old entries that 
+are lost. The stack always contains the most recent additions. 
+</p>
+
+
+	<pre> <code>
+	: target_previous_definitions  ( --)
+		target_current CELL+ target_current 
+		[ #target_current_vocs 1- CELLS ] LITERAL MOVE
+	;
+	</code> </pre>
+
+
+<h5>target vocabulary structure</h5>
+<p>
+	Describe the target vocabulary structure. Note that it is a collection 
+	of ponters to the actual thread heads. 
+</p>
+
+
+	<pre> <code>
+	zero
+	DUP CONSTANT _#voct_body
+	DUP CONSTANT _#voct_link         CELL+			 \ link from head
+	DUP CONSTANT _#voct_back         CELL+           \ pointer to previous link
+	DUP CONSTANT _#voct_target_image CELL+           \ address in host where heads are kept
+	DUP CONSTANT _#voct_target       CELL+           \ meta vocabularies
+	DUP CONSTANT _#voct_immediate    CELL+           \ "
+	DUP CONSTANT _#voct_forward      CELL+           \ "
+	DUP CONSTANT _#voct_target_wid   CELL+           \ address in target where heads are to be stored
+		\ At the end of the xcompile the data pointed to by
+		\ _#voct_host_image is moved to the target area pointed to by
+		\ #voct_target_wid
+	DROP
+	</code> </pre>
+<p>
+Host head for all target vocabularies. We trace down this link to copy the 
+target_image to the area pointed to by the tardet_wid. This occures at the end
+of the cross compile.
+</p>
+
+
+	<pre> <code>
+	ram_variable %target_vocabularies
+	</code> </pre>
+
+
+<p>
+Words to return the wid of the various thread groups found under a target vocabulary.
+</p>
+	<pre> <code>
+	: current_target_wordlist ( --addr)
+		target_current @ _#voct_target + @ ;
+	: current_target_image_wordlist ( --addr)
+		target_current @ _#voct_target_image + @ ;
+	: current_forward_wordlist ( -- addr)
+		target_current @ _#voct_forward + @ ;
+	: current_immediate_wordlist ( --addr)
+		target_current @ _#voct_immediate + @ ;
+
+
+	</code> </pre>
+<p>
+Make a vocabulary. When we make the forth one we set wid to -1 we latter
+patch with correct value.
+
+Being a vocabulary this has to set target_context. I want to keep the 
+xcompiler vocabulary model similar to the ANS model.
+</p>
+	<pre> <code>
+	: xwordlist   ( wid_target --voct)
+		\		
+		WORDLIST
+		DUP [ _#voc_link _#voc_wid - ] LITERAL + unlink_double \ a (-- 
+		WORDLIST
+		DUP [ _#voc_link _#voc_wid - ] LITERAL + unlink_double \ a b  (-- 
+		WORDLIST
+		DUP [ _#voc_link _#voc_wid - ] LITERAL + unlink_double \ a b c  (-- 
+
+		\ The target image wordlist.
+		WORDLIST \ a b c d(--
+		\ Don't want this in the host vocabulary list as seaching
+		\ by words expecting host addresses would cause problems. 
+		\ By using the host version of wordlist we are restricting
+		\ the CELL size to that of the host system.
+		DUP [ _#voc_link _#voc_wid - ] LITERAL + unlink_double \ a b c d (-- 
+		\ We have to set the initial links to zero because we create
+		\ end_head ( in the kernel )before initializing and that 
+		\ word needs a zero link value 
+		DUP [ _#voc_head> _#voc_wid - ] LITERAL + @ \ a b c d heads(--
+		DUP  _#voc_heads_data + SWAP _#voc_heads_count + @ CELLS zero 
+		DO
+			zero OVER I + ! 
+		cell
+		+LOOP
+		DROP
+		HERE >R 
+		\ _#voct_body
+		2 CELLS ALLOT
+		HERE 2 CELLS - %target_vocabularies link_double
+		\ _#voct_host_image
+		,
+		\ _#voct_target
+		,        \ target 
+		\  _#voct_immediate
+		\ these words can only be found by the target version of [COMPILE]
+		,        \ immediate
+		\ _#voct_forward 
+		,        \ forward
+		\ _#voct_target_wid
+		,                 \ supplied wid 
+	R> ;   
+
+
+	: xvocabulary   ( voct --)
+		\			child ( -- voct)
+		CREATE ,
+		DOES> @ target_context ! ;
+
+	: xname_wordlist ( voct --)
+		CREATE ,
+		DOES> @ ;
+
+	</code> </pre>
+	<p>
+	We have to use xvocabulary befor we know the wid_target value. If this is 
+	the case we latter have to patch the value in using patch_xvocabulary.
+	</p>
+	<pre> <code>
+	\ used later to fix forth.
+	: patch_xvocabulary ( wid voct --)
+		[ _#voct_target_wid _#voct_body - ] LITERAL + ! ;     
+		 
+		\ The target image has to be initilised to a target address
+		\ that is yet to be determined
+	</code> </pre>
+	<p>
+	All vocabularies point to a word that has the action of exit. This word is
+	found if input is finished. We have to create xvocabularies before we know
+	address of this word. init_target_image is used to patch in the value latter
+	after the required word has been defined.
+	</p>
+	<pre> <code>	
+	: init_target_image ( t_addr voct --)
+		[ _#voct_target_image _#voct_body - ] LITERAL + @           \ t_addr wid(--
+		[ _#voc_head> _#voc_wid - ] LITERAL + @                     \ t_addr heads(--
+		DUP [ _#voc_heads_count _#voc_heads_base - ] LITERAL + @    \ t_addr heads count (--
+		SWAP _#voc_heads_data + SWAP                                \ t_addr hase count(--
+		zero DO \ addr base(--
+			2DUP !
+			CELL+
+		LOOP
+		2DROP
+	;
+
+
+	.S .( after init_target_image)
+HEX
+
+CODE ?CELL  ( num --num flag)
+	S ) D0 MOV   
+	8000 # D0 ADD   
+	-10000 # D0 AND
+	D0 S -) MOV   
+NEXT
+
+.S .( after ?CELL)
+
+
+ram_variable CSP
+ram_variable ISP
+
+
+: | ;
+( Vocab constants) HEX
+
+
+10        		CONSTANT _#normal_threads
+$100              CONSTANT _#forth_threads
+$100              CONSTANT _#host_threads
+
+: ?PAIR  ( nd1 nd2 --)
+	= not 
+	ABORT" Target compiler Conditionals don't match" 
+;
+
+' (CREATE) 'create ! \ Don't tell us about redefinitions.
+
+
+ram_variable HDS             ( Similar to width, for the target)
+ram_variable ?TWO            ( Controls contant values into HOST)
+ram_variable W0              ( Base address of the target dict)
+
+ram_variable 'H              ( Pointer to target dictionary)
+ram_variable 'tram           ( Pointer to target variable space)
+ram_variable 'tfast          ( Pointer to target fast memory)
+ram_variable 'tstatic        \ static memory
+ram_variable 'tbank          \ bank memory bvp
+ram_variable 'tport          \ duel port memory 
+ram_variable 'U              \ top of user area
+ram_variable 'dictionary     \ pointer to last target dictioanry location used.
+ram_variable  _dictionary0   \ The base target dictionary location
+
+
+
+TRUE ?TWO W!
+
+
+: search_thread ( c-addr u thread -- 0 | xt 1 | xt -1 )
+	>R                             \ c-addr u (--
+	BEGIN
+		R> @ >R
+		R@
+	WHILE                          \ c-addr u(--
+		R@ lfa>nfa name_count NIP           \ c-adr u u1 (--
+		[ _#name_count_bits _#smudge_bit OR ] LITERAL AND \ c-addr u u1 (--
+		OVER = IF \ counts are equal and smudge bit not set
+			\ c-addr u (--
+			2DUP R@ lfa>nfa      \ c-addr u c-addr u addr (--
+			name_count _#name_count_bits AND \ c-addr u c-addr u c-addr1 u1(--
+			COMPARE not IF         \ we have a match
+				2DROP              \ (--
+				R@ lfa>nfa $count@ _#immediate_bit AND IF
+					R> lfa>xt _#immediate
+				ELSE
+					R> lfa>xt _#otherwise 
+				THEN
+				EXIT
+			THEN
+			\ count u (--
+		THEN
+	REPEAT
+	r>drop
+	2DROP
+	_#not_found
+;
+
+: hash ( c-addr u wid -- list)
+	-rot checksum SWAP
+	[ _#voc_head> _#voc_wid - ] LITERAL + @                     \ hash heads(--
+	SWAP                                                        \ heads hash (--
+	OVER [ _#voc_heads_count  _#voc_heads_base - ] LITERAL + @  \ heads hash count (-- 
+	1- AND                                                      \ heads list (--
+	CELLS                                                       \ heads offset (-- 
+	[ _#voc_heads_data _#voc_heads_base - ] LITERAL + + 
+;
+
+ram_variable  %last_used_thread
+: SEARCH-WORDLIST ( c-addr u wid -- 0 | xt 1 | xt -1 )
+	3DUP                           \ c-addr u wid c-addr u wid (--
+	hash                          \ c-addr u wid thread (--
+	NIP                            \ c-addr u thread(--
+	DUP %last_used_thread !
+	search_thread
+;
+
+: host_target_wordlist ( voct --wid )
+	_#voct_target + @ 
+;
+
+: host_immediate_wordlist ( voct --wid )
+	_#voct_immediate + @
+;
+
+
+
+: find_target  ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+	zero                        \ c-addr 0 (-- 
+	target_context_count @ zero ?DO
+		OVER COUNT				\ c-addr 0 c-addr' u (--
+		I CELLS target_context + @ \  c-addr 0 c-addr' u voct(--
+		host_target_wordlist    \ c-addr 0 c-addr' u wid(--
+		SEARCH-WORDLIST			\ c-addr 0; 0 | xt 1 | xt -1 (--
+		?DUP IF					\ c-addr 0; xt 1 | xt -1 (--
+			2SWAP 2DROP LEAVE	\ xt 1 | xt -1 (--
+		THEN					\ c-addr 0 (--
+	LOOP						
+;
+
+
+: find_immediate  ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+	zero                        \ c-addr 0 (-- 
+	target_context_count @ zero ?DO
+		OVER COUNT				\ c-addr 0 c-addr' u (--
+		I CELLS target_context + @ \  c-addr 0 c-addr' u voct(--
+		host_immediate_wordlist    \ c-addr 0 c-addr' u wid(--
+		SEARCH-WORDLIST			\ c-addr 0; 0 | xt 1 | xt -1 (--
+		?DUP IF					\ c-addr 0; xt 1 | xt -1 (--
+			2SWAP 2DROP LEAVE	\ xt 1 | xt -1 (--
+		THEN					\ c-addr 0 (--
+	LOOP						
+;
+
+
+
+( Returns the xt of the previous word defined)
+ram_variable xlast
+: last_definition ( - xt)  xlast @ @ lfa>cfa cfa>pfa @ ;
+
+.S .( WORDLIST)
+_#host_threads threads_number !
+WORDLIST 
+.S .( name_wordlist)
+DUP name_wordlist ~host
+.S .( &host)
+vocabulary &host
+
+
+WORDLIST 
+vocabulary &target_local_input
+
+WORDLIST
+vocabulary &target_local_output
+
+WORDLIST
+vocabulary &target_local_data 
+
+: forth
+	ONLY &host
+	ALSO FORTH
+; IMMEDIATE
+ 
+: HOST
+	ONLY FORTH
+	ALSO &host
+; IMMEDIATE
+
+: assembler
+	ONLY
+	FORTH
+	ALSO &host
+	ALSO ASSEMBLER
+; IMMEDIATE
+
+: defined_target ( -- 0 | xt 1 | xt -1 )
+	BL WORD 
+	find_target 
+;
+
+
+( takes the last word and places in x vocabularies)
+: TARGET     ( --)
+	last @          ( head (-- )
+	DUP @           ( head word (-- )
+	DUP @           ( head word word+1 (-- )
+	-rot            ( word+1 head word (-- )
+	DUP DUP         ( word+1 head word word word (-- )
+	lfa>nfa name_count
+	current_target_wordlist	
+	hash
+	DUP last !      ( word+1 head word word host_head (-- )
+	DUP @           ( word+1 head word word host_head host_last (-- )
+	ROT             ( word+1 head word host_head host_last word (-- )
+	!               ( host_last > word (-- )
+	!               ( word >host_head (-- )
+	!               ( word+1 head (-- )
+;
+
+
+
+CODE _do_constant
+		R )+ W MOV
+        W ) S -) MOV   
+NEXT
+
+( These words are used if there is to be a entry in the )
+( HOST vocabulary as well as the HOST: vocabulary)
+: constant_host    ( 32b --)
+	?TWO W@ IF
+		CREATE
+		['] _do_constant use
+		,
+	ELSE
+		DROP
+	THEN
+;
+
+( These words are used if there is to be a entry in the )
+( HOST vocabulary as well as the HOST: vocabulary)
+: 2constant_host    ( 32b1 32b2--)
+	?TWO W@ IF
+	 	2CONSTANT
+	ELSE
+		2DROP
+	THEN
+;
+
+
+
+( Takes the last word created out of whatever vocabulary)
+( and puts it into vocabulary #immediate )
+( normaly moves from HOST: to HOST #immediate)
+: to_ximmediate ( --)
+	xlast @      ( head)
+	DUP @       ( head word)
+	DUP @       ( head word word-1)
+	-rot        ( word-1 head word)
+	DUP DUP     ( word-1 head word word word)
+	lfa>nfa name_count
+	current_immediate_wordlist
+	hash \ end host_immediate_hash
+	DUP xlast !  ( word-1 head word word head_imm)
+	DUP @       ( word-1 head word word head_imm imm_word)
+	ROT !       ( imm_word > word)
+	!           ( word > head_imm)
+	!           ( word-1 > head)
+;
+
+
+HOST
+DEFINITIONS
+
+.context
+
+\ : PTHERE 'PARAMETER @ ;             ( Target dual port)
+
+\ Words to deal with the target prom image
+: org ( a)   1+ 2/ 2*  'H ! ;       ( Target dictionary)
+
+: HERE ( - a)   'H @ ;              ( Target dictionary)
+
+: ALLOT ( n)   HERE + org ;           ( Target dictionary)
+
+: _recover_cfa ( addr -- addr ) [ _#head_cfa _#head_pfa - ] LITERAL ALLOT ;
+
+
+\ words to deal with the target dictionary area
+
+
+: dictionary_here ( -- addr)
+	'dictionary @
+;
+
+: dictionary_allot ( n --)
+	dictionary_here + 'dictionary !
+;
+
+
+
+
+
+
+\ WINDOW mainly sets up a target offset.)
+\ The target image is stored at the start of the image)
+\ area, but the target dictionary can start anywhere in the)
+\ address space.)
+
+: WINDOW ( addr --)  DUP org W0 ! ;
+
+\ only has a RTS to recover.
+: RECOVER  ( --)   -2 ALLOT ;
+
+\ : DTHERE 'D @ ;
+: |  ( --)   0 HDS W! ;
+
+
+1F CONSTANT #name_max
+
+\ open the image file and initialise
+: setup_dictionary ( --)
+	%NEW_IMAGE _#kernel_size zero FILL
+	%NEW_DICTIONARY_IMAGE _#dictionary_image_size zero FILL
+	TRUE HDS W!
+	TRUE HDS 2+ W!
+;
+
+
+: >T ( addr1 --addr2)
+	W0 @ - %NEW_IMAGE +
+;
+
+\ words to manipulate the prom area.
+
+: TC@   ( addr --8b)   >T C@ ;
+: TC!   ( 8b addr --)  >T C!  ;
+: TW@   ( addr --16b)  >T W@ ;
+: TW!   ( 16b addr --) >T W!  ;
+: TW+!  ( n addr --)   >T W+! ;
+: t!    ( 32b addr--)  >T ! ;
+: 2t!   ( 32b1 32b2 addr --) 	SWAP OVER t! CELL+ t! ;
+: t@    ( addr -- 32b) >T @ ;
+: 2t@   ( addr -- 32b1 32b2 ) DUP CELL+ t@ SWAP t@ ;
+: tc,   ( 8b --)       HERE TC!  1 'H +! ;
+: tw,    ( 16b --)      2 ALLOT  HERE 2- TW! ;
+: t,     ( 32b --)      4 ALLOT  HERE 4- t! ;
+
+
+\ Words to manipulate the target_dictionary.
+
+: >dt ( addr1 --addr2)
+	_dictionary0 @ - %NEW_DICTIONARY_IMAGE +
+;
+
+: dtw!    ( 32b addr--)  >dt W! ;
+: dt!    ( 32b addr--)  >dt ! ;
+: dt@    ( addr -- 32b) >dt @ ;
+: dt,     ( 32b --)      4 dictionary_allot  dictionary_here 4- dt! ;
+: dtw,     ( 32b --)      2 dictionary_allot  dictionary_here 2- dtw! ;
+
+
+
+: set_dictionary  ( -- addr)
+	W0 @
+	_dictionary0 @ %NEW_DICTIONARY_IMAGE %NEW_IMAGE - - W0 !
+;
+: set_prom ( addr --)
+	W0 ! ;
+
+
+: _to_cmove ( s d n--)
+	OVER + SWAP DO
+		DUP C@  I TC!  1+
+	LOOP
+	DROP
+;
+
+: _to_wmove ( s d n --)
+	OVER + SWAP DO
+		DUP W@  I TW!  2+ 2
+	+LOOP
+	DROP
+;
+
+: move_to_target ( s d n --)
+	3DUP OR OR 01 AND IF
+		( have to use cmove)
+		_to_cmove
+	ELSE
+		_to_wmove
+	THEN
+;
+
+
+: _from_cmove ( s d n--)
+	OVER + SWAP DO
+		DUP TC@  I C!  1+
+	LOOP
+	DROP
+;
+
+: _from_wmove ( s d n --)
+	OVER + SWAP DO
+		DUP TW@  I W!  2+ 2
+	+LOOP
+	DROP
+;
+
+
+: move_from_target ( s d n --)
+	3DUP OR OR 01 AND IF
+		_from_cmove
+	ELSE
+		_from_wmove
+	THEN
+;
+
+\ copy one area of target to another
+: target_copy ( from to num --)
+	zero ?DO  \ from to (--
+		OVER R@ + TW@ \ from to value(--
+		OVER R@ + TW! \ from to
+	2 +LOOP
+	2DROP
+;
+		    
+	: tdump ( addr n --)
+		SWAP ALIGNED        \ n addr (-- 
+		DUP ROT + SWAP DO   \ 
+   		CR I .h I 10 +  I     
+   		DO  
+   			I t@  .h  four  
+   		+LOOP
+   		four SPACES I 10 + I DO
+   			I TC@ 7F AND DUP BL <  IF
+   				DROP 2E 
+   			THEN
+   			DUP 07F = IF 
+   				DROP 2E 
+   			THEN  EMIT
+		LOOP ^C  
+		10 +LOOP 
+		send 
+	;
+	</code> </pre>
+
+<p>
+Copy the host image into the target. This is done at the end of the cross compile.
+</p>
+
+	<pre> <code>
+	: finish_vocabularies ( --)
+		%target_vocabularies @      \ there is always one "forth"
+		BEGIN
+			>R
+			R@ _#voct_target_image + @ IF
+				R@  _#voct_target_image + @  \ wid (-- 
+				[ _#voc_head> _#voc_wid - ] LITERAL + @     \ addr_from (--
+				\ Add one because we are also setting the count.
+				DUP _#voc_heads_count + @ 1+                \ addr_from count (--
+				R@  _#voct_target_wid + @   
+\				[ _#voc_init_table _#voc_wid - ] LITERAL +  \ addr_from count addr_to (--
+				[ _#voc_head> _#voc_wid - ] LITERAL + t@    \ addr_from count  addr_to (--
+				SWAP                                        \ addr_from addr_to count (-- 
+				CELLS  zero DO
+					\ The heads go to a target dictioanry table
+					\ so we have to use dt!
+					OVER I + @ OVER I +  dt!
+				cell +LOOP                                                        \ (--
+				2DROP
+			THEN
+			R> @                                                              \ addr(--
+		DUP not UNTIL
+		DROP
+	;
+	</code> </pre>
+<p>
+Whan copying inline you trace down to the first RTS to determine the copy length.
+</p>
+	<pre> <code>
+	: code_copy_length ( xt -- length )
+		t_xt>cfa
+		zero
+		BEGIN
+			^C
+			2DUP + TW@ 
+			4E75  \ ##code RTS
+			= IF
+				NIP
+				EXIT
+			THEN
+			2+
+		AGAIN
+	;
+	</code> </pre>
+<p>
+A bit in the count field determines if the word can be treated as pure code.
+</p>
+	<pre> <code>
+	: ?inline ( host_pfa --flag)
+		pfa>cfa cfa>nfa
+		char@
+		_#pure_bit AND 0<>
+	; 
+	</code> </pre>
+<p>
+The : compler can only deal with words with heads, as you have to be able to find
+the word to compile it.
+</p> 
+	<pre> <code>
+	: target_add_to_dictionary ( from num --)
+		HERE SWAP             \ from to num (--
+		DUP ALLOT               \ from to num (--
+		target_copy
+	;
+
+	: :compile, ( xt --) 
+			DUP t_xt>cfa \ xt cfa (--
+			SWAP 
+			code_copy_length \ cfa num (--
+			target_add_to_dictionary
+	;
+	</code> </pre>
+<p>
+COMPILE, can be used agains xt values the have no head, therfor we can't look
+to see if the words contain inline.
+</p>
+	<pre> <code>
+	: COMPILE, ( xt --) 
+			4EB9 tw,  \ ##code JSR
+			t_xt>cfa t, 
+	;
+
+
+: COMPILE! ( cfa addr  --)
+	2+ t! 
+;
+
+: create_xword ( n--)
+	CREATE  
+	forth , 
+	HOST TARGET
+	DOES>
+		DUP ?inline	IF
+			@  :compile,
+		ELSE
+			@  COMPILE,
+		THEN
+;
+
+
+: ]H ] ;
+
+: assembler>target
+  	assembler
+  	INIT_ASSEMBLER
+	[']  HERE 'ahere !
+	[']  TW!  'aw!   !
+	[']  TW@  'aw@   !
+	[']  ALLOT  'agap !
+;
+
+
+
+HOST 
+\ DEFINITIONS
+
+_#forth_threads threads_number !
+
+0 
+xwordlist
+xvocabulary FORTH
+
+_#normal_threads threads_number !
+0 
+xwordlist
+xvocabulary ASSEMBLER
+
+
+0 xwordlist 
+xvocabulary EDITOR
+
+\ set FORTH as word list
+target_only
+target_also
+FORTH
+target_definitions
+
+\ Determine the name string length using a counted string as input.
+\ We do it using count, you should not make assumptions on how big
+\ the count field is. The string length also has to produced an
+\ aligned result.
+.context
+
+: target_name_size ( $ -- u)
+	DUP COUNT          \ $ addr n (--
+	#name_max OVER &lt; ABORT" Name too long"
+	-rot               \ n $ addr (--
+	SWAP               \ n addr $ (--
+	-                  \ n count_field_length (--
+	+                  \ characters+count_field_length(--
+	ALIGNED
+;
+
+\ create a target head.
+ram_variable target_last
+
+\ describe target head
+\
+\ used only when adding words to the target
+ram_variable %target_name_hash
+: target_hash ( c-addr u wid -- list)
+	-rot checksum %target_name_hash !
+	[ _#voc_head> _#voc_wid - ] LITERAL + @                      \ heads(-
+	%target_name_hash @                                          \ heads hash (--
+	OVER [ _#voc_heads_count  _#voc_heads_base - ] LITERAL + @   \ heads hash count (-- 
+	1- AND                                                       \ heads list (--
+	CELLS                                                        \ heads offset (-- 
+	[ _#voc_heads_data _#voc_heads_base - ] LITERAL + + 
+;
+\ The name is going to go before the link
+
+: use ( cfa -- ) 
+	last_definition t_xt>cfa
+	COMPILE! ;
+
+ram_variable %last_hds
+0 COUNT DROP CONSTANT #$count
+: create_target_head  ( --)
+	HDS W@ %last_hds W!
+	HDS W@ IF 
+		BL WORD                \ $
+		DUP COUNT              \ $ addr u(--
+		current_target_image_wordlist
+		target_hash            \ $ head(-- 
+		DUP target_last !      \ $ head(--
+		SWAP                   \ head $(--
+		COUNT                  \ head addr n (--
+		TUCK                   \ head n addr n (--
+		DUP #$count +          \ head n addr n total$(--
+		DUP ALIGNED ALLOT        \ head n addr n total$(--
+		HERE SWAP -            \ head n addr n to(--
+		SWAP                   \ head n from to n (--
+		move_to_target         \ head n (--
+		HERE #$count -  TC!    \ 
+		DUP @ t,               \ head(--
+		HERE cell- SWAP !         \ (--
+		%target_name_hash @ t, \ (--
+	THEN
+	4EB9 tw,            \  AB L. JSR  The targets code field address 
+	0 t, ( address)
+;
+
+
+: (CREATE) ( --)
+	>IN @
+	create_target_head
+	>IN !
+	HERE  t_pfa>xt 
+	create_xword
+	last @ xlast ! 
+	HDS 2+ W@  HDS W!           ( Update target width)
+;
+
+
+
+: CODE ( --)   
+	(CREATE) 
+	_recover_cfa 
+	0 _%local_use !
+	[COMPILE] assembler 
+;
+
+( makes an entry in HOST vocabulary only)
+: EQU ( n--)   
+	CONSTANT 
+;
+
+( makes an entry in host vocabulary, entry is target address)
+: LABEL ( --)   
+	HERE EQU  
+	[COMPILE] assembler 
+;
+
+: ,string ( addr count--)
+	2DUP              \ addr count addr  count (--
+	NIP tc,
+	TUCK                    \ count addr count(--
+	HERE SWAP move_to_target         \ count(--
+	ALLOT
+;
+
+
+assembler DEFINITIONS
+
+: U) 3) ;   
+: OP A2 ;
+
+\ This version of next allows you to use local stack items in code words
+: NEXT
+	_%local_use @ forth IF assembler
+		_%local_output_bytes @ forth IF assembler
+			_%local_output_bytes @ 4 / # D0 MOV
+			LP A0 MOV
+			BEGIN
+			    A0 -) S -) MOV
+		        1 # D0 SUB
+			EQ UNTIL
+		forth THEN assembler
+		LP UNLK
+	forth 
+		\ code words use the HOST local data words. The target
+		\ words are only needed for target : words.
+		PREVIOUS  
+		_end_local_dictionary
+	THEN assembler
+	RTS
+	PREVIOUS
+;
+
+\ assembler exit 
+: EXIT
+	_%local_use @ forth IF assembler
+		_%local_output_bytes @ forth IF assembler
+			_%local_output_bytes @ 4 / # D0 MOV
+			LP A0 MOV
+			BEGIN
+			    A0 -) S -) MOV
+		        1 # D0 SUB
+			EQ UNTIL
+		forth THEN assembler
+		LP UNLK
+	forth THEN assembler
+	RTS
+;
+
+
+: WVECTOR
+	W ) JMP
+;
+
+
+
+\ save input source.
+\ This is vectored. This version works when target compiling.
+forth DEFINITIONS
+        : _target_restore_input$ ( --)
+                HOST HERE
+                %input_files @ t,
+                %input_files !
+                %$input @ t,
+        ;
+
+        : _target_save_input$ ( -- )
+                HOST HERE
+                SOURCE-ID @ IF
+                        SOURCE-ID @ :@root :@name \ addr n
+                        DUP IF
+                                ,string
+                        ELSE
+                                \ zero string has to result in zero count
+                                t,
+                                DROP
+                        THEN
+                ELSE
+                        0 t,
+                THEN
+                %$input !
+                _target_restore_input$
+        ;
+
+
+\ At ths state assembler selects the xcompile assembler
+
+HOST DEFINITIONS
+
+
+
+\ inline  must always be used before IMMEDIATE because
+\ to_ximmediate changes the vocabulary the word is found in and 
+\ target_last is no longer valid. I woud be possible
+\ to change the definition of to_ximmediate to fix up last.
+: inline ( --)
+	HOST
+	\ target
+	\ because we set the target bit we cannot set inline 
+	\ on words that have no target head.
+	%last_hds W@ IF
+		\ can only set if a head is created
+		_#pure_bit
+		target_last @
+		@
+		_t_lfa>nfa
+		DUP TC@             \ _#c last_target_nfa n (--
+		ROT OR              \ last_targer+nfa value(--
+		SWAP TC!
+	THEN
+	\ host
+	_#pure_bit
+	xlast @ @
+	lfa>nfa
+	DUP C@             
+	ROT OR              
+	SWAP C!
+
+;
+
+: pure_code TRUE ABORT" fix it" ;
+
+( kernal checksum)  HEX
+: KERNEL_CHECKSUM ( n --32b)
+	%NEW_IMAGE SWAP checksum
+;
+
+\ The first 4 bytes contain the checksum.
+\ The second 4 bytes contain the count
+: _dictionary_checksum ( n --32b)
+	 %NEW_DICTIONARY_IMAGE 8 + SWAP checksum
+;
+
+
+: flush_image  { -- }{	
+	variable %handle 
+	}
+
+	$" ./kernel.bin" R/W $open  %handle !
+	%NEW_IMAGE _#prom_size %handle @ ['] :write CATCH
+	?DUP IF
+		%handle @ close
+		$ABORT
+	THEN
+	%handle @ close
+ ;
+
+
+
+forth DEFINITIONS
+\ This word has to be added to forth, see the definition of DOES> 
+\ This is the run time action of the parent
+\ R> and @ are FORTH words use is a host word
+
+: ;code ( --)   
+	R> @  HOST ( cfa ) use forth
+;
+
+HOST DEFINITIONS
+
+VARIABLE tstate
+
+: TCOMPILER  ( --)
+	BEGIN
+		\ Go around until line finished.
+		BEGIN
+			BL WORD DUP $count@
+		WHILE	 
+			find_target  IF
+				EXECUTE  DEPTH 0< ABORT" Stack empty" \ >
+			ELSE 
+				$number 
+				2D3C tw,   \ ##code # S -) MOV
+				t, 
+			THEN
+			tstate @ not IF EXIT THEN 
+		REPEAT
+		DROP
+		REFILL not
+		\ go around until input finished.
+	UNTIL
+;
+
+
+: ]T  
+	TRUE tstate !
+	TCOMPILER 
+;
+
+\ ------------------------------------------------------------------------------
+\ Local variables
+\ ------------------------------------------------------------------------------    
+
+\ has to be a little larger than _#min_local_size as the xwordlist is a lot larger
+200 CONSTANT _#min_xlocal_size
+
+: _xlocal_dictionary   ( --)
+        \ we can come into local from -file- or -code- mode
+        _'h_mode @ _#dictionary_local < not ABORT" Entering -local- from -local- "
+
+		\ Save current situation for restoration when local words are finished
+        _'h_mode @ _'h_local_old_mode !    \ (--
+		_'h_top> @ _'h_local_old_'top> !
+		_'h>      @ _'h_local_old_'h> !
+        \ if no dictioanry allocated do so
+        _'h_local_base @ 0= IF
+            _'h_local_size @ _#min_xlocal_size MAX ALLOCATE  \ addr flag (--
+			ABORT" Unable to allocate required buffer"
+			_'h_local_base OVER set_abort_buffer_pointer    \ addr(--
+            DUP _'h_local_base !                            \ addr(--
+            DUP DUP buffer_size + _'h_local_top !               \ addr(--
+            DUP _'h_local !                                 \ addr(--
+
+			\ set the pointers t the pointers
+            _'h_local     _'h> !
+  	        _'h_local_top _'h_top> !
+  			_#dictionary_local _'h_mode !
+
+			DROP
+
+  			\ Things are a little more complex
+  			\ We have to create a vocabulary in the
+  			\ local dictionary, but there is also a
+  			0 xwordlist  \ xvoc (--
+			_'h_local_wid !
+        ELSE
+            \ note there is not altered
+            _'h_local     _'h>     !
+  			_'h_local_top _'h_top> !
+  			_#dictionary_local  _'h_mode !
+  	THEN
+;
+	
+\ This ges called to switch from local to whatever was.
+: _exit_xlocal_dictionary
+		\ we have been adding words to &xlocal
+		\ which is a vocabulary in the local dictionary.
+		\ This now needs to stop.
+		target_previous_definitions
+
+		\ Restore things as they where when we entered.
+	    _'h_local_old_mode @  _'h_mode !  \ (--
+		_'h_local_old_'top> @ _'h_top> ! 
+		_'h_local_old_'h> @ _'h>      !
+;
+
+
+\ This gets called to end the local dictionary
+: _end_xlocal_dictionary
+	\ remove vocabulary from vocabulary list
+	_'h_local_wid @ IF
+		_'h_local_wid @ unlink_double
+		\ indicate it is gone
+		zero _'h_local_wid !
+	THEN
+	_'h_local_base @ IF
+		\ return buffer
+		_'h_local_base @ FREE DROP ( FREE never fails)
+		\ indicate it has been done
+		zero _'h_local_base !
+	THEN
+;
+
+
+\ This is a xvocabulary, but as you can see it has a slight twist, the wid
+\ isn't stored in the pfa, but in a used variable. See xlocal_dictionary
+: &xlocal ( --)
+	_'h_local_wid @ not ABORT" local vocabulary not defined"
+	_'h_local_wid @ target_context !
+;
+
+	
+\ define the local-input words
+HOST   \ Have to be able to find tw,
+ALSO
+&target_local_input 
+DEFINITIONS
+	\ a variable returns an address
+	: variable   \ parent ( --) 
+				\ child tstate=0 ( -- offset)
+				\ child tstate=1 ( -- address)
+		\ The forth version of CREATE only makes one head
+		forth CREATE	\ header in local dictionary
+		        \ and local dictionary only
+		HOST
+		\ And this puts it into the target_current vocabulary
+		TARGET \ New word is in target list
+
+		_%local_input_bytes @ CELL+ cell_aligned _%local_input_bytes !
+		_%local_input_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ \ value stored in pfa
+			_%local_output_bytes @ +
+			_%local_data_bytes @ + NEGATE
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+		;
+
+	\ returns an address
+	: bytes   \ parent ( n--) 
+				\ child tstate=0 ( -- offset)
+				\ child tstate=1 ( -- address)
+		forth CREATE	\ header in local dictionary
+		        \ and local dictionary only
+		HOST
+		TARGET
+
+		_%local_input_bytes @ +   \ note that the area isn't ALIGNED this 
+		                          \ this is the programmers responsibility.
+		_%local_input_bytes !
+		_%local_input_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ \ value stored in pfa
+			_%local_output_bytes @ +
+			_%local_data_bytes @ + NEGATE
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+		;
+
+
+	previous_definitions
+	PREVIOUS
+
+\ define the local_output words
+	ALSO
+    &target_local_output 
+	DEFINITIONS
+	\ a variable returns an address
+	: variable  \ parent ( --) 
+				\ child tstate=0 ( -- offset)
+				\ child tstate=1 ( -- address)
+		forth CREATE	\ header in local dictionary
+		        \ and local dictionary only
+		HOST
+		TARGET
+
+		_%local_output_bytes @ CELL+ cell_aligned _%local_output_bytes !
+		_%local_output_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ NEGATE \ value stored in pfa 
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+	;
+
+	: bytes  \ parent ( --) 
+				\ child tstate=0 ( -- offset)
+				\ child tstate=1 ( -- address)
+		forth CREATE	\ header in local dictionary
+		HOST
+		TARGET
+
+		_%local_output_bytes @ + _%local_output_bytes !
+		_%local_output_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ NEGATE \ value stored in pfa 
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+	;
+
+
+	previous_definitions
+	PREVIOUS
+
+\ define the local_data words
+	
+	ALSO
+&target_local_data 
+DEFINITIONS
+	\  variable returns an address  
+	: variable   \ parent ( --) 
+				\ child state=0 ( -- offset)
+				\ child state=1 ( -- address)
+		forth CREATE
+		        \ and local dictionary only
+		HOST
+		TARGET \ mark new word as immediate
+		_%local_data_bytes @ CELL+ cell_aligned _%local_data_bytes !
+		_%local_data_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ \ value stored in pfa
+			_%local_output_bytes @ + NEGATE 
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+		;
+
+	: bytes   \ parent ( --) 
+				\ child state=0 ( -- offset)
+				\ child state=1 ( -- address)
+		forth CREATE	\ header in local dictionary
+		        \ and local dictionary only
+		HOST
+		TARGET  \ mark new word as immediate
+		_%local_data_bytes @ + _%local_data_bytes !
+		_%local_data_bytes @ ,
+		DOES>
+			\ offset relative to	 LP
+			@ \ value stored in pfa
+			_%local_output_bytes @ + NEGATE 
+			tstate @ IF \ compile
+				41ED tw,    \ ##code nnn LP) A0 MOV
+					 tw,
+				2D08 tw,    \ ##code A0 S -) MOV
+			THEN
+		;
+
+	\ Allow local constant definition
+	\  variable returns an address  
+	: CONSTANT   \ parent ( --)
+		forth CREATE
+		        \ and local dictionary only
+		HOST
+		TARGET \ mark new word as immediate
+		,
+		DOES>
+			@ \ value stored in pfa 
+			tstate @ IF \ compile
+				2D3C tw,   \ ##code # S -) MOV
+				t, 
+			THEN
+		;
+
+	: 2CONSTANT   
+		forth CREATE
+		HOST TARGET
+		, , 
+		DOES>
+		DUP CELL+ @ SWAP @   
+		tstate @ IF
+			2D3C tw,   \ ##code # S -) MOV
+			SWAP t,
+			2D3C tw,   \ ##code # S -) MOV
+			t, 
+		THEN
+	;
+
+	
+previous_definitions
+PREVIOUS
+
+
+\ The following must end up in HOST
+HOST
+DEFINITIONS
+
+\ enter local varaibles
+\ This version is only used for target : code. Note that in is placed in the target
+\ vocabularies with the word TARGET.
+
+	: {  ( --)
+
+		\ preserve system state that needs preserving
+		last @  _%local_entry_last !
+
+		\ Indicate to the } and ; words that local setup and cleanup 
+		\ code must be added to the target.
+		TRUE _%local_use !
+
+		zero  _%local_input_bytes !
+		zero  _%local_output_bytes !
+		zero  _%local_data_bytes !
+
+
+		\ Between { } we are in interpretive mode
+		0 tstate !
+
+		\ Create a dictionary out of buffers and set up as required.
+		_xlocal_dictionary
+		
+		\ manipulating the target search order. The target search order is 
+		\ used by ]T , the target : compiler.
+		target_also 
+		&xlocal
+		target_definitions
+		\ this vocabulary adds to the host
+		\ Rememeber between { } we are in interpretive mode
+		\ and are therfor using the host vocabularies.
+		ALSO
+		&target_local_input
+	; TARGET
+	
+	\ switch from input to output
+	\ This is done by changing the first HOST searched vocabulary.
+	: -- 
+		&target_local_output
+	;
+
+	\ switch from output, or input to data
+	\ This is done by changing the first HOST searched vocabulary.
+	: }{
+		&target_local_data
+	;
+
+	\ switch back to normal
+	\ Remove the first HOST searched vocabulary, with PREVIOUS
+	\ Change the HERE points to point back to the permenent dictionary
+	\ and compile in the local setup code.
+	: }
+		\ the additional host search wordlist is lost
+		PREVIOUS
+
+		\ last should point to the main word
+		_%local_entry_last @ last !
+	
+		\ HERE pointers back to permenetent dictionary
+		_exit_xlocal_dictionary
+
+		\ add  entry code to target
+		_%local_use @ IF
+			_%local_input_bytes @
+			_%local_output_bytes @ +
+			_%local_data_bytes @ +  NEGATE
+			4E55	tw,		\ ##code lp nnn # LINK
+					tw,
+			_%local_input_bytes @ IF
+				_%local_input_bytes @ 4 /  7000 OR tw, \ ##code inputs # D0 MOV
+				204F tw,                               \ ##code R A0 MOV
+				                                       \ ##code BEGIN
+				20DE tw,                               \ ##code     S )+ A0 )+ MOV
+				5380 tw,                               \ ##code     1 # D0 SUB
+				66FA tw,                               \ ##code EQ UNTIL
+			THEN
+		THEN
+
+		\ WE added &xlocal to the target search order in {.
+		\ This has to be allowed for on exit
+		\ If _%local_use is set the system will assume &xlocal 
+		\ has been added to target search order and must be removed.
+
+		\ back into the target compiler.
+		]T
+	;
+
+
+
+
+
+( Cross compiler, second load) HEX
+( COMPILE is used in TARGET words, the string following)
+( the COMPILE word is the name of a target word. The name is)
+( found with hosts -' . The word found by HOSTS -' is a word)
+( that will compile into the target the cfa of that word if)
+( executed. The action of COMPILE is to compile into the )
+( TARGET word the cfa of the word that will add the address)
+( to the target. )
+HOST 
+
+: COMPILE ( --)
+ 	defined_target not ABORT" Not found in host" 
+	forth COMPILE, \ this will be executed by the host 
+	HOST
+;   IMMEDIATE
+
+\ In both the immediate and non immediate case, the word has to 
+\ be added to the now being created host word and executed
+\ later on to perform the required acton against the target
+: POSTPONE ( --)
+	[COMPILE] COMPILE
+; IMMEDIATE
+
+: [COMPILE] ( --)
+	[COMPILE] COMPILE 
+;   IMMEDIATE
+
+( Returns a target address)
+: ' ( -- target_pfa)   
+	defined_target not ABORT" Not found in host" xt>pfa  @ 
+;
+: LITERAL ( n--)
+	2D3C tw,   \ ##code # S -) MOV
+	t,         \ the value
+;  TARGET
+
+
+: FLITERAL ( float--)
+        SWAP
+        2D3C tw,   \ ##code # S -) MOV
+        t,
+	2D3C tw,   \ ##code # S -) MOV
+	t,         \ the value
+;  TARGET
+
+: [CHAR]	( --)     
+	20 WORD 1+ C@ 
+	2D3C tw, \ ##code # S -) MOV
+	t, 
+;	TARGET
+
+
+.S .( [ )
+: [ ( --) 
+	FALSE tstate ! 
+;   TARGET
+
+: target_smudge  ( --)   
+		xlast @ ?DUP IF
+			                 \ thread(-- 
+			@                \ lfa(-- 
+			lfa>nfa          \ nfa(--
+			DUP name_count   \ nfa addr count(-- 
+			NIP              \ nfa count+flags(-- 
+			_#smudge_bit  XOR  
+			SWAP             \ count+flags nfa(--
+			C!
+		THEN
+;
+
+
+.S .( ; )
+: ;
+	\ word exit code
+	_%local_use @ IF
+		_%local_output_bytes @ IF
+			_%local_output_bytes @ 4 / 7000 OR tw,  \ ##code # D0 MOV
+			204D tw,                               \ ##cope LP A0 MOV
+			                                      \ ##code BEGIN
+			2D20 tw,                               \ ##code A0 -) S -) MOV
+			5380 tw,                               \ ##code 1 # D0 SUB
+			66FA tw,								  \ ##code EQ UNTIL
+		THEN
+		4E5D tw,                               \ ##code LP UNLK
+		target_previous
+		_end_xlocal_dictionary
+	THEN 
+	_%t_save_op @ IF
+		245F tw,  \ ##code R )+ OP MOV
+		zero _%t_save_op !
+	THEN  
+	4E75 tw,   \ ##code RTS  
+	smudge
+	FALSE tstate ! 
+;	TARGET
+
+: EXIT 	
+	\ word exit code
+	_%local_use @ IF
+		_%local_output_bytes @ IF
+			_%local_output_bytes @ 4 / 7000 OR tw,  \ ##code # D0 MOV
+			204D tw,                               \ ##cope LP A0 MOV
+			                                      \ ##code BEGIN
+			2D20 tw,                               \ ##code A0 -) S -) MOV
+			5380 tw,                               \ ##code 1 # D0 SUB
+			66FA tw,								  \ ##code EQ UNTIL
+		THEN
+		    4E5D tw,                               \ ##code LP UNLK
+	THEN 
+	_%t_save_op @ IF
+		245F tw,  \ ##code R )+ OP MOV
+	THEN
+	4E75 tw,   \ ##code RTS
+;	TARGET
+
+
+.S .( ;CODE)
+: ;CODE ( --)
+	forth COMPILE ;code  HOST \ put ;code into the parent 
+	HERE forth ,              \ the address to use
+	smudge                    \ the word can now be found
+	                          \ note that code doesn't smudge
+	FALSE STATE !
+	HOST   
+	forth [COMPILE] assembler HOST    
+;	IMMEDIATE
+
+\ This one for words that are compiling to the target
+\ example
+\ : fred ['] name ;
+: [']     ( --)     
+	'                  \ find in target
+	[COMPILE] LITERAL  \ add literal to target
+;	TARGET
+
+\ this one for words that need a target address as a literal in the
+\ host.
+\ Example 
+\ forth : fred ['] name ;
+: [']     ( --)     
+	'                  \ find in target
+	forth [COMPILE] LITERAL  \ add literal to host
+;	IMMEDIATE
+HOST
+
+: T[  
+	FALSE tstate !
+;	TARGET
+
+
+\ Control
+
+
+ 
+	1                      CONSTANT _#comp_code_begin
+	2                      CONSTANT _#comp_code_if 
+	3                      CONSTANT _#comp_code_do
+	_#comp_code_do NEGATE  CONSTANT _#comp_code_?do
+	4                      CONSTANT _#comp_code_leave
+	5                      CONSTANT _#comp_code_while
+
+
+
+: roll_out_initiator 
+		zero >R
+		BEGIN
+			R@ CS-PICK NIP
+			_#comp_code_leave =
+		WHILE
+			R> 1 + >R
+		REPEAT
+		R> CS-ROLL
+;
+		
+: !BACK   
+	HERE  - tw, 
+;
+
+: ?PAIR  ( n1 n1 -- ) 
+	- ABORT" Conditionals not matched" 
+;
+
+: BEGIN   
+	HERE 
+	_#comp_code_begin 
+;	TARGET
+
+
+: UNTIL
+	roll_out_initiator
+	_#comp_code_begin ?PAIR  
+	4A9E tw,   \ ##code S )+ TST
+	6700 tw,   \ ##code EQ BCC  
+	!BACK 
+; 	TARGET
+
+: AGAIN   
+	roll_out_initiator
+	_#comp_code_begin ?PAIR  
+	6000 tw,   \ ##code BRA
+	!BACK 
+;	TARGET
+
+: THEN   
+	roll_out_initiator
+	_#comp_code_if ?PAIR  
+	HERE OVER -  SWAP TW! 
+;	TARGET
+
+: IF  
+	4A9E tw,   \ ##code S )+ TST
+	6700 tw,   \ ##code EQ BCC	 
+	HERE 0 tw,
+	_#comp_code_if 
+;	TARGET
+
+: WHILE   
+	roll_out_initiator
+	[COMPILE] IF  
+	[ _#comp_code_while _#comp_code_if - ] LITERAL + 2SWAP
+;	TARGET
+
+: REPEAT   
+	[COMPILE] AGAIN
+	[ _#comp_code_if _#comp_code_while - ] LITERAL +    
+	[COMPILE] THEN 
+;	TARGET
+
+: ELSE 
+	roll_out_initiator
+	6000 tw, \ ##code BRA
+	HERE 0 tw,
+  	-rot  [COMPILE] THEN 
+	_#comp_code_if
+;	TARGET
+
+
+HOST
+	: LEAVE   \ runtime ( -- )
+	              \ compile time ( -- addr leave_code )
+		HOST 508F tw,  \ ##code 8 # R ADD
+		6000 tw,  \ ##code BRA
+		HERE 2 ALLOT 
+      	_#comp_code_leave
+		forth 
+    ;  TARGET
+
+HOST
+
+
+: (   
+	29 WORD  DROP 
+; TARGET
+
+: \  ( --)
+	#TIB @ >IN ! 
+; TARGET
+
+: RECURSE
+    last_definition 
+	forth HOST COMPILE, 
+; TARGET
+    
+\ word added because forth is subroutine threaded, and these speedups
+\ are possible.
+\ We can't use the code copy method as these words use the return stack and the
+\ interpret and compile forms are different.
+: >R  ( x --)
+	2F1E tw, \ ##code S )+ R -) MOV
+; TARGET
+
+: R> ( -- x )
+ 	2D1F tw, \ ##code R )+ S -) MOV
+; TARGET		
+
+: R@ ( --x)
+	2D17 tw, \ ##code R ) S -) MOV
+; TARGET
+
+: 2>R
+	201E tw, \ ##code S )+ D0 MOV
+	2F1E tw, \ ##code S )+ R -) MOV
+	2F00 tw, \ ##code D0 R -) MOV
+; TARGET  
+
+: 2R>
+	201F tw, \ ##code R )+ D0 MOV
+	2D1F tw, \ ##code R )+ S -) MOV
+	2D00 tw, \ ##code D0 S -) MOB
+; TARGET
+
+: r>drop
+	588F tw,   \ ##code 4 # R ADD
+; TARGET
+
+: 2r>drop
+	508F tw,	\ ##code 8 # R ADD
+; TARGET
+
+: 4r>drop
+	508F tw,	\ ##code 8 # R ADD
+	508F tw, 	\ ##code 8 # R ADD
+;  TARGET
+
+: dup>r ( --)
+	2F16 tw, \ ##code S ) R -) MOV
+;  TARGET
+
+\ from this point on there is a HOST : that compiles into
+\ the target and a forth : that compiles into the HOST
+forth : : 
+	HOST (CREATE)
+	_recover_cfa  
+	0 _%local_use !
+	smudge
+	_%t_save_op @ IF
+		2F0A tw,  \ ##code OP R -) MOV
+		245E tw,  \ ##code S )+ OP MOV 
+	THEN
+	]T  
+	;
+HOST
+
+forth : :NONAME ( --xt)
+		HOST  HERE
+		zero last !
+		0 _%local_use !
+		_%t_save_op @ IF
+			2F0A tw,  \ ##code OP R -) MOV
+			245E tw,  \ ##code S )+ OP MOV 
+		THEN
+		]T
+	;
+HOST
+
+
+forth : CONSTANT  ( n --)   
+	HOST	
+	>IN @ OVER constant_host >IN ! 	  
+	(CREATE)
+	_recover_cfa
+	2D3C tw,   \ ##code # S -) MOV
+	t, 
+	4E75 tw,   \ ##code RTS
+	inline  \ Tell system child word is pure code
+;
+
+forth : 2CONSTANT 
+	HOST
+	>IN @ >R 2DUP 2constant_host R> >IN ! 
+	(CREATE)
+	_recover_cfa
+	2D3C tw,   \ ##code # S -) MOV
+	SWAP t,
+	2D3C tw,   \ ##code # S -) MOV
+	t, 
+	4E75 tw,   \ ##code RTS
+	inline  \ Tell system child word is pure code
+;     
+
+
+</code>
+</body>
+</html>
+	

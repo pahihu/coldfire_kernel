@@ -1,0 +1,505 @@
+<html>
+<head>
+<title>kernel.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth, uClinux">
+<META NAME="description" CONTENT=" uCforth uses this file to generate uCforth">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>Cross compiling uCforth</h2>
+<a HREF="./license.html">license</a>
+<h3>Introduction</h2>
+<p>
+This is the file loaded by <i>kernel.fs</i>, or <i>kernel</i>. 
+if cross compiler using <b>gforth</b> load <i>kernel.fs</i>. If cross compiling from
+<i>uCforth</i> start with the file <i>kernel</i>.
+</p>
+<p>
+uCforth generates a FLAT file that can be loaded into a uClinux system of the
+the selected processor. You can cross compile your own system using a uClinux
+system and a distributed binary for the selected processor, or can use gforth
+on a linux system to do the cross compile. The sources are hand edited html 
+files that can be loaded onto a <i>gforth</i> system that has minimum html support.
+When using <i>gforth</i> the html
+support has to be loaded before html files are loaded.
+</p> Start a GFORTH cross
+
+<h4>uCforth General</h4>
+<p>
+uCforth is a subroutine threaded forth that runs under uClinux. The initial
+version runs on the <b>COLDFIRE</b> processor. Floating point maths can be used if
+the uClinux system is generated with MAC support.
+</p>
+<p>
+The processor specific files
+have been kept in a sub directory with the aim of making ports to other
+processors simpler.
+</p>
+<h4>Using uCforth with C libraries</h4>
+<p>
+uCforth has been written so it can be used with C libraries. Some thought
+has to be given to how these libraries are generated.
+</p>
+<h4>COLDFIRE</h4>
+<p>
+All languages have register conventions. The C language convention is very
+convenient for linkage from other languages. Registers D0,D1,A0 and A1 can be
+used for parameter return. All other registers are preserved. register
+A7 is the stack, A6 is the linkage register. A5 is the data segment pointer.
+</p>
+<p>
+uCforth considers D0 to D7,A0 and A1 working registers, so the use of D0,D1,A0 and A1 by
+C is not a problem. A7 to A2 are used for specific purposes, as C preserves these registers how
+uCforth uses them is of no interest to C.
+</p>
+<p>
+<h4>Library</h4>
+<p>
+Most of the forth environment is implemented as a library. If the library access application code
+the access is done using the DS ( A5 ) register as the base.
+</p>
+<h3>Tidy up from previous compiles</h3>
+<pre>
+<code>
+\ reduce search order
+ONLY FORTH
+
+\ define a marker so we can get rid of this code on next cross compile
+MARKER kernel_empty
+
+\ set to zero to reduce output on xcompile
+\ set to 1 to start printing out stack errors
+\ set to 2 to print out tokens as compiled.
+ram_variable %xdebug
+
+2 %xdebug !
+
+</code> </pre>
+<h3> Assumption tests</h3>
+<p>
+When you write code you make certain assumptions. These words are
+used to test the assumptions at compile time
+</p>
+	<pre> <code>
+	: ?? ( flag --)
+		ABORT" ?? has to be false" ;
+	: ??= ( n1 n2 --)
+		<> ABORT" ?? these have to be equal." ;
+	: ??&lt; ( n1 n2 --)
+		&lt; not ABORT" ?? ran out of something." ;
+	: ??> ( n1 n2 --)
+		&gt; not ABORT" ?? something is too small" ;
+	: ??&lt;= ( n1 n2 --)
+		&gt; ABORT" ?? something wrong." ;
+
+	: ??HEX  BASE @ 10 <> ABORT" Not in hex" ;
+
+	: ??2 ( -2 -- -2 )
+		DUP -2 <> ABORT" Assembler assumptions problems"
+	;
+
+	: ??4 ( -2 -- -2 )
+		DUP -4 <> ABORT" Assembler assumptions problems"
+	;
+
+	: ??6 ( -2 -- -2 )
+		DUP -6 <> ABORT" Assembler assumptions problems"
+	;
+</code>
+</pre>
+<p>
+Test that byte! works
+</p>
+<pre>
+<code>
+0 HERE !
+\ the 11 should go
+$1122 HERE byte!
+\ either byte order should pass. The @ is byte order dependent.
+HERE @ $22 =
+HERE @ $22000000 = OR TRUE ??=
+</code>
+</pre>
+<h3>sub directory to use</h3>
+<p>
+All data relevent to one port is kept in a sub directory for that port.
+This results in duplication of files but a system that is lot simpler to follow.
+To change the files used you change the definition of $CARD. To add a port you
+add a directory for that port, copy the files closest to the processor you are
+creating alter as required, add a uncommented card definition to this list,
+comment out the one you are not using. And that is it.
+</p>
+<p>
+The HTML links are to the 5272 code, this was the first created.
+</p>
+<pre>
+<code>
+CREATE $card ," ./5272/"
+</code>
+</pre>
+<h5>Support for loading card specific sub directories</h5>
+<pre>
+<code>
+\ word added to forth to load the card specific files.
+: include_card ( --)
+	#$buffer get_buffer
+	$card BL WORD buffer #$buffer $+
+	CR
+	%xdebug @ IF
+		DEPTH IF
+			.S ." stack on entry to "
+		THEN
+	THEN
+	buffer COUNT type
+	buffer COUNT included
+	CR
+	%xdebug @ IF
+		DEPTH IF
+			.S ." stack on exit from "
+		THEN
+	THEN buffer COUNT type
+	kill_buffer
+;
+</code>
+</pre>
+<h3>Load cross compiler base</h3>
+<p>
+Definition of the cross compiler is effectively spread through the code. A defining
+word that can be used in the kernel source needs a cross compiler extension, these
+are not collected in one place but generally created when the target version of the
+word is created. This part of the cross compiler load gets us to a stage where we
+can use the cross compiling assembler code.
+</p>
+<p>
+The first file loads the words used to build the image. The cross compiler is built on these.
+Has to be card specific as the target byte order is card specific. The host
+byte order is determined when the file is loaded.
+</p>
+<pre>
+<code>
+include_card target_image.html                                  \ <a HREF="./5272/target_image.html">link</a>
+\ load bFLT_maker.html before we load cross compiler
+CR include ./bFLT_maker.html                                    \ <a HREF="./bFLT_maker.html">link</a>
+
+</code>
+</pre>
+<p>
+Cross compiling assembler for the card in question. This can be written to any standard
+you like. The 68k version aborts on garbage in. The author didn't mind working out what
+was valid once, remembering what is valid, no way. Let the assembler do that.
+</p>
+<pre>
+<code>
+include_card xassembler.html                                    \ <a HREF="./5272/xassembler.html">link</a>
+</code>
+</pre>
+<p>
+The ghost vocabulary needs more support than offered by ansi forth,
+a new vocabulary structure is defined using ansi forth.
+</p>
+<pre>
+<code>
+include ./ghost_wordlist.html                                   \ <a HREF="./ghost_wordlist.html">link</a>
+</code>
+</pre>
+<p>The xcompiler is built on the assembler,
+this is a subroutine threaded forth, the issue of laying down the executed code
+so references can be obtained is mostly avoided by laying down assembler directly.
+</p>
+<p>
+The compiler code that is common to all  cards first, mainly memory reference stuff.
+</p>
+<pre>
+<code>
+include ./xcompiler_common.html                                 \ <a HREF="./xcompiler_common.html">link</a>
+</code>
+</pre>
+<p>
+Most of the xcompiler is specific to the card.
+</p>
+<pre>
+<code>
+include_card xcompiler.html                                     \ <a HREF="./5272/xcompiler.html">link</a>
+</code>
+</pre>
+<p>
+A few xcompiler words need to reference target code still
+this file lays down that code using what has been defined.
+</p>
+<pre>
+<code>
+include_card do_code.html                                       \ <a HREF="./5272/do_code.html">link</a>
+</code>
+</pre>
+<p>
+Finish off the xcompiler.
+</p>
+<pre>
+<code>
+include_card xcompiler2.html                                   \ <a HREF="./5272/xcompiler2.html">link</a>
+</code>
+</pre>
+<h3>File links in target</h3>
+<p>
+Each file load creates two dictionary entries. On file entry the file name
+is put down and a reference to the name. On exit another reference is created,
+the reference is to the file we are leaving to.
+When we trace down the link, the first entry below the address of the word points to
+the file the word come from.
+</p>
+<p>
+Cunning modern technology results us
+being able to create a linked list in the target and
+not have to patch it.
+This is a host word that creates a entry in the data segment
+and adds a bFLT reference
+This word can be found in the target so we need to use a nice target
+name.
+</p>
+<pre>
+<code>
+\ data in application
+pointer %input_files
+\ .S .( before forth&host) send
+forth&host
+\ temp storage for the string addresses
+$10 CONSTANT #max_load_depth
+\ .S .( before ram_variable) send
+ram_variable %ghost_$input #max_load_depth CELLS ALLOT
+forth&host
+\ .S .( before add_ghost) send
+: add_ghost_$input ( addr --)
+	%ghost_$input %ghost_$input CELL+ #max_load_depth 1 - CELLS  MOVE
+	%ghost_$input !
+;
+forth&host
+: remove_ghost_$input
+	%ghost_$input CELL+ %ghost_$input #max_load_depth 1 - CELLS  MOVE
+;
+forth&host
+: _target_link_$input ( --)
+	host&forth
+	HERE                     \ the host version, gives a target address
+	%input_files t@ ref,
+	%input_files t!
+	%ghost_$input @ ref,
+;
+forth&host
+: _target_restore_$input ( --)
+	\ back to previous file
+	remove_ghost_$input
+	\ indicate we are in previous file
+	_target_link_$input
+;
+
+forth&host
+: _target_save_$input ( $ -- )
+	\ this is the host version of here
+	\ that is a target code address
+	host&forth
+	HERE
+	add_ghost_$input
+	COUNT
+	DUP IF
+		,string
+	ELSE
+		\ zero string has to result in zero count
+		tw,
+		DROP
+	THEN
+	_target_link_$input
+;
+
+forth&host
+: $included ( $  --)
+	>R
+	CR
+	%xdebug @ IF
+		DEPTH IF
+			.S ." stack on entry "
+		THEN
+	THEN
+	R@ COUNT TYPE
+	R@ _target_save_$input
+	R> COUNT included
+	_target_restore_$input
+	%xdebug @ IF
+		DEPTH IF
+			CR .S ." stack on exit "
+		THEN
+	THEN
+;
+
+forth&host
+: include ( --)
+	20 WORD $included
+;
+
+forth&host
+: include_card ( --)
+	#$buffer get_buffer
+	$card BL WORD buffer #$buffer $+
+	buffer $included
+	kill_buffer
+;
+host&forth
+	include ./constants.html                \ <a HREF="./constants.html">link</a>
+	include_card constants.html             \ <a HREF="./5272/constants.html">link</a>
+	include_card ansi_code_words.html       \ <a HREF="./5272/ansi_code_words.html">link</a>
+	include_card code_words.html            \ <a HREF="./5272/code_words.html">link</a>
+	include ./colon_words_used_by_ansi.html \ <a HREF="./colon_words_used_by_ansi.html">link</a>
+	include ./ansi_colon_words.html         \ <a HREF="./ansi_colon_words.html">link</a>
+	include ./colon_words.html              \ <a HREF="./colon_words.html">link</a>
+	include ./initial_abort.html            \ <a HREF="./initial_abort.html">link</a>
+	include ./linux_constants.html          \ <a HREF="./linux_constants.html">link</a>
+	include_card syscalls.html              \ <a HREF="./5272/syscalls.html">link</a>
+	include ./word_head.html                \ <a HREF="./word_head.html">link</a>
+	include ./link_lists.html               \ <a HREF="./link_lists.html">link</a>
+	include ./xwords.html                   \ <a HREF="./xwords.html">link</a>
+	include ./facility.html                 \ <a HREF="./facility.html">link</a>
+	include ./user_variables.html           \ <a HREF="./user_variables.html">link</a>
+	include_card catch.html                 \ <a HREF="./5272/catch.html">link</a>
+	include ./base_altering.html            \ <a HREF="./base_altering.html">link</a>
+	include ./user_using_words.html         \ <a HREF="./user_using_words.html">link</a>
+	include ./memory_allocation.html        \ <a HREF="./memory_allocation.html">link</a>
+	include ./checksum.html                 \ <a HREF="./checksum.html">link</a>
+	include ./heap_control.html             \ <a HREF="./heap_control.html">link</a>
+	include ./words_using_heap.html         \ <a HREF="./words_using_heap.html">link</a>
+	include_card  cache_management.html     \ <a HREF="./5272/cache_management.html">link</a>
+	include ./basic_io.html                 \ <a HREF="./basic_io.html">link</a>
+	include ./number_output.html            \ <a HREF="./number_output.html">link</a>
+	include ./find.html                     \ <a HREF="./find.html">link</a>
+	include ./word.html                     \ <a HREF="./word.html">link</a>
+	include ./vocabulary.html               \ <a HREF="./vocabulary.html">link</a>
+	include ./wordlists.html                \ <a HREF="./wordlists.html">link</a>
+	include ./abort.html                    \ <a HREF="./abort.html">link</a>
+	include ./linux_abort.html              \ <a HREF="./linux_abort.html">link</a>
+	include ./add_reference.html            \ <a HREF="./add_reference.html">link</a>
+	include_card assembler.html             \ <a HREF="./5272/assembler.html">link</a>
+	include ./more_ansi_colon_words.html    \ <a HREF="./more_ansi_colon_words.html">link</a>
+	include ./compile.html                  \ <a HREF="./compile.html">link</a>
+	include_card compile.html               \ <a HREF="./5272/compile.html">link</a>
+	include ./string_literals.html          \ <a HREF="./string_literals.html">link</a>
+	include ./target_vocabulary.html        \ <a HREF="./target_vocabulary.html">link</a>
+	include ./number.html                   \ <a HREF="./number.html">link</a>
+	include_card random.html                \ <a HREF="./5272/random.html">link</a>
+	include_card float.html                 \ <a HREF="./5272/float.html">link</a>
+	include ./cordic_trig.html              \ <a HREF="./cordic_trig.html">link</a>
+	include_card version.html               \ <a HREF="./5272/version.html">link</a>
+	include ./more_forth.html               \ <a HREF="./more_forth.html">link</a>
+	include ./struct.html                   \ <a HREF="./struct.html">link</a>
+	include ./objects.html                  \ <a HREF="./objects.html">link</a>
+	include_card value.html                 \ <a HREF="./5272/value.html">link</a>
+	include ./terminal_class.html           \ <a HREF="./terminal_class.html">link</a>
+	include ./link_class.html               \ <a HREF="./link_class.html">link</a>
+	include ./string_class.html             \ <a HREF="./string_class.html">link</a>
+	include ./linux_io.html                 \ <a HREF="./linux_io.html">link</a>
+	include ./input_output.html             \ <a HREF="./input_output.html">link</a>
+	include ./prompt.html                   \ <a HREF="./prompt.html">link</a>
+	include ./if_then_else.html             \ <a HREF="./if_then_else.html">link</a>
+	include ./htmltags.html                 \ <a HREF="./htmltags.html">link</a>
+	include ./quit_interpret_etc.html       \ <a HREF="./quit_interpret_etc.html">link</a>
+	include_card local_variables.html       \ <a HREF="./5272/local_variables.html">link</a>
+	include ./marker.html                   \ <a HREF="./marker.html">link</a>
+	include ./words.html                    \ <a HREF="./words.html">link</a>
+	\ different cards may support different things
+	include_card environment.html           \ <a HREF="./5272/environment.html">link</a>
+	include ./bye.html                      \ <a HREF="./bye.html">link</a>
+	include ./root.html                     \ <a HREF="./root.html">link</a>
+	include ./linux_env.html                \ <a HREF="./linux_env.html">link</a>
+	include_card signal.html                \ <a HREF="./5272/signal.html">link</a>
+	include ./make_app.html                 \ <a HREF="./make_app.html">link</a>
+	include ./startup.html                  \ <a HREF="./startup.html">link</a>
+
+</code>
+</pre>
+<h3>Application</h3>
+<pre>
+<code>
+	application
+	include_card application.html           \ <a HREF="./5272/application.html">link</a>
+
+</code>
+</pre>
+<h3>Tidy up wordlists</h3>
+<pre>
+<code>
+
+	object_fix_wordlist
+
+</code>
+</pre>
+<h3>Print what have we consumed</h3>
+<pre>
+<code>
+
+CR
+.( Memory useage report)
+CR
+library
+HERE      %lib_code_image - .h .( consumed lib dictionary ) CR
+data_here %lib_data_image - .h .( consumed lib data area ) CR
+ram_here  %lib_bss_image  - .h .( consumed lib bss ) CR
+
+
+</code>
+</pre>
+<h3>Make section limits available to runtime code.</h3>
+<p>
+Words to provide start and end address of memory areas.
+The relocation code will not relocate the start address so we make it 4 bytes in.
+The first 4 bytes of image contains the lib code checksum. The lib code checksum is
+generated after the image has been located to zero so addresses of image at cross
+compile doesn't alter outcome.
+</p>
+<pre>
+<code>
+
+\ they have to be t! to get the endian correct
+%lib_code_image 4+                    %lib_code_start t!
+\ Test code assumes data is after address so we have to come back
+HERE 1 -                              %lib_code_end t!
+%lib_data_image                       %lib_data_start t!
+data_here 1 -                         %lib_data_end t!
+%lib_bss_image                        %lib_bss_start t!
+ram_here 1 -                          %lib_bss_end t!
+
+
+
+application
+HERE      %app_code_image - .h .( consumed app dictionary ) CR
+uhere     %app_data_image - .h .( consumed app data area ) CR
+ram_here  %app_bss_image  - .h .( consumed app bss ) CR
+
+%app_code_image                   %app_code_start t!
+HERE 1 -                          %app_code_end t!
+%app_data_image                   %app_data_start t!
+data_here 1 -                     %app_data_end t!
+%app_bss_image                    %app_bss_start t!
+ram_here 1 -                      %app_bss_end t!
+
+</code>
+</pre>
+<h3>Setup library data</h3>
+<pre>
+<code>
+
+' lib_startup                              \ lib_entry
+#lib_code                                  \ lib_code, this is available in app to.
+lib_header_setup
+
+</code>
+</pre>
+<h3>Setup_app_data</h3>
+<pre>
+<code>
+
+' app_startup                             \ app_entry
+0                                         \ app_code
+app_header_setup
+</code>
+</pre>
+</body>
+</html>
+

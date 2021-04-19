@@ -1,0 +1,137 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Environment</h3>
+<a HREF="./license.html">license</a>
+<a name="ENVIRONMENT_"></a>
+<h5>6.1.1345 ENVIRONMENT?</h5> 
+<p>environment-query CORE</p> 
+<p>( c-addr u -- false | i*x true )</p>
+<p>
+c-addr is the address of a character string and u is the string's character 
+count. u may have a value in the range from zero to an
+implementation-defined maximum which shall not be less than 31. 
+The character string should contain a keyword from 3.2.6
+Environmental queries or the optional word sets to be checked for 
+correspondence with an attribute of the present environment. If
+the system treats the attribute as unknown, the returned flag is false; 
+otherwise, the flag is true and the i*x returned is of the type
+specified in the table for the attribute queried. 
+</p>
+	<pre> <code>
+	: ENVIRONMENT? ( addr n -- x true|false)
+		~environment SEARCH-WORDLIST not IF
+			FALSE EXIT
+		THEN
+		EXECUTE 
+		TRUE
+	;
+
+
+	\ define the environment words
+	target_also
+	&environment 
+	target_definitions
+
+	\ maximum size of a counted string, in characters                   
+	: /COUNTED-STRING ( -- n )  0FF ;
+	\ size of the pictured numeric output string buffer, in characters
+	: /HOLD ( -- n  )  #picture_min  ;  
+	\ size of the scratch area pointed to       
+	: /PAD   ( --n  )  #$buffer   ;           
+	\ size of one address unit, in bits
+	: ADDRESS-UNIT-BITS  ( -- n  ) 0 ; 
+	\ true if complete core word set present (i.e., not a subset as defined in 5.1.1)   
+	: CORE   ( --true) TRUE ;
+	\ true if core extensions word set present
+	: CORE-EXT ( --true) TRUE ;
+	\ true if floored division is the default
+	: FLOORED  ( -- false)  FALSE ;  
+	\ maximum value of any character in the implementation-defined character set 
+	: MAX-CHAR ( --255) 0FF ;
+	\ largest usable signed double number    
+	: MAX-D  ( -- double ) 0FFFFFFFF 7FFFFFFF ;
+	\ largest usable signed integer
+	: MAX-N  ( -- nmax ) 07FFFFFFF ;
+	\ largest usable unsigned integer    
+	: MAX-U  ( -- umax ) 0FFFFFFFF ; 
+	\ largest usable unsigned double number  
+	: MAX-UD ( --ud ) 0FFFFFFFF 0FFFFFFFF ;  
+	\ maximum size of the return stack, in cells
+	: RETURN-STACK-CELLS ( -- n )  [  Rmax cell / ]T LITERAL ;  
+	\ maximum size of the data stack, in cells   
+	: STACK-CELLS   ( --n)  [ Smax cell / ]T LITERAL ; 
+	\ block word set present  
+	: BLOCK ( --false) FALSE ;            
+	\ block extensions word set present
+	: BLOCK-EXT ( --flase) TRUE ;             
+	\ double-number word set present
+	: DOUBLE  ( -- true)  TRUE ;
+	\  double-number extensions word set present     
+	: DOUBLE-EXT ( --true) TRUE ;
+	\ Exception word set present
+	: EXCEPTION  ( --true) TRUE ;
+	\ Exception extensions word set present        
+	: EXCEPTION-EXT ( --true ) ;
+	\ facility word set present
+	: FACILITY  ( --true) TRUE ;       
+	\ facility extensions word set present
+	: FACILITY-EXT ( --true) TRUE ;
+	\ file word set present
+	: FILE ( --true) TRUE ;
+	\ file extensions word set present           
+	: FILE-EXT ( --true) TRUE ;             
+	\ floating-point word set present
+    : FLOATING ( --fasle) FALSE ;         
+	\ floating-point extensions word set present
+	: FLOATING-EXT ( --falase) FALSE ; 
+	\ If n = zero, floating-point numbers are 
+	\ kept on the data stack; otherwise n is 
+    \ the maximum depth of the separate 
+    \ floating-point stack.      
+	: FLOATING-STACK zero ;       
+	\ largest usable floating-point number
+	\ Left indefined as fleat zero is not defined
+	\ MAX-FLOAT 
+	\ maximum number of local variables in a definition
+	\ We don't support the standard set.
+	: #LOCALS ( --zero)  zero ; 
+	\ locals word set present
+	\ Don't support the standard       
+	: LOCALS ( --flag) FALSE ;        
+	\ locals extensions word set present      
+    \ Don't support standard locals      
+	: LOCALS-EXT ( --flag) FALSE ;  
+	\ memory-allocation word set present
+	: MEMORY-ALLOC  ( --true) TRUE ; 
+	\ memory-allocation extensions word set present
+    : MEMORY-ALLOC-EXT ( --true) TRUE ;
+	\ programming-tools word set present
+	\ Have to return false as I don't support SEE
+	: TOOLS ( --false) FALSE ;
+	\ programming-tools extensions word set present 
+	: TOOLS-EXT  ( --flag) TRUE ;
+	\ search-order word set present
+	: SEARCH-ORDER ( --flag) TRUE ;
+	\ search-order extensions word set present       
+	: SEARCH-ORDER-EXT ( --flag) TRUE ;
+	\ maximum number of word lists usable
+	: WORDLISTS  ( --n)   #vocs  ;
+	\ string word set present
+	: STRING  ( --true) TRUE ; 
+	\ string extensions word set present       
+    : STRING-EXT ( --true) TRUE ;
+	         
+target_previous_definitions
+target_previous
+	</code> </pre>
+</body>
+</html>
+

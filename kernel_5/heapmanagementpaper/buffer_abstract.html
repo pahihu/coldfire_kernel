@@ -1,0 +1,31 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>COLDFORTH Heap Management</h2>
+<p>
+TCP/IP places unknown memory demands on a system. 
+</p>
+<p>
+IP requires you to receive an unknown number of datagrams, of unknown 
+size. The datagrams could be IP fragments. You can have an unknown number
+of datagrams being reconstructed from the fragments. The number of routes is unknown. 
+The number of entries in your ARP table is unknown, and so it goes.
+</p>
+<p>
+If you are going to support TCP/IP in a manner that is close to the RFC 
+requirements,  pre allocation of the memory needed for IP reception is 
+difficult. You have to support <i>ALLOCATE</i> and <i>FREE</i>. 
+</p>
+<p>
+The article describes the COLDFORTH heap management system. 
+</p>
+
+
+</body>
+</html>

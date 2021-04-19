@@ -1,0 +1,158 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+The protocol deals in numbers, from the number we have to extract
+an object to deal with the packet
+</p>
+<p>
+It must be possible to add entries to the demux table from anywhere, while
+the table is in use by others.
+</p>
+
+<p>
+Bucket_structure
+</p>
+	<pre> <code>
+
+        | CREATE _$demux_magic ," DEMUX"
+	zero
+	DUP CONSTANT _#demux_bucket_fwd_link CELL+
+	DUP CONSTANT _#demux_bucket_bck_link CELL+
+	DUP CONSTANT _#demux_bucket_key      CELL+
+	DUP CONSTANT _#demux_bucket_users    CELL+
+	DUP CONSTANT _#demux_bucket_object   CELL+
+        DUP CONSTANT _#demux_bucket_magic    8 +
+		CONSTANT _#demux_bucket_length
+	</code> </pre>
+<p>
+Find list to search
+</p>
+	<pre> <code>
+	: demux_hash { ( value table num_entries-- addr)  }{
+		variable %small_buffer }
+		ROT %small_buffer !
+		%small_buffer 4 checksum
+		\ table num checksum (--
+		SWAP
+		\ table check num(--
+		1 - CELLS
+		\ table num mask(--
+		AND
+		\ table offset(--
+		+
+	;
+	</code> </pre>
+<p>
+Find an entry
+</p>
+	<pre> <code>
+	: demux_find ( value table num --addr|0)
+		jump >R demux_hash
+		R> SWAP
+		\ value list(--
+		_lock_word
+		BEGIN
+			@ DUP
+		WHILE
+			2DUP _#demux_bucket_key + @ = IF
+				\ value list(--
+				1 OVER _#demux_bucket_users + +!
+				_unlock_word
+				NIP
+				EXIT
+			THEN
+		REPEAT
+		\ value 0(--
+		\ not found
+		_unlock_word
+		NIP
+	;
+	</code> </pre>
+<p>
+Add entry to mux table, if entry is not present.
+</p>
+	<pre> <code>
+	CREATE $in_use ," In use"
+	: demux_add { variable %object variable %value
+		          variable %table  variable %num_lists -- ( $|0 ) }{
+			variable %bucket }
+		_#demux_bucket_length get_free_buffer %bucket !
+		%bucket @ _#demux_bucket_length ERASE
+                [ _$demux_magic COUNT DROP ]T LITERAL %bucket @ _#demux_bucket_magic + 8 MOVE
+                \ object value table num(--
+		%value @ %bucket @ _#demux_bucket_key + !
+		%object @  %bucket @ _#demux_bucket_object + !
+		1 %bucket @ _#demux_bucket_users + !
+		\ value table(--
+		%value @ %table @ %num_lists @
+		demux_hash
+		\ list(--
+		DUP
+		\ list list(--
+		_lock_word
+		BEGIN
+			@ DUP
+		WHILE
+			DUP _#demux_bucket_key + @ %value @ = IF
+				\ already an entry
+				_unlock_word
+				\ list list(--
+				2DROP
+				%bucket @ kill_free_buffer
+				$in_use
+				EXIT
+			THEN
+		REPEAT
+		\ we can use
+		\ list zero(--
+		DROP
+		\ this will unlock
+		%bucket @ SWAP link_double
+		\ need the address to see if the entry is valid
+		zero
+	;
+	</code> </pre>
+<p>
+Release entry.
+</p>
+	<pre> <code>
+	: demux_release ( addr --)
+		_lock_word
+		-1 OVER _#demux_bucket_users + +!
+		DUP _#demux_bucket_users + @ not IF
+			\ this will unlock
+			DUP unlink_double
+			kill_free_buffer
+			EXIT
+		THEN
+		_unlock_word
+		DROP
+	;
+	</code> </pre>
+<p>
+remove_entry. It is assumed that the object will remain untill the entry is
+removed, as the object must be valid, and we don't remove it.
+</p>
+	<pre> <code>
+	: demux_remove ( value table num --)
+		demux_find
+		\ addr(--
+		?DUP IF
+			\ once for the find
+			DUP demux_release
+			\ once for the add
+			demux_release
+		THEN
+	;
+	</code> </pre>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    ram_variable 'local
+
+
+	target_also
+    &tasks
+	target_definitions
+  
+    #clock_low task: local
+		[ #BVP5502 #BVP5501 + [IF] ]T
+		$" ty1" 
+		[ [THEN] ]T
+		[ #BCM550 [IF] ]T
+		$" ty0" 
+		[ [THEN] ]T
+		R/W $open 
+		DUP 'output_file !
+		DUP 'input_file !
+		DUP 'abort_file !
+		DROP
+   		ws60
+		CURSOR send
+    	'local @execute xoff 
+	;task
+	</code> </pre>  
+	<a name="buffer_reclaim"></a>
+	<pre> <code> 
+    #clock_low task: buffer_reclaim
+		BEGIN
+			xtest 1 xwait
+    		_join_buffer_code
+		AGAIN
+	;task
+
+	#clock_low task: flash_write
+		BEGIN
+			\ maximum rate once every 100 msec
+			xtest #10 xwait
+			_%flash_write_queue xawait
+    		_write_buffers_to_flash
+		AGAIN
+	;task
+
+
+\
+\   #clock_medium task: WATCH_TASK
+\  	BEGIN  
+\   		   watchdog_list watchcheck  xpause
+\   	AGAIN
+\   ;task
+\  
+
+	\ tcp/ip
+	\ ------------------
+	\ This will route all pending packets and then exit
+	#clock_medium task: route_ip
+		BEGIN
+			_ip_queue xawait
+			_route_ip_queue	
+		AGAIN
+	;task
+
+	target_previous_definitions
+	target_previous
+	</code> </pre>
+
+</body>
+</html>

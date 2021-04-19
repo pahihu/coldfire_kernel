@@ -1,0 +1,575 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>the I/O classes for TCP</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0793.html">RFC793 TCP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0879.html">RFC879 TCP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122 More info</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1323.html">RFC1323 New options</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1337.html">RFC1337 Time wait problem</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1185.html">RFC1185 Time wait</a><br>
+TCP/T<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1379.html">RFC1379 More info</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1644.html">RFC1644 More info</a><br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1700.html">RFC1700 Assigned
+
+<h5>telnet server</h5>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc0854.html">RFC854 telnet</a><br>
+<pre> <code>
+
+tcp_client class
+			</code> </pre>
+                        <h4>Data area for syn</h4>
+			<p>
+			You can do this in many ways; in the end we must realise this is a real time system
+                        designed to run behind a firewall, not a general purpose machine designed to take
+                        network attacks. We allow _#syn_max outstanding syncs for each server.
+			</p>
+			<pre> <code>
+                \ with this value server the fits in a 1D8 buffer
+                | $18 CONSTANT _#syn_max
+
+                _#listen_entry_size _#syn_max * bytes% instance_variable %%syn_buffer
+
+                \ this points to the next entry to be used, which is one back from the
+                \ previous entry used.
+
+                cell% instance_variable %%last_syn_entry
+
+                        </code> </pre>
+			<p>
+			This is the number of clients than can be opened but not
+			processed by :listen, to get this far the remote machine
+			must have acked the syn reply we sent. In other words it is not
+                        a syn attack.
+			</p>
+			<p>
+			Servers can create different client objects, see :cleint!
+			<pre>
+                        <code>
+
+		cell% instance_variable %%client
+
+		| $10 CONSTANT _#client_queue_size
+		| 1 CONSTANT   _#client_queue_priorities
+
+		#queue_list_length
+		_#transmit_queue_priorities *
+		#queue_data_length + bytes% instance_variable %%client_queue
+
+		m: ( parent--)
+			this [parent] :construct
+
+			%%syn_buffer [ _#listen_entry_size _#syn_max * ]T LITERAL ERASE
+                        zero %%last_syn_entry !
+                        _#client_queue_size  _#client_queue_priorities %%client_queue queue_init
+
+                        \ the default client created
+			[ tcp_client ]T LITERAL %%client !
+
+                ; overrides :construct
+
+
+
+		m:
+			this [parent] :destruct
+                        \ ######
+                        \ What about the clients that have been queued in the %%client_queue
+                        \ and not used. As we don't close servers at this stage it is not
+                        \ a big issue.
+                ; overrides :destruct
+
+			</code> </pre>
+			<p>
+			In the code below the expected String is:
+			</p>
+			<pre> <samp>
+			 /local_port
+			</samp> </pre>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+                m: ( addr n mode -- instance )
+			%%mode !
+			\ addr_port count_port(--
+			[CHAR] / remove_leading
+			DUP IF \ port speced
+				Snumber %%local_port !
+			ELSE
+				TRUE ABORT" Must supply listen port"
+			THEN
+
+                        \ (--
+			\ Add a tcp demux entry. We are a server we accept
+			\ all connections to the port.
+			this \ object
+                        %%local_port @
+			0 0  \ don't care what remove machine
+			0 0  \ don't care what remote port
+			\  object local_port remote_ip remote_ip_mask remote_port remote_port_mask (--
+			_tcp_add ?DUP IF
+				$ABORT
+			THEN
+			\ a server never times out
+			-1 OVER _#demux_live_time + !
+
+			%%demux_structure !
+
+			\ set the state to listen
+			#tcps_listen %%tcp_state !
+			\ and that is about it. Your code now has to to listen.  listen
+			\ will return open objects connected to particular remote machines
+			\ and ports. The creation of the object is done in the proto task.
+                        \ The object is in use in two places, once inteh proto task ( vie demux)
+                        \ and once in whatever task is dealing with open objects queued ( it will be
+                        \ using the :listen method.
+
+                        this
+
+                ; overrides :file_open
+
+			</code> </pre>
+			<h5>listen</h5>
+			<p>
+			The key to syn attack protection is to use minimum resources on the
+			initial syn and only commit to the channel if our syn is acked.
+			</p>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+                | : _remove_syn_entry ( addr --)
+			zero SWAP _#listen_inuse + W!
+		;
+
+                \ CE 29 Aug 2001 simplified.
+                \ If every entry is in use this becomes a simple round robin job.
+		| : _find_empty_syn_entry { -- ( addr ) }
+                        %%last_syn_entry @
+	                _#syn_max zero  DO
+		                \ offset (--
+		                DUP %%syn_buffer _#listen_inuse + + W@ not IF
+                                        DUP _#listen_entry_size - DUP 0< IF \ >
+                                                DROP
+                                                [ _#listen_entry_size  _#syn_max 1 - * ]T LITERAL
+                                        THEN
+                                        \ addr1 addr2(--
+                                        %%last_syn_entry !
+		                        UNLOOP
+                                        %%syn_buffer +
+                                        EXIT
+		                THEN
+                                \ offset
+                                _#listen_entry_size - DUP 0< IF \ >
+                                        DROP
+                                        [ _#listen_entry_size  _#syn_max 1 - * ]T LITERAL
+                                THEN
+                        LOOP
+                        DUP _#listen_entry_size - DUP 0< IF \ >
+                                DROP
+                                [ _#listen_entry_size _#syn_max 1 - * ]T LITERAL
+                        THEN
+                        \ addr1 addr2(--
+                        \ every thing is in use; zapp an entry.
+                        %%last_syn_entry !
+		        UNLOOP
+                        %%syn_buffer +
+		;
+
+                \ CE 29 Aug 2001 simplified
+		| : _find_syn_entry { variable %remote_machine variable %remote_port -- ( addr true| false ) }
+
+			[ _#syn_max _#listen_entry_size * ]T LITERAL %%syn_buffer + %%syn_buffer DO
+                                I _#listen_inuse + W@ IF
+			                I _#listen_machine + @
+			                %remote_machine @
+			                =
+                                        I _#listen_port + W@
+			                %remote_port @
+			                =
+			                AND IF
+			                        I
+			                        TRUE
+			                        UNLOOP
+			                        EXIT
+			                THEN
+			        THEN
+			_#listen_entry_size +LOOP
+                        FALSE
+                ;
+
+                \ for use in :print
+                | : .syn_entries ( offset --)
+                         CR DUP SPACES
+                         ." syn buffer entries"
+			[ _#syn_max _#listen_entry_size * ]T LITERAL %%syn_buffer + %%syn_buffer DO
+                                I _#listen_inuse + W@ IF
+                                        CR DUP SPACES
+                                        ." entry_addr: " I .
+			                ." machine: " I _#listen_machine + @ .h
+                                        ." port: "    I _#listen_port + W@ .h
+                                        ." mss: "     I _#listen_mss + W@ .h
+                                        ." rcv_iss: " I _#listen_rcv.iss + @ .h
+                                THEN
+			_#listen_entry_size +LOOP
+                        DROP
+                ;
+
+                \ CE 29Aug 2001 checked
+		| : _add_syn_entry  { ( machine port service_type seq mss--addr) }{
+			variable %syn_entry }
+
+			_find_empty_syn_entry %syn_entry !
+
+                        \ this must be non zero
+			TRUE %syn_entry @ _#listen_inuse + W!
+			%syn_entry @ _#listen_mss + W!
+			%syn_entry @ _#listen_rcv.iss + !
+			%syn_entry @ _#listen_st + W!
+			%syn_entry @ _#listen_port + W!
+			%syn_entry @ _#listen_machine + !
+			initial_sequence %syn_entry @ _#listen_send.iss + !
+			%syn_entry @
+		;
+
+
+                \ CE 29 Aug 2001 checked
+                \ %%tcp_rcv.mss is sent as an option
+		| : _send_syn_ack ( addr --)
+			DUP _#listen_machine + @
+			OVER _#listen_st + W@ $1C AND 2 RSHIFT route_get ?DUP IF
+				\ syn_entry route_entry(--
+				\ The rules are. Make the receive mss as big as you can
+				\ and tell the other end when you send the sync. The send
+				\ mss is the default value unless the other end tells us
+				\ otherwise. The mss depend not only on the connection medium
+				\ but alsp on the host being communicated with. The other end
+				\ may not be able to handle a mss greater than the min.
+				DUP rt_gw + @ not IF
+					\ we are talking locally; make mss dependent
+					\ on mtu. This is very important for us as the
+					\ rti bus has a mtu of 8k
+					\ see rfc876 page 5 for justification for this calculation.
+                                        \ The value set in %%tcp_rcv.mss is used as the mss when
+                                        \ send ing the syn reply.
+					DUP rt_interface + @ :@mtu ip_options -
+					#tcp_header_end - %%tcp_rcv.mss !
+				THEN
+				route_free
+			THEN
+			\ syn_entry(--
+			DUP _#listen_send.iss + @ \ the sequence number
+			\ syn_entry send.iss(--
+			#rcv_data_buffer
+			\ addr send.iss rcv.wnd(--
+			\ add one so I ack remote seq
+			ROT _#listen_rcv.iss + @ 1+  \ ack the received syn
+			\ send.iss rev.wnd rcv.nxt(--
+			#tcpf_ack #tcpf_syn OR
+			_send_empty_segment
+		;
+			</code> </pre>
+			<p>
+			Setup the object then link it into the completed object queue.
+			This is the queue the :listen method looks at.
+			<p>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+		| : _setup_tcp_client { ( pep syn_entry  --flag) }{
+			variable %new_client }
+			\ make sure there are not too many links open
+			%%client_queue queue_room? not IF
+                                \ if we fail the pep must survive.
+				2DROP
+				FALSE
+                                EXIT
+			THEN
+			\ it is not allowed to have a parent if it does
+			\ close tries to deal with it
+			zero %%client @ heap_object
+			%new_client !
+			\ pep table_addr (--
+			%new_client @ :client_init
+			\ (--
+			\ we have to force the queue as we cannot destroy the object
+			\ in this code. We are in the proto task. The proto task cannot
+			\ be put to sleep for the conveniance of anyone. If you look
+			\ at the :destruct code for this object you will see it very
+			\ much puts the task executing the word to sleep.
+			\ :listen waits for objects to be added to this queue. and returns
+			\ them. :listen is executed in the server task. Code that uses listen
+			\ will normaly start another task.
+			%new_client @ [ %%server_link ]T LITERAL + %%client_queue zero enqueue_force
+			TRUE
+		;
+			</code> </pre>
+			<p>
+			The segment contained an ack, all that is valid is
+			a responce from the SEQ and ACK we sent.
+			</p>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+                | : _ack_seg { variable %pep -- }
+			%%remote_machine @ %%remote_port @
+			\ source_machine source_port(--
+			_find_syn_entry
+
+			IF
+				\ syn_entry (--
+				\ a syn from this port has been received in the past
+				\ Does the new packet ack the sequence we sent in reply
+				%pep @ ep_ipdata + @ #tcp_ack + @ OVER _#listen_send.iss + @ 1+ = IF
+                                        \ addr_syn_entry(--
+					\ ok remote acked our seq
+					\ clear the table entry we are going onto
+					\ bigger and better things
+					%pep @ OVER
+					_setup_tcp_client IF
+						\ success now clients problem
+						\ syn_entry(--
+						_remove_syn_entry
+						EXIT
+					THEN
+					\ failed; to many clients open
+					\ unfortunatly have to reset.
+					\ We have to be carefull here the reset has to
+					\ ack the sent syn. If you look at
+					\ _send_tcp_reset you will see this has
+					\ been dealt with by acking the last sequence in packet.
+					\
+					\ You might say you left it a bit late.
+					\ However queue may have emptied in the
+					\ little time we gained
+					\ syn_entry(--
+                                        _remove_syn_entry
+					%pep @ _send_tcp_reset
+					%pep @ kill_free_buffer
+					EXIT
+				THEN
+				\ syn_addr(--
+				\ ack didn't ack our syn.
+				\ send it again.
+				\ reset has already been dealt with
+				\ addr (--
+				DUP _#listen_send.iss + @ 1+ \ the sequence number after the SEQ I send
+				\ syn_entry send.iss(--
+				#rcv_data_buffer
+				\ syn_entry send.iss rcv.wnd(--
+				\ add one so I ack remote seq
+				ROT _#listen_rcv.iss + @ 1+  \ ack the received syn
+				\ send.iss rev.wnd rcv.iss(--
+				#tcpf_ack
+				_send_empty_segment
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			\ There was no inital sequence,or we have lost it.
+			\ If a reset drop packet ( dealt with in _reset_seq below)
+                        \ If anything else ( this case) send a reset.
+			%pep @ _send_tcp_reset
+			%pep @ kill_free_buffer
+		;
+
+                \ CE 29 Aug 2001 checked
+		| : _syn_seg { variable %pep -- }
+			\ if ack is set as well then we are dealing with
+			\ a problem client, don't even try and play.
+			%pep @  ep_ipdata + @ #tcp_flags + B@ #tcpf_ack AND IF
+				%pep @ _send_tcp_reset
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			%%remote_machine @ %%remote_port @
+			_find_syn_entry IF
+				\ addr(--
+				\ its eiher the same syn or a bloody mess
+				\ this will reply to first syn, lets the other end
+				\ decide what to do.
+				_send_syn_ack
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			\ (--
+			\ new syn
+
+
+                        \ unless the other end tells us otherwise with a tcp option we
+                        \ must use #default_mss
+			#default_mss %%tcp_snd.mss !
+                        %pep @ _process_tcp_options IF
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+
+			%%remote_machine @
+			%%remote_port @
+			%pep @ [ ep_data ip_tos + ]T LITERAL + B@
+			\ remote_machine remote_port service_type(--
+			%pep @ ep_ipdata + @ #tcp_seq + @
+                        \ this can be changed by a TCP option processing
+			%%tcp_snd.mss @
+			_add_syn_entry
+			\ addr (--
+			_send_syn_ack
+                        %pep @ kill_free_buffer
+
+                ;
+			</code> </pre>
+			<p>
+			If the reset is within the window then clear the syn entry
+			and call everything off. If the reset is outside the window
+			drop it.
+			</p>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+		| : _reset_seg { variable %pep -- }
+			%%remote_machine @
+                        %%remote_port @
+			\ source_machine destination_machine(--
+			 _find_syn_entry IF
+				\ addr(--
+				\ this is in responce to our SYN ACK
+				\ as the ack was set the reset sequence should
+				\ be equal according to standard. We will accept
+				\ any responce in window.
+				%pep @ ep_ipdata + @ #tcp_ack + @
+				OVER _#listen_send.iss + @
+				2DUP =
+                                \ addr a b f(--
+				-rot 1+ = OR IF
+                                        \ reset in snc space
+					_remove_syn_entry
+					%pep @ kill_free_buffer
+					EXIT
+				THEN
+                                \ addr_snc_entry(--
+                                DROP
+			THEN
+			%pep @ kill_free_buffer
+		;
+			</code> </pre>
+			<h4>function for each state</h4>
+			<p>
+			The listen state didn't have to implemented in the client. We over ride the
+			entry in the client table. The server only sits in the listen state. The server
+			waits until we receive a pep that has enought data to put the client in
+			the synced state and calls :client_init against a new client object to
+			have that happen. So it is the client that runs through new states.
+			The serve just stays in listen.
+			</p>
+			<pre> <code>
+
+                \ CE 29 Aug 2001 checked
+		| : _in_tcps_listen ( pep --)
+                        1 %%received_peps +!
+                        DUP [ ep_data ip_dst + ]T LITERAL + @
+			%%local_machine !
+			DUP [ ep_data ip_src + ]T LITERAL + @
+			%%remote_machine !
+			DUP ep_ipdata + @ #tcp_src + W@
+			%%remote_port !
+
+                        \ pep(--
+			DUP ep_ipdata + @ #tcp_flags + B@
+			DUP #tcpf_rst AND IF
+				DROP
+				_reset_seg
+				EXIT
+			THEN
+			DUP #tcpf_syn AND IF
+				DROP
+				_syn_seg
+				EXIT
+			THEN
+			DUP #tcpf_ack AND IF
+				DROP
+				_ack_seg
+				EXIT
+			THEN
+			DROP
+			\ other; it really is a nonsence packet if we get here
+			\ just drop it.
+			kill_free_buffer
+		;
+
+		' _in_tcps_listen _in_tcp_state_table #tcps_listen  + t!
+
+			</code> </pre>
+			<p>
+			Transmit task is not used for this state.
+			</p>
+			<pre> <code>
+
+		| : _out_tcps_listen ( --)
+		;
+
+		' _out_tcps_listen _out_tcp_state_table #tcps_listen  + t!
+
+                        </code> </pre>
+			<p>
+			Pretty simple hay. The task that looks after the server
+                        executes the :listen method, when it returns a new client
+                        object has been created for the connection.
+			</p>
+			<pre> <code>
+
+                m: ( -- obj )
+			%%client_queue xawait
+			%%client_queue dequeue
+			[ %%server_link ]T LITERAL -
+		; overrides :listen
+
+                        </code> </pre>
+			<p>
+			When we are acking a syn so we are also sending data as the
+			syn is part of the sequence space.
+			We however don't retransmit, it is up to the
+			client to do that if it is serious about getting a connection.
+			</p>
+			<pre> <code>
+		</code> </pre>
+		<p>
+		Set the client object the server is to create. It is best
+		to base the object on tcp_client, see tcp_telnet defined next.
+		</p>
+		<pre> <code>
+		m: ( addr --)
+			%%client !
+		; method :client!
+
+		m: ( indent --)
+			CR DUP SPACES ." tcp_server | " ." Object: " this .h
+			CR DUP SPACES ." lc box  : " %%local_machine @ .h
+			              ." lc port : " %%local_port @ .h
+			CR DUP SPACES ." state   : " %%tcp_state @ .h
+			              ." syn_buff_base: " %%syn_buffer  .h
+			              ." clients : " %%client_queue .h
+                                      ." received peps : " %%received_peps @ .h
+                        DUP .syn_entries
+
+			send
+			DROP
+		; overrides :print
+
+
+target_also
+&drivers
+target_definitions
+
+end_class tcp_server
+
+target_previous_definitions
+target_previous
+
+</code> </pre>
+</body>
+</html>

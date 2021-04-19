@@ -1,0 +1,635 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>proto class</h3>
+<a HREF="./license.html">license</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc793.html">RFC793 TCP</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1122.html">RFC1122 More info</a><br>
+<p>
+When system starts there has to be a tcp object contructed, but only one.
+</p>
+<p>
+checksum will work as long as all the data is in host order, or all the data
+is in network order. We do the checksum in host order as the source and 
+destination IP are in HOST order. This means received datagrams have to go
+throught tcp_net<>host before calling this routine
+</p>
+	<pre> <code>
+
+
+	| : tcp_checksum_calculation { variable %pep ( --checksum) }{
+		variable %ipdata }
+		%pep @ ep_ipdata + @ %ipdata !
+		zero
+		%pep @ [ ep_data ip_src + ]T LITERAL +
+		\ zero addr(--
+		\ source and destination address
+		DUP [ IP_ALEN 2* ]T LITERAL + SWAP DO
+			I W@  +
+		2 +LOOP
+		\ protocol
+		%pep @ [ ep_data ip_proto + ]T LITERAL + B@ +
+		\ length
+		%pep @ ep_ipcount + @ TUCK +
+		\ If length is odd pad tcp out with zero. Buffers lengths
+		\ are always divisible by cell so there is room to place
+		\ the byte
+		\ length checksum(--
+		SWAP DUP 01 AND IF
+			\ checksum len(--
+			zero
+			OVER %ipdata @ + B!
+		THEN
+		\ checksum length(--
+		%ipdata @ + %ipdata @ DO
+			I W@ +
+		2 +LOOP
+		\ checksum(--
+		DUP $10 RSHIFT SWAP $0FFFF AND +
+		DUP $10 RSHIFT +
+		-1 XOR
+		$0FFFF AND
+	;
+
+
+	\ The last tcp port supplied by the OS.
+	| ram_variable _%tcp_last_port
+	\ so the tcp object can be found without doing a
+	\ _tcp_find
+	| ram_variable _%tcp_object
+	</code> </pre>
+<p>
+The more lists the faster the demux, the more memory you use.
+Set as desired.
+</p>
+	<pre> <code>
+	| $80 CONSTANT _#tcp_head_num
+	| ram_variable _%tcp_table _#tcp_head_num CELLS ram_allot
+	</code> </pre>
+<p>
+_tcp_find and _tcp_release will be used in the protocol object.
+_tcp_add, _tcp_free? and _tcp_release will be used in the io_common object for
+open and close.
+</p>
+	<pre> <code>
+	| : _tcp_find ( local_port remote_ip remote_port --addr|zero)
+		_%tcp_table _#tcp_head_num demux_socket_find
+	;
+
+	| #1sec #120 *  CONSTANT #tcp_time_to_live
+
+	\ make sure #tcp_time_to_live is same as #demux_time_to_live
+	\ if they are not then extra code has to be added to change value
+	\ for _tcp_add
+	#tcp_time_to_live #demux_time_to_live ??=
+
+	| : _tcp_add ( object local_port remote_ip remote_ip_mask remote_port remote_port_mask -- $| addr 0 )
+		_%tcp_table _#tcp_head_num  demux_socket_add
+	;
+
+	| : _tcp_release ( addr --)
+		demux_release
+	;
+
+	| : _tcp_free? ( io_object port --)
+		_%tcp_table _#tcp_head_num _demux_socket_free?
+	;
+	</code> </pre>
+	<pre> <code>
+	\ you use this when you want the os to supply a source port, that
+	\ is when you are a client.
+	| $8000 CONSTANT _#first_tcp_system_port
+	| $10000 CONSTANT _#last_tcp_system_port
+	\ used to work out wrap around
+	| _#last_tcp_system_port _#first_tcp_system_port - 2 / CONSTANT _#tcp_range
+
+
+	| : _tcp_port {
+			variable %object
+			variable %remote_ip
+			variable %remote_ip_mask
+			variable %remote_port
+			variable %remote_port_mask -- ( record ) }
+		_lock_word
+		_%tcp_last_port @
+		_#first_tcp_system_port _#last_tcp_system_port WITHIN not IF
+			_#first_tcp_system_port _%tcp_last_port !
+		THEN
+		_unlock_word
+		_%tcp_last_port @
+		\ if two tasks are trying at the same time
+		\ one will get in first and the other will keep
+		\ going.
+		\ port(--
+		BEGIN
+			%object @ OVER %remote_ip @ %remote_ip_mask @
+			%remote_port @ %remote_port_mask @ _tcp_add
+		WHILE
+			1+
+			DUP _#first_tcp_system_port _#last_tcp_system_port WITHIN not IF
+				DROP _#first_tcp_system_port
+			THEN
+		REPEAT
+		\ port record(--
+		SWAP
+		\ when we store the up to port we must make sure
+		\ the task with the highest used port wins. It is a circular number
+		_lock_word
+		_%tcp_last_port @ 2DUP - ABS _#tcp_range > IF
+			\ wraped around
+			MIN
+		ELSE
+			MAX
+		THEN
+		_%tcp_last_port !
+		_unlock_word
+		\ record(--
+	;
+
+
+
+	</code> </pre>
+<a name=":proto_demux"></a>
+	<pre> <code>
+
+protocol class
+		cell% instance_variable %%tcp_in_errors
+                cell% instance_variable %%tcp_demuxed
+                cell% instance_variable %%tcp_error_calls
+
+		m: ( --)
+			this [parent] :construct
+                        \ now we start receiving packets.
+                        IPT_TCP   %%protocol_number !
+		; overrides :construct
+		</code> </pre>
+		<p>
+		Called if the byte order has to be swaped for network
+		transmission. This is done in the interface just prior
+		to transmission. On reception it is done after the protocol
+		demux, otherwise we would have to demux twice.
+		</p>
+		<pre> <code>
+		: tcp_host<>net  ( ipdata --)
+			\ I don't need it for coldfire and I havn't got time.
+			\ You have to deal with the TCP field. Ip is handled by the
+			\ ip layer. The application is responsible for the contents of the
+			\ TCP data stream.
+		;
+
+		m: ( pep --)
+			DROP
+		\   ep_ipdata + @
+		\   tcp_host<>net
+		; overrides :proto_host<>net
+		</code> </pre>
+		<p>
+		The sequence includes the syn flag and the fin flag and
+		they have to be added into the count. Keep test code length to min
+		add complications inside the IF. As IF often fails and code is in
+		the critical path.
+		</p>
+		<p>
+		Note that if the segment has no date the end_sequence is before the
+		the start seqenece.
+		</p>
+		<pre> <code>
+
+		| : _end_sequence { variable  %pep ( -- end_seq) }
+			%pep @ ep_ipdata + @ #tcp_seq + @
+			DUP %pep @  ep_start_seq + !
+			%pep @ ep_protocount + @
+			%pep @ ep_ipdata + @ #tcp_flags + B@
+			[ #tcpf_syn #tcpf_fin OR ]T LITERAL AND IF
+				%pep @ ep_ipdata + @ #tcp_flags + B@ #tcpf_syn AND IF
+					1+
+				THEN
+				%pep @ ep_ipdata + @ #tcp_flags + B@ #tcpf_fin AND IF
+					1+
+				THEN
+			THEN
+			1-
+			+
+			DUP %pep @ ep_end_seq + !
+		;
+
+
+
+		\ this uses the pep for guidence, but does't destroy it.
+		\ UDP uses an ICMP message to tell the remote machine a port is unreachable.
+		\ TCP uses a reset message.
+		\ This code is alos used with tcp.html to send reset packets.
+
+		| : _send_tcp_reset { variable %pep -- }
+			%pep @ ep_ipdata + @ #tcp_flags + B@ #tcpf_rst AND IF
+				\ the packet was a reset. WE are not allowed to send
+				\ a reset in responce. If we did packets to unopened
+				\ ports would rattle around forever.
+				EXIT
+			THEN
+			\ the new packet will have no data, it will be the same length or
+			\ shorter than the current packet header ( options don't grow)
+			%pep @ ep_protodata + @  %pep @ - get_free_buffer
+			\ pep_new(--
+			%pep @ OVER setup_pep_from_pep
+			\ well just go through and set the fields, just grin and look happy
+			%pep @ ep_ipdata + @
+			\ pep_new ipdata_old(--
+			OVER ep_ipdata + @
+			\ pep_new ipdata_old ipdata_new(--
+			OVER #tcp_dst + W@ OVER #tcp_src + W!
+			OVER #tcp_src + W@ OVER #tcp_dst + W!
+			OVER #tcp_flags + B@ #tcpf_ack AND IF
+				\ rfc 793 page 65
+				\ if the datagram contained an ack reply
+				\ with a reset datagram containing the seqence number
+				\ acked. Remember the sequence number acked is the next
+				\ seqence expected, so the reset will be in the sequence
+				\ number accepted by the end we are resetting.
+				OVER #tcp_ack + @ OVER #tcp_seq + !
+				#tcpf_rst OVER #tcp_flags + B!
+				\ This is what the standard asks for I think it is wrong. I
+				\ think we should inc the sequence if the SYN bit is set
+				\ and leave it a lone if not. If the SYN bit is set we are using
+				\ the relevent data and should ack it's reception. But who am
+				\ I to question this.
+				%pep @ ep_ipdata + @ #tcp_seq + @
+				OVER #tcp_ack + !
+			ELSE
+				\ rfc 793 page 65
+				\ We don't have a seqence to use as the received datagram
+				\ didn't have it's ack bit set so the ack field is not
+				\ valid, so use zero.
+				zero OVER #tcp_seq + !
+				[ #tcpf_rst #tcpf_ack OR ]T LITERAL OVER #tcp_flags + B!
+				\ If there is no ack set, this datagram is the initial syn
+				\ or rubbish, we have to ack the syn, as we use it to reply.
+				\ What follows is the complete calculation as per standard.
+				\ Testing that the syn bit was set and incrementing the
+				\ supplied seqence by one would have also been acceptable and
+				\ a better representation of the truth as we took the syn bit
+				\ and nothing more.
+				%pep @ ep_ipdata + @ #tcp_seq + @
+				%pep @ _end_sequence
+				2DUP - 0> IF
+					\ there was no data ( flag or otherwise), use sequence sent.
+					DROP
+				ELSE
+					\ there was data, _end_seqence returns the sequence of the last
+					\ data item in datagram. The ack is for the next data item expected.
+					NIP 1+
+				THEN
+				\ pep_new ipdata_old pep_new ack(--
+				OVER #tcp_ack + !
+			THEN
+			\ pep_new ipdata_old ipdata_new(--
+			\ ack the last sequence byte in packet. Doing it this way gets the
+			\ reset inside e SYN packet window. A reset for a SYN packet will
+			\ only be acecpted if the SYN is acked.
+			[ #tcp_header_end 2 RSHIFT 4 LSHIFT ]T LITERAL OVER #tcp_offset + B!
+			zero OVER #tcp_window + W!
+			\ be neat
+			zero OVER #tcp_urgptr + W!
+			2DROP
+			\ pep_new(--
+			#tcp_header_end OVER add_to_ip
+			\ so tcp checksum can be calculated by interface
+			_%tcp_object @ OVER ep_proto_obj + !
+			queue_ip
+		;
+				</code> </pre>
+
+
+		</code> </pre>
+		<p>
+		We are in the time wait state.
+		we have to ack a remote fin if it arrives.
+		We make no assumtions about who or what
+		from the remote fin we form a packet that will
+		make the other end happy and send it.
+		</p>
+		<p>
+		We are doing this as a service for the other end. As soon as it
+		gets an ack of the fin it can release it's resources. If you look
+		at the tcp code you will see this is used to ack all fines. Doing
+		that way allows the application to close down the tcp object easily.
+		</p>
+		<pre> <code>
+		| : _ack_last_fin { variable %pep -- }
+			%pep @ ep_ipdata + @ #tcp_flags + B@ #tcpf_fin AND not IF
+				\ it's something else; lost in the internet for a while
+				\ whatever it was it is now irrelevent.
+				EXIT
+			THEN
+			\ the new packet will have no data, it will be the same length or
+			\ shorter than the current packet header ( options don't grow)
+			%pep @ ep_protodata + @  %pep @ - get_free_buffer
+			\ pep_new(--
+			%pep @ OVER setup_pep_from_pep
+			\ well just go through and set the fields, just grin and look happy
+			%pep @ ep_ipdata + @
+			\ pep_new ipdata_old(--
+			OVER ep_ipdata + @
+			\ pep_new ipdata_old ipdata_new(--
+			OVER #tcp_dst + W@ OVER #tcp_src + W!
+			OVER #tcp_src + W@ OVER #tcp_dst + W!
+			OVER #tcp_ack + @ OVER #tcp_seq + !
+			#tcpf_ack OVER #tcp_flags + B!
+			\ when setting the ack field remember the last packet may have contained
+			\ data and a fin. We have to ack past the fin for the other end to be
+			\ happy.
+			%pep @ _end_sequence 1+ OVER #tcp_ack + !
+			[ #tcp_header_end 2 RSHIFT 4 LSHIFT ]T LITERAL OVER #tcp_offset + B!
+			zero OVER #tcp_window + W!
+			\ be neat
+			zero OVER #tcp_urgptr + W!
+			2DROP
+			\ pep_new(--
+			#tcp_header_end OVER add_to_ip
+			\ so tcp checksum can be calculated by interface
+			_%tcp_object @ OVER ep_proto_obj + !
+			queue_ip
+		;
+
+		\ used by the proto task to get rid of the packet.
+		m: { variable %pep --  }
+
+                        1 %%tcp_demuxed +!
+
+                        \ set tcp pointer and count.
+			\ These will be moved when urgent data is extracted,
+			\ or if the packet contains data that is to be ignored
+			\ for some reason. We do not move the data.
+			%pep @ ep_ipdata + @
+			%pep @ ep_ipcount + @
+			\ ipdata ipcount(--
+			OVER #tcp_offset + B@ #tcp_hlen>bytes_asr RSHIFT
+			\ ipdata ipcount header(--
+			TUCK - DUP 0< IF   \ >
+				\ the datagram is not long enough to contain the header
+				\ ipdata header count(--
+				DROP 2DROP
+				1 %%tcp_in_errors +!
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			\ ipdata header count(--
+			%pep @ ep_protocount + !
+			\ ipdata header(--
+			+ %pep @ ep_protodata + !
+
+			%pep @ tcp_checksum_calculation
+			\ checksum calc includes checksum and result should be zero
+			IF
+				%pep @ kill_free_buffer
+				1 %%tcp_in_errors +!
+				EXIT
+			THEN
+			\ checksum is good
+
+			\ -------------------------
+			\ This is important
+			\ -------------------------
+			\ This bit of code is central to this implementation.
+			\ 1) We do not use the local ip address in selecting the connection. So it is
+			\ not important to know which local ip address is used to start the connection.
+			\ It is important that we reply using the destination address of incoming
+			\ datagrams. The datagram exchange when the connection is set up will select
+			\ the source port.
+			\ 2) The raw tcp packet is presented to the io object, that is the object
+			\ created with open. It is the io objects job to look after the connection.
+			\ The TCP is implemented in the io object. A server will create an io object for all
+			\ connections. All the standard forth io words will work against an open connection.
+			\
+			%pep @ ep_ipdata + @ #tcp_dst + W@
+			%pep @ [ ep_data ip_src + ]T LITERAL + @
+			%pep @ ep_ipdata + @ #tcp_src + W@
+			\ sequence_length local_port remote_ip remote_port(--
+			_tcp_find ?DUP IF
+				\ table(--
+				\ save the last access time
+
+				xclock+ @ OVER 2DUP _#demux_time + !
+				_#demux_try_time + !
+
+				\ this is a method in io_common
+				%pep @ OVER _#demux_object + @ ?DUP IF
+					:consume_port
+					_tcp_release
+					EXIT
+				ELSE
+					DUP _ack_last_fin
+					kill_free_buffer
+					_tcp_release
+					EXIT
+				THEN
+			THEN
+			\ (--
+			\ the port is unreachable
+			\ Now if it was udp we would send a icmp port unreachable
+			\ error message, but it is not the case with TCP.
+			\ RFC793 page 65 is the place to look.
+			\ This means we have to be able to create a valid TCP packet
+			\ outside the device driver for the protocol, oh well.
+			\ (--
+			%pep @ _send_tcp_reset
+			%pep @ kill_free_buffer
+		; overrides :proto_demux
+
+
+		m: { variable %pep -- }{
+			variable %ipdata
+			variable %returned_hl }
+
+                        1 %%tcp_error_calls +!
+
+			%pep @ ep_ipdata + @ %ipdata !
+			%ipdata @ ic_data + _ip>ip_hlen
+			\ header_length_returned_datagram(--
+			%returned_hl !
+			%pep @ ep_ipcount + @ ic_data - %returned_hl @ - #tcp_header_end < IF \ >
+				\ (--
+				\ didn't return tcp header
+				%pep @ kill_free_buffer
+				EXIT
+			THEN
+			\ extracting source port etc.and have a go at queueing packet.
+			\ ep_error is set before we get to this word.
+			\ The contents of ep_error will be seen by the
+			\ io_common object and result in a error output.
+			\ header_length_returned_datagram(--
+			\ remember the datagram is as we sent it
+			\ the destination is the remote.
+			%ipdata @ ic_data + %returned_hl @ + #tcp_src + W@
+			%ipdata @ ic_data + ip_dst + @
+			%ipdata @ ic_data + %returned_hl @ + #tcp_dst + W@
+			_tcp_find ?DUP IF
+				\ table(--
+				\ this is a method in io_common
+				%pep @ OVER _#demux_object + @ ?DUP IF
+					:consume_port
+					_tcp_release
+					EXIT
+				ELSE
+					\ no one is interested. Just like humans
+					\ complain and no-one is interested.
+					kill_free_buffer
+					_tcp_release
+					EXIT
+				THEN
+				\ if we are in the timewait state we are not interetesed in errors
+				\ noone is going to use them and we do not repond to them
+			THEN
+			\ get here and there is nowhere for error to go
+			\ give up
+			%pep @ kill_free_buffer
+		; overrides :proto_error
+
+
+
+
+
+		\ TCP requires checksuming
+		\ after the source ip address is known.
+		\ The source ip address should be determined by
+		\ the interface over which the packet is sent.
+		\ Instead of guessing the source ip address we provide
+		\ the protocol object and the interface calls :proto_checksun
+		\ just before doing the ip checksum, and before converting
+		\ the ip header to network order.
+		m: { ( pep --) }{
+			variable %ipdata }
+			DUP ep_ipdata + @ %ipdata !
+			zero %ipdata @ #tcp_checksum + W!
+			\ pep(--
+			tcp_checksum_calculation
+			\ checksum(--
+			%ipdata @ #tcp_checksum + W!
+		; overrides :proto_checksum
+
+		\ tell the world about ourselves
+		m: ( offset --)
+			CR DUP SPACES
+                        ." tcp_protocol  | " ." Object: " this .h
+			." protocol_number: " %%protocol_number @ .h
+                        CR DUP 4+ SPACES ." tcp in errors  : " %%tcp_in_errors @ .h
+                        ." tcp demuxed : " %%tcp_demuxed @ .h
+                        ." tcp error calls : " %%tcp_error_calls @ .h
+			DROP
+			send
+		; overrides :print
+
+end_class tcp_protocol
+
+	</code> </pre>
+	<p>
+	To make life simple for this code, this code removes all entries
+	otherwise we are tracing down a list that can lose entries, not a good thing.
+	It doesn't matter if entries get added while this code is being executed.
+	</p>
+	<pre> <code>
+	| CREATE $timeout ," Connection has timed out"
+	| : _tcp_timeout ( --)
+		_%tcp_table _#tcp_head_num CELLS + _%tcp_table DO
+			I
+			BEGIN
+				DUP @
+			WHILE
+				DUP @ _#demux_live_time + @ -1 <> IF
+					\ if we have exceeded max quite send an out of bound packet
+					\ if the computer is still there it will send an ack if not
+					\ timeout will continue
+					DUP @ _#demux_live_time + @
+					OVER @ _#demux_time + @ +
+					xclock- @ + 0< IF \ >
+						\ entry has timed out
+						\ list(--
+						DUP @ _#demux_object +
+						\ we can't be sure that task is trying to use port
+						\ we can be really unlucky it is trying to close it when we time it out
+						\ so we have to lock the processor when queueing a $timeout message
+						_lock_word
+						@ not IF
+							_unlock_word
+							\ the device object has gone we only have to delete this entry
+							DUP @ _tcp_release
+							\ we don't have to fetch the next as the
+							\ next should be gone and it it hasn't
+							\ it's because there has been to many finds and
+							\ not enough releases. A few more times around will fix that.
+						ELSE
+							\ it is the responsibilty of the object to set the
+							\ #demux_object pointer to zero.
+							\ Update object to current time so object has time
+							\ to get it's act together.
+							xclock+ @ OVER @ 2DUP _#demux_time + !
+							_#demux_try_time + !
+							$timeout ep_data get_free_buffer
+							\ list $ pep(--
+							\ abort_connection will enable interrupts.
+							jump @ _#demux_object + @ :abort_connection
+							@
+						THEN
+					ELSE
+						\ we have three goes at getting a responce.
+						DUP @ _#demux_live_time + @ 4 / 1+
+						OVER @ _#demux_try_time + @ +
+						xclock- @ + 0< IF \ >
+							xclock+ @ OVER @ _#demux_try_time + !
+							DUP @ _#demux_object + @ :hay_you_there
+						THEN
+						\ move to next entry in list
+						@
+					THEN
+				ELSE
+					@
+				THEN
+				\ list(--
+			REPEAT
+			DROP
+			xpause
+		cell +LOOP
+	;
+
+
+	: .tcp_demux ( --)
+		CR
+		." lc port  "
+		." users    "
+		." object   "
+		." rm port  "
+		." rm p mk  "
+		." rm ip    "
+		." rm ip mk "
+		." live tm  "
+		_%tcp_table _#tcp_head_num CELLS + _%tcp_table DO
+			I
+			BEGIN
+				@ DUP
+			WHILE
+				CR
+				\ addr(--
+				DUP _#demux_local_port + @ .h
+				DUP _#demux_users + @ .h
+				DUP _#demux_object + @ .h
+				DUP _#demux_remote_port + @ .h
+				DUP _#demux_remote_port_mask + @ .h
+				DUP _#demux_remote_ip + @ .h
+				DUP _#demux_remote_ip_mask + @ .h
+				DUP _#demux_live_time + @ .h
+			REPEAT
+			DROP
+		cell +LOOP
+	;
+
+	</code> </pre>
+
+</BODY>
+</HTML>

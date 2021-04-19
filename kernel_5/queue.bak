@@ -1,0 +1,578 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Souped up version for use with TCP/IP. You can now limit the number of
+items in the queue, and have tasks wait for room in a queue.
+</p>
+<p>
+All needed because IP waits for noone, if you queue all you receive you can
+run out of memeory. On the flip size whole system assumes IP packets sometimes
+fall of the edge of the universe. So thats what you do when IP threatens
+the system, make the packets fall.
+</p>
+<p>
+This TCP/IP stack supports prioroties, such a thing is very important for real time control.
+</p>
+<p>
+Version 0.9; simplified further. maximum level queued is no longer maintained. This results in all heads
+being tested for packets queue but simplifies the design and reduces the length of time interrupts are
+disabled.
+</p>
+	<pre> <code>
+	HEX
+	zero
+	| DUP  CONSTANT #queue_master        CELL+  \ task you are queued for, if waiting for data
+	| DUP  CONSTANT #queue_tasks         CELL+  \ linked list of tasks waiting for queue to empty
+	| DUP  CONSTANT #queue_limit         CELL+  \ Set to max on init decremented on net_enq
+	| DUP  CONSTANT #queue_priorities    CELL+  \ number of priorites.
+	| DUP  CONSTANT #queue_lists
+        | CONSTANT #queue_data_length
+
+
+	\ describe the list head
+	zero
+	| DUP  CONSTANT #queue_list_end  CELL+
+	| DUP  CONSTANT #queue_list_head CELL+
+	| DUP  CONSTANT #queue_list_length
+	| >asl CONSTANT #queue_list_length_asl
+
+
+	\ Go down priorities until
+	\ we find a packet or until we get to the lowest priority
+	\ with no packets found.
+
+	: find_queue_list ( queue -- list|0)
+			DUP #queue_priorities + @ 1-
+			#queue_list_length * zero MAX
+			SWAP [ #queue_lists #queue_list_head + ]T LITERAL +
+			\ offset base(--
+			TUCK +
+			\ base addr(--
+			BEGIN
+				DUP @ IF
+					#queue_list_head - NIP
+					EXIT
+				THEN
+				#queue_list_length -
+				2DUP >
+			UNTIL
+			2DROP
+			zero
+	;
+
+        \ <a name="xawait"></a>
+	: xawait ( queue --)
+		xsleep
+		\ indicate we are the task to wake
+		user_base activation_status OVER #queue_master + !
+		\ If no items sleep
+		DUP find_queue_list not IF
+			\ queue(--
+			xnext
+			\ we get here if another task woke us
+		THEN
+		\ needed if item was in queue
+		zero SWAP #queue_master + !
+	;
+
+        \ <a name="xawait_timed"></a>
+	\ flag is true if timeout
+	: xawait_timed ( queue timeout--flag)
+		DUP IF
+			SWAP
+			\ timeout queue(--
+			xtest
+			\ indicate we are the task to wake
+			user_base activation_status OVER #queue_master + !
+			\ If no items sleep
+			DUP find_queue_list not IF
+				\ no data wait for some
+				\ timeout queue(--
+				SWAP xwait
+				\ If timeout we have to reset the master address
+				zero SWAP #queue_master + !
+				\ (--
+				xtimeout?
+				EXIT
+			THEN
+			\ timeout queue(--
+			NIP
+			zero SWAP #queue_master + !
+			FALSE
+		ELSE
+			DROP xawait FALSE
+		THEN
+	;
+
+	\ return list address
+	| : _queue_list ( queue priority -- list )
+		\ limit to range
+		OVER #queue_priorities + @ 1- MIN zero MAX
+		#queue_list_length_asl LSHIFT +
+		#queue_lists +
+		\ list(--
+	;
+
+
+        \ <a name="enqueue_force"></a>
+	\ queue data no matter what
+        \ may no exit to multitasker
+        : enqueue_force ( address queue-head priority --)
+		\ set link field to zero
+		jump zero SWAP !
+		_lock_word
+			\ decrement allowed queue count
+			-1 jump #queue_limit + +!
+			OVER #queue_master + @ IF
+				wake jump #queue_master + @ W!
+			THEN
+			\ address queue priority(--
+			_queue_list
+			\ address list(--
+			\ This is why the end pointer is preset, so this step will store
+			\ into the head field on first entry.
+			#queue_list_end + 2DUP @ ! !
+		_unlock_word
+	;
+
+
+        \ <a name="enq"></a>
+	\ the old boring enq
+	: enq ( address queue_head --)
+		zero
+	 	enqueue_force
+	;
+
+        \ <a name="enqueue_try"></a>
+	\ Returns zero if ok a $ on failure
+	| CREATE $failed_to_queue ," queue full"
+	\ if the queue is full return an error
+        \ may not exit to multitasker
+	: enqueue_try ( address queue_head priority -- $|0)
+		OVER #queue_limit +
+		\ addr priority queue addr(--
+		\ because we do't lock for the test we can queue over the limit
+		\ if unlucky; but big deal.
+		@ 1- 0< IF  \ >
+			DROP
+			2DROP
+			$failed_to_queue
+			EXIT
+		THEN
+		enqueue_force
+		zero
+	;
+
+        \ <a name="queue_room?"></a>
+	: queue_room? ( queue -- flag )
+		#queue_limit + @ 0>
+	;
+        \ <a name="enqueue_wait"></a>
+	: enqueue_wait ( address queue_head priority--)
+		BEGIN
+				OVER #queue_limit +
+                                _lock_word
+				@ 1- 0< IF  \ >
+					\ address queue_head prority(--
+					xsleep
+					_%task_link jump #queue_tasks + link_double
+					_unlock_word
+					xnext
+					\ xawait wakes all tasks queued waiting.
+					\ we may miss out again. But this is the way it should
+					\ be the schedular determines who wins not the link order
+					\
+					\ Mind you if you have a high prority packet and a low
+					\ prority task, stiff.
+				ELSE
+                                        \ this will unlock
+					enqueue_force
+					EXIT
+				THEN
+		AGAIN
+	;
+	</code> </pre>
+	<p>
+	Return list address from which the next item will be extracted. This will work for any list
+	having a head and tail.
+	</p>
+	<pre> <code>
+	| : remove_list ( head --item )
+		_lock_word
+			DUP #queue_list_head + @        \ list item(--
+			\ list item(--
+			TUCK                            \ item list item(--
+			@                               \ item list next_item(-- head-->item-->next_item
+			2DUP SWAP #queue_list_head + !  \ item list next_item(--
+			\ item list next_item(--
+			0= IF
+				\ make end point to head.
+				\ item list(--
+				DUP #queue_list_head + OVER #queue_list_end + !
+			THEN
+		_unlock_word
+		\ item list(--
+		DROP
+	;
+
+
+	\ increment the use count, remove the packet from the list and
+	\ return the address of the packet
+        \ this can be used with find_queue_list. If you use find queue list you cannot
+        \ dequeue as the head of the list is stable but the active list isn't.
+        : remove_queue_list ( list queue --packet)
+		1 SWAP #queue_limit + +!
+		remove_list
+	;
+
+        \ <a name="dequeue"></a>
+        : dequeue ( queue --addr|zero)
+		DUP find_queue_list
+		\ queue list(--
+		\ This should never happen if using xawait
+		\ but who knows how we will get used.
+		DUP not IF
+			\ if there is nothing in the queue there should be no tasks
+			\ to wake
+			NIP
+			\ zero(--
+			EXIT
+		THEN
+		\ queue list(--
+		OVER remove_queue_list
+		SWAP
+		\ item queue(--
+
+		\ We wake them all and let them fight it out.
+		\ The task with the highest priority will win. The
+		\ rest will go back to sleep.
+		\ This can be done with others adding tasks to list. If the queue
+		\ is once again full because we enable interrupts and a high priority
+		\ task has queued we will be waking everything up for no reason, but
+		\ so what they will simple go around again. It is more important
+		\ to keep the interrupt hole as small as possible.
+
+		#queue_tasks + @
+		BEGIN
+			?DUP
+		WHILE
+			\ get the next before we release the link
+			DUP @ SWAP
+			\ item task_list task(--
+			\ unlink first as wakeing may see task execute
+			\ ahead of us, if this happens it may reuse the
+			\ _%task_link area.
+			DUP unlink_double
+			wake SWAP [ user_base _%task_link  - ]T LITERAL +
+			\ next wake utask(--
+			activation_status W!
+		REPEAT
+		\ item(--
+	;
+
+        \ <a name="deq"></a>
+	\ backward compatable
+	: deq ( queue --)
+		dequeue DROP
+	;
+
+	( Queue head creation words)  HEX
+        | _create_listhead queuelist
+
+	\ describe the structure created in dictionary.
+	zero
+	| DUP  CONSTANT _#queue_head_data>      CELL+
+	| DUP  CONSTANT _#queue_head_priorities CELL+
+	| DUP  CONSTANT _#queue_head_number     CELL+
+	| DUP  CONSTANT _#queue_head_link       CELL+
+	     DROP
+
+
+	| : queue_init ( number priorities queue --)
+		DUP #queue_data_length ERASE
+		ROT OVER #queue_limit + !
+		\ priorities queue(--
+		2DUP #queue_priorities + !
+		\ priorities queue(--
+		\ priorities queue(--
+		#queue_data_length + SWAP #queue_list_length_asl LSHIFT zero ?DO
+			zero OVER #queue_list_head + I + !
+			DUP #queue_list_head + I + OVER #queue_list_end + I + !
+		#queue_list_length +LOOP
+		DROP
+
+	;
+
+	\ length of data area requiered to run a queue
+	| : _queue_data_length ( prorities -- length )
+		#queue_list_length_asl LSHIFT #queue_data_length +
+	;
+
+        \ <a name="net_queue"></a>
+	\ Note we don't link into linked list as system
+	\ now loads and runs there is no restart.
+	: net_queue ( number priorites-- )
+		ram_here    \ used later as address used by queueu_init
+					\ number priority queue(--
+		            \ remember variable creates code, and the address location varies.
+		ram_create
+		\ number priorites ram_here(--
+		OVER _queue_data_length ram_allot
+		queue_init
+
+	;
+
+        \ <a name="queue"></a>
+	\ a degenerate case that is backward compatable
+	\ Note we don't link into linked list as system
+	\ now loads and runs there is no restart.
+	: queue ( -- )
+	 	$7FFFFFFF 1 net_queue
+ 	;
+
+
+	forth : net_queue  ( number priorites --)
+		HOST
+		ram_here
+		ram_create
+		\ num priorites here(--
+		forth OVER
+		HOST #queue_list_length
+		forth *
+		HOST #queue_data_length
+		forth +
+		HOST ram_allot
+		t,    \ address
+		t,    \ priorites
+		t,    \ entries
+		queuelist
+		forth DUP
+		HOST dt@ HERE  \ queuelist item here(--
+		forth ROT      \ item here queuelist(--
+		HOST dt! t,    \ (--
+		forth
+	;
+
+
+
+	forth : queue ( -- )
+		$7FFFFFFF 1
+		HOST net_queue
+		forth
+	 ;
+
+	HOST
+	| : queue_list_init
+		queuelist	BEGIN
+			@ ?DUP
+		WHILE
+			>R
+			I  [ _#queue_head_number _#queue_head_link - ]T LITERAL + @
+			I  [ _#queue_head_priorities _#queue_head_link - ]T LITERAL + @
+			I  [ _#queue_head_data> _#queue_head_link - ]T LITERAL + @
+			\ link number priority addr(--
+			queue_init
+			R>
+		REPEAT
+	;
+
+        \ <a name="queue_empty"></a>
+	\ true if empty
+	: queue_empty? ( queue--flag)
+		find_queue_list 0=
+	;
+
+        \ number of items queued in total
+        : net_queued { ( addr --n ) }{
+                variable %count }
+                zero %count !
+                DUP [ #queue_lists #queue_list_head + ]T LITERAL + SWAP #queue_priorities + @ zero ?DO
+                        zero OVER
+                        \ when you trace down a list you have to lock the system
+                        \ otherwise you can end up in a releases record that has been
+                        \ used for something else.
+                        _lock_word
+                        BEGIN
+                                @ ?DUP
+                        WHILE   \ addr n list(--
+                                SWAP 1+ SWAP
+                        REPEAT
+                        _unlock_word
+                        %count +!
+                        #queue_list_length +
+                LOOP
+                DROP
+                %count @
+        ;
+
+        \ prints the name of task
+        : .activation_task  ( activation_status --)
+                ?DUP IF
+                        #activation_status - #activation_task> + @
+	                _%task_name> OVER other_task @   \ task name(--
+	                _%task_name_count ROT other_task @ \ name count (--
+	                TYPE
+                ELSE
+                        ." No activation task"
+                THEN
+        ;
+
+        \ number of entries in a list. System locked so list remains stable
+        : list_length ( addr --n)
+                zero SWAP _lock_word
+                BEGIN
+                        @ DUP
+                WHILE
+                        SWAP 1+ SWAP
+                REPEAT
+                _unlock_word
+                DROP
+        ;
+
+        \ this assumes the caller has printed out the queue name and base address
+        : .net_queue { variable %addr variable %offset -- }
+                ." master task  : " %addr @ #queue_master + @ .activation_task
+                CR %offset @ SPACES
+                ." queued tsk: " %addr @ #queue_tasks + list_length .h
+                ." room left : " %addr @ #queue_limit + @ .h
+                ." priorities: " %addr @ #queue_priorities + @ .h
+                ." num queue : " %addr @ net_queued .h
+        ;
+
+	</code> </pre>
+	<h4>simple_queue</h4>
+	single priority
+	<pre> <code>
+	zero
+	DUP CONSTANT #simple_queue_master CELL+ \ task to awake
+	DUP CONSTANT #simple_queue_end    CELL+   \ points to tail
+	DUP CONSTANT #simple_queue_head   CELL+  \ points to head
+	    CONSTANT #simple_queue_length
+
+        : simple_queued ( addr -- n)
+                #simple_queue_head + list_length
+        ;
+
+        \ this assumes the caller has printed out the queue name and base address
+        : .simple_queue { variable %addr variable %offset -- }
+                ." master task  : " %addr @ #simple_queue_master + @ .activation_task
+                CR %offset @ SPACES
+                ." num queue : " %addr @ simple_queued .h
+        ;
+
+        \ <a name="reset_simple_queue"></a>
+	\ reset a simple queue
+	: reset_simple_queue ( addr --)
+		\ needed when queues are created in objects
+		zero OVER #simple_queue_master + !
+		zero OVER #simple_queue_head + !
+		DUP #simple_queue_head + SWAP #simple_queue_end + !
+	;
+
+        \ <a name="simple_empty?"></a>
+	: simple_empty? ( queue-- flag)
+		#simple_queue_head + @ 0=
+	;
+
+        \ <a name="simple_queue"></a>
+	: simple_queue ( [name] --)
+		CREATE
+		HERE
+		#simple_queue_length ALLOT
+		\ the end points to the head
+		reset_simple_queue
+	;
+
+        \ <a name="simple_enq"></>
+	: simple_enq ( address queue --)
+		 zero jump !
+		 _lock_word
+		 	DUP #simple_queue_master + @ IF
+		 		wake OVER #simple_queue_master + @ W!
+		 	THEN
+		 	2DUP #simple_queue_end + @ !
+		 	#simple_queue_end + !
+		 _unlock_word
+	;
+
+        \ <a name="simple_deq"></a>
+	: simple_deq ( queue --)
+		_lock_word
+			DUP #simple_queue_head + @ @     \ add next (--
+			2DUP SWAP #simple_queue_head + ! \
+			0= IF
+				DUP #simple_queue_head + OVER #simple_queue_end + !
+			THEN
+			DROP
+		_unlock_word
+	;
+
+        \ <a name="simple_xawait"></a>
+	: simple_xawait ( queue --)
+		xsleep
+		status OVER #simple_queue_master + !
+		DUP #simple_queue_head + @ 0= IF
+			xnext
+		THEN
+		zero SWAP #simple_queue_master + !
+	;
+
+        \ <a name="simple_data"></a>
+	: simple_data ( queue -- addr )
+		#simple_queue_head + @
+	;
+
+        \ <a name="simple_xawait?"></a>
+	\ flag is true if buffer.
+        : simple_xawait? ( delay queue --flag)
+	        xtest	\	Set the tasks status area to test
+	        status OVER #simple_queue_master + !	\ Set the addres of task to
+									\ be awakened if data arrives
+	        DUP								\ Duplicate base address of queue
+	        #simple_queue_head + @ 0= IF	\ No data in queue yet
+		        SWAP xwait			\ Go to sleep for speified time
+							\ Note that we set up the tasks status
+							\ and the address of the task to be awakened
+							\ before we tested to see if there is data.
+							\ If data arrives after the test and befor we
+							\ execute XWAIT the tasks status will have
+							\ changed from TEST to WAKE and the task will
+							\ restart when next looked at.
+		        zero SWAP #simple_queue_master + !
+							\ When we get to here there is data or a timeout
+							\ releases the queue
+		        xtimeout? not
+							\ Test the status area, if set to wake there
+							\ was data. The result of the test is the
+							\ flag we return.
+	        ELSE
+		        zero SWAP #simple_queue_master + !
+	      						\ Release queue
+		        DROP				\ Don't need the delay
+		        TRUE				\ There is data in the queue
+	        THEN
+ ;
+
+
+
+
+\ support for normal kernel flashing.
+
+: save_boot_parameters ( flash_start dram_start size jump_address --)
+;
+
+	
+
+</code> 
+</pre>
+
+</body>
+</html>

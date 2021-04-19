@@ -1,0 +1,119 @@
+<html>
+<head>
+<title>Ecm160 vectors.html</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Code that sets the exception code addresses</h3>
+<a HREF="./license.html">license</a>
+<table>
+<caption><b>Interrupt source</b></caption>
+<tr><th>source</th>  <th>AVEC</th><th>Level</th><th>IP</th><th>Vector</th><th>comment</th></tr>
+<tr><td>SWT</td>     <td>0</td>   <td>7(1)</td> <td>00</td><td>40    </td><td>buss error</td></tr>
+<tr><td>Timer 1</td> <td>1</td>   <td>6(2)</td> <td>11</td><td>1E    </td><td>10 msec</td></tr>
+<tr><td>Timer 2</td> <td>1</td>   <td>5(3)</td> <td>11</td><td>1D    </td><td>Watchdog</td></tr>
+<tr><td>MBUS</td>    <td>1</td>   <td>4(5)</td> <td>11</td><td>1C    </td><td>Not used</td></tr>
+<tr><td>UART1</td>   <td>0</td>   <td>6(4)</td> <td>11</td><td>60    </td><td>       </td></tr>
+<tr><td>UART2</td>   <td>0</td>   <td>6</td>    <td>10</td><td>61    </td><td>       </td></tr>
+<tr><td>DMA0</td>    <td>0</td>   <td>2</td>    <td>11</td><td>62    </td><td>Ethernet</td></tr>
+<tr><td>DMA1</td>    <td>0</td>   <td>2</td>    <td>10</td><td>63    </td><td>User   </td></tr>
+<tr><td>DMA2</td>    <td>0</td>   <td>2</td>    <td>01</td><td>64    </td><td>Uart0</td></tr>
+<tr><td>DMA3</td>    <td>0</td>   <td>2</td>    <td>00</td><td>65    </td><td>Uart1</td></tr>
+<tr><td>reserved</td><td>1</td>   <td>3</td>    <td>10</td><td>1B    </td><td>       </td></tr>
+<tr><td>reserved</td><td>1</td>   <td>3</td>    <td>01</td><td>1B    </td><td>       </td></tr>
+<tr><td>EINT7</td>   <td>1</td>   <td>7(1)</td> <td>- </td><td>1F    </td><td></td></tr>
+<tr><td>EINT6</td><td>-</td>      <td>-</td>    <td>- </td><td>-     </td><td></td></tr>
+<tr><td>EINT5</td><td>0</td>      <td>5</td>    <td>- </td><td>80->8F</td><td>RTI1000 bus</td></tr>
+<tr><td>EINT4</td><td>-</td>      <td>-</td>    <td>- </td><td>-     </td><td>       </td></tr>
+<tr><td>EINT3-a</td><td>0</td>    <td>3(6)</td> <td>- </td><td>90    </td><td>Digital1</td></tr>
+<tr><td>EINT3-b</td><td>"</td>    <td>"</td>    <td>- </td><td>91    </td><td>Digital2</td></tr>
+<tr><td>EINT3-c</td><td>"</td>    <td>"</td>    <td>- </td><td>92    </td><td>RTI-Aclow</td></tr>
+<tr><td>EINT3-d</td><td>"</td>    <td>"</td>    <td>- </td><td>93    </td><td>RTI-Sysfail</td></tr>
+<tr><td>EINT3-e</td><td>"</td>    <td>"</td>    <td>- </td><td>94    </td><td>Remote_I/O</td></tr>
+<tr><td>EINT2</td><td>0</td>      <td>-</td>    <td>- </td><td>-     </td><td>       </td></tr>
+<tr><td>EINT1</td><td>1</td>      <td>1</td>    <td>- </td><td>19    </td><td>ethernet</td></tr>
+<tr><td></td>
+</table>
+<p>
+Remember ot update _exception_names in fault_data.html if you 
+alter the exception table.
+</p>
+	<pre> <code>
+
+	HEX
+
+	CODE /VECTORS
+	TRAP02          02 EXCEPTION  ( access error)
+	TRAP03          03 EXCEPTION  ( Address error)
+	TRAP04          04 EXCEPTION  ( illegal intstruction)
+	(               05 EXCEPTION  ( reserved)
+	(               06 EXCEPTION  ( reserved)
+	(               07 EXCEPTION  ( reserved)
+	TRAP08          08 EXCEPTION  ( Privilage violation)
+	TRAP09          09 EXCEPTION  ( Trace)
+	TRAP0A          0A EXCEPTION  ( line 1010 emulation)
+	TRAP0B          0B EXCEPTION  ( line 1111 emulation)
+	TRAP0C          0C EXCEPTION  ( Hardware breakpoint)
+	(               0D EXCEPTION  ( reserved)
+	TRAP0E          0E EXCEPTION  ( stack frame format error)
+	TRAP0F          0F EXCEPTION  ( Unitialised vector)
+	( Code that sets the exception code addresses) HEX
+	(    10 -> 17      EXCEPTION  ( Unassigned and reserved)
+	(               18 EXCEPTION  ( Spurious interrupt)
+	(        	19 EXCEPTION  ( level 1 interrupt autovector)
+	(	        1A EXCEPTION  ( level 2 interrupt autovector)
+	(		1B EXCEPTION  ( level 3 interrupt autovector)
+	(	  	1C EXCEPTION  ( level 4 interrupt autovector)
+	(		1D EXCEPTION  ( level 5 interrupt autovector)
+	(		1E EXCEPTION  ( coldfire level 6 interrupt autovector)
+	(               20 EXCEPTION  ( Trap 0 )
+	(               21 EXCEPTION  ( Trap 1 )
+	TRAP22          22 EXCEPTION ( switch tasks)
+	TRAP23          23 EXCEPTION
+	TRAP25          25 EXCEPTION ( reset)
+	TRAP26          26 EXCEPTION ( Execute code in supervisor mode)
+	TRAP27          27 EXCEPTION
+	null_trap       28 EXCEPTION ( 08 trap, all interrupts)
+	null_trap       29 EXCEPTION ( 09 trap, level 1 interrupts)
+	null_trap       2A EXCEPTION ( 0A trap, level 2 interrupts)
+	null_trap       2B EXCEPTION ( 0B trap, level 3 interrupts)
+	null_trap       2C EXCEPTION ( 0C trap, level 4 interrupts)
+	null_trap       2D EXCEPTION ( 0D trap, level 5 interrupts)
+	null_trap       2E EXCEPTION ( 0E trap, level 6 interrupts)
+	null_trap       2F EXCEPTION ( 0F trap, level 7 interrupts, no 47)
+	( 30 -> 3F         EXCEPTION ( reserved)
+	\ 40
+\        bank_interrupt	_#cpu1_vector EXCEPTION
+        rti_interrupt	_#rti_vector EXCEPTION
+	buss_error      #buss_error_vector  EXCEPTION
+	_8monitor_a     _#m68a_vector EXCEPTION  		\ vector 99
+	_8monitor_b     _#m68b_vector EXCEPTION
+        slice_clock    	_#slt_vector EXCEPTION
+
+
+	_dma0_exception _#dma_vector EXCEPTION
+\	_dma1_exception _#dma1_vector EXCEPTION
+\	_dma2_exception _#dma2_vector EXCEPTION
+\	_dma3_exception _#dma3_vector EXCEPTION
+
+	NEXT
+
+| CODE enable_interrupt_traps
+	TRAP28          28 EXCEPTION ( 08 trap, all interrupts)
+	TRAP29          29 EXCEPTION ( 09 trap, level 1 interrupts)
+	TRAP2A          2A EXCEPTION ( 0A trap, level 2 interrupts)
+	TRAP2B          2B EXCEPTION ( 0B trap, level 3 interrupts)
+	TRAP2C          2C EXCEPTION ( 0C trap, level 4 interrupts)
+	TRAP2D          2D EXCEPTION ( 0D trap, level 5 interrupts)
+	TRAP2E          2E EXCEPTION ( 0E trap, level 6 interrupts)
+	TRAP2F          2F EXCEPTION ( 0F trap, level 7 interrupts)
+NEXT
+
+
+	</code> </pre>
+</body>
+</html>

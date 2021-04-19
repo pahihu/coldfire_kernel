@@ -1,0 +1,53 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	0C CONSTANT _#initial_fractional_base
+	03 CONSTANT _#initial_fractional_digits
+	</code> </pre>
+
+<h3>Real numbers</h3>
+<h5>r* ( r1 r2 --r3 )</h5>
+<p>Real multiple<p>
+	
+	<pre> <code>
+	: r*  ( n n -- n )
+		M* %fractional_base @ d>>a DROP 
+	; 
+	</code> </pre>
+
+<h5>r/ ( r1 r2 --r3 )</h5>
+<p>Real divide</p>
+	
+	<pre> <code>
+	: r/ ( r1 r2 -- r3 )
+		SWAP S>D %fractional_base @ d<< ROT SM/REM NIP 
+	;
+	</code> </pre>
+
+<h5>r+ ( r1 r2 ---r2)</h5>
+<p> real +</p>
+
+	<pre> <code>
+	: r+ ( r1 r2 --  r3)
+		+ ; inline
+	</code> </pre>
+
+<h5>r- ( r1 r2 ---r2)</h5>
+<p> real +</p>
+
+	<pre> <code>
+	: r+ ( r1 r2 --  r3)
+		- ; inline
+	</code> </pre>
+
+</body>
+</html>

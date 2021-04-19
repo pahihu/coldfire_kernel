@@ -1,0 +1,241 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<pre> <code>
+terminal_class class
+
+		\ normal character presentation
+		| : _write_string ( handle addr --)
+			COUNT  
+			ROT :write 
+		 ;
+
+		| CREATE _$normal $041B5B30 t, $6D00 tw,
+		m: ( object --)
+			_$normal _write_string
+		; overrides ::normal
+
+		| CREATE _$rev $041B5B37 t, $6D00 tw,
+		m: ( object --)
+			_$rev _write_string
+		; overrides ::rev
+
+		| CREATE _$blink $041B5B35 t, $6D00 tw,
+		m: ( object --)
+			_$blink _write_string
+		; overrides ::blink
+
+		| CREATE _$dim $041B5B31 t, $6D00 tw,
+		m: ( object --)
+			_$dim _write_string
+		; overrides ::dim
+
+
+		| CREATE _$udl $041B5B34 t, $6D00 tw,
+		m: ( object --)
+			_$udl _write_string
+		; overrides ::udl
+
+		| CREATE _$dim&blink $061B5B31 t, $3B356D00 t,
+		m: ( object --)
+			_$dim&blink _write_string
+		; overrides ::dim&blink
+
+		| CREATE _$rev&blink $061B5B37 t, $3B356D00 t,
+		m: ( object --)
+			_$rev&blink _write_string
+		; overrides ::rev&blink
+
+		| CREATE _$rev&dim $061B5B37 t, $3B316D00 t,
+		m: ( object --)
+			_$rev&dim _write_string
+		; overrides ::rev&dim
+
+		| CREATE _$rev&udl $061B5B34 t, $3B376D00 t,
+		m: ( object --)
+			_$rev&udl _write_string
+		; overrides ::rev&udl
+
+
+		| CREATE _$rev&dim&blink $081B5B37 t, $3B313B35 t, $6D00 tw,
+		m: ( object --)
+			_$rev&dim&blink _write_string
+		; overrides ::rev&dim&blink
+
+
+		| CREATE _$rev&dim&udl $081B5B37 t, $3B313B35 t, $6D00 tw,
+		m: ( object --)
+			_$rev&dim&udl _write_string
+		; overrides ::rev&dim&udl
+
+
+		\ unix likes, unix needs a two character terminator
+		| CREATE _$crlf  $020D0A00 t,  
+		m: ( object -- )
+			_$crlf _write_string
+			0 %%character !
+			1 %%line +!
+		; overrides ::cr
+
+		| CREATE _$ansi_page $041B5B32 t, 4A00 tw,	
+		m: ( object--)
+			_$ansi_page _write_string
+			1 %%page +!
+			0 %%character !
+			0 %%line !
+		; overrides ::page
+
+		| CREATE _$csi $021B5B00 t,
+				
+		\ terminal class has to be telnet specific.
+		| : _nnn { ( n ) variable %handle -- }
+			BASE @ &gt;R DECIMAL
+			1+
+			zero #$buffer get_buffer
+			buffer #$buffer [# # # # #]  %handle @ :write
+			kill_buffer
+			R&gt; BASE !
+		; 
+
+		| : _control_char_write { ( char handle)  -- }{
+			variable %char_buffer }
+			SWAP %char_buffer C!
+			%char_buffer 01 ROT :write
+		;
+		
+		m: { ( lin col) variable %handle -- }
+
+			%%character_max @ MIN
+			SWAP %%line_max @ MIN 
+			SWAP
+
+			2DUP
+			%handle @ _$csi _write_string
+			SWAP %handle @  _nnn
+			$3B %handle @ _control_char_write
+			%handle @ _nnn
+			$48 %handle @ _control_char_write 			
+			%%character ! 
+			%%line !
+		; overrides ::tab
+
+		: _key ( handle -- char) 
+			keybuffer 1 ROT :read DROP keybuffer C@ ;
+
+		CREATE [_table
+			04418042 t, 81438344 t, 82000000 t,
+
+
+		\ make sure the functions are where expected
+		#end_function C0 ??=
+
+		CREATE O_table
+			0450C051 t, C152C253 t, C3000000 t,
+
+		\ some emulators give 35 for function F5 some 36
+		\ both options are given in table below.
+		CREATE [1_table
+			0535C437 t, C538C639 t, C736C400 t,
+
+		CREATE [2_table
+			0430C831 t, C933CA34 t, CB000000 t,
+			
+		: (code) { variable %handle ( -- code) }
+				%handle @ _key
+				[CHAR] [ OVER = IF
+					DROP
+					%handle @ _key 
+					[_table 1+ DUP [_table C@ 2* + SWAP 
+					DO
+						\ char(--
+						R@ C@ OVER = IF
+							DROP R@ 1+ C@ 
+							UNLOOP 
+							EXIT 
+						THEN
+					LOOP
+					\ char(--
+					[CHAR] 1 OVER = IF
+						DROP
+						%handle @ _key [1_table 1+ DUP [1_table C@ 2* + SWAP DO
+							\ char(--
+							R@ C@ OVER = IF
+								DROP R@ 1+ C@ 
+								%handle @ _key DROP			\ the 7E 
+								UNLOOP EXIT
+							THEN
+						LOOP
+						EXIT
+					THEN
+					[CHAR] 2 OVER = IF
+						DROP
+						%handle @ _key [2_table 1+ DUP [2_table C@ 2* + SWAP DO
+							\ char(--
+							R@ C@ OVER = IF
+								DROP R@ 1+ C@ 
+								%handle @ _key DROP			\ the 7E 
+								UNLOOP EXIT
+							THEN
+						LOOP
+						EXIT
+					THEN
+					\ not allowed to be a high character
+					7F AND 
+					EXIT
+				THEN
+				[CHAR] O OVER = IF
+					DROP
+					%handle @ _key O_table 1+ DUP O_table C@ 2* + SWAP DO
+						\ char(--
+						R@ C@ OVER = IF
+							DROP R@ 1+ C@ UNLOOP EXIT
+						THEN
+					LOOP
+					\ whatever it is it is not allowed to be a high characters
+					7F AND 
+					EXIT
+				THEN
+				7F AND
+		;
+
+		\ manipulate the input data to produce a termination code
+		\ addr is the start of the buffer
+		\ num is the numbr of characters including the terminator
+		\ num1 excludes the terminator code; which is now one byte only.
+		\ flag is true if more data
+	
+		m: { ( addr num ) variable %handle -- ( num flag ) }
+			2DUP 1- + char@ 
+			#esc = IF			
+				%handle @ (code)
+				\ addr num code(--
+			 	jump jump 1- + C!	
+			THEN
+			NIP 1- TRUE
+		; overrides ::termination&gt;code
+
+		m: ( indent --)
+			CR DUP SPACES ." ansi_class | " ." Object: " this .h 
+			send
+			DROP
+		; overrides :print
+		
+end_class ansi_class
+</code></pre>
+<a name="ansi"></a>
+<pre><code>
+
+: ansi
+	ansi_class 'output_file @ :!terminal 
+;
+
+</code> </pre>
+</body>
+</html>
+

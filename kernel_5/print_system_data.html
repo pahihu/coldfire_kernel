@@ -1,0 +1,175 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name=".tsk"></a>
+<h5>.tsk ( --)</h5>
+<p>
+Task details. #### This needs a lot of work.
+</p>
+
+
+	<pre> <code>
+    : .TSK ( task --)
+        .h
+    ;
+
+
+		</code> </pre>    
+<a name=".buffers"></a>
+<h5>.buffers ( --) </h5>
+<p>
+Print out the current buffer structure, for what is all means
+see the file <a href="./heap_control.html">heap_control.html</a>.
+</p>
+	<pre> <code>
+	: .buffers ( --)
+		CR
+		BASE @ >R
+		HEX
+		."     Size      Free      Used" CR   
+		_#sys_buffer_list_number CELLS zero DO
+			 I _#buffer_sizes + @  8 .R
+			 2 SPACES
+			 I sys_buffer_list_free + _number_in_list 8 .R
+			 2 SPACES
+			 I sys_buffer_list_used + _number_in_list 8 .R
+			 CR
+		4 +LOOP
+		R> BASE !
+		send
+	;
+	</code> </pre>
+
+
+
+<a name=".buffers_used"></a>
+<h5>.buffers_used</h5>
+<p>
+Print out details of the buffers used.
+</p>
+	<pre> <code>
+        : .buffer_details ( addr_user --)
+                DUP 8 .R  2 SPACES
+                DUP [ _#sys_buffer_size_code _#sys_buffer_user - ]T LITERAL + @  _#buffer_sizes + @ 8 .R 2 SPACES
+                DUP   [ _#sys_buffer_task  _#sys_buffer_user - ]T LITERAL + @
+                8 .R
+                2 SPACES
+                DUP   [ _#sys_buffer_ip    _#sys_buffer_user - ]T LITERAL + @
+                8 .R
+                DROP
+        ;
+
+	: .buffers_used  ( --)
+	   CR
+	   BASE @ >R
+	   HEX
+	   ."   Address       Size      Task      Word"  CR
+	   _#sys_buffer_list_number CELLS zero DO
+			I sys_buffer_list_used + @
+			BEGIN
+				DUP
+			WHILE
+				DUP   [ _#sys_buffer_size_code _#sys_buffer_used_link - ]T LITERAL + @ I <> IF
+                                        DUP [ _#sys_buffer_user _#sys_buffer_used_link - ]T LITERAL +
+				        8 .R  2 SPACES
+					." Rubbish"
+   					DROP zero
+   				ELSE
+                                        DUP [ _#sys_buffer_user _#sys_buffer_used_link - ]T LITERAL +
+                                        .buffer_details
+                                        @
+				THEN
+				CR
+			REPEAT
+			DROP
+		4 +LOOP
+		R> BASE !
+		send
+	;
+	</code> </pre>
+
+
+
+<a name=".bad_buffer"></a>
+<h5>.bad_buffer</h5>
+<p>
+Print out details of the last faulted buffer return.
+</p>
+	<pre> <code>
+        : .bad_buffer ( --)
+                %bad_buffer_address @  IF
+                        ." Bad Buffer" CR
+                        ."   Address       Size      Task      Word"  CR
+                        %bad_buffer_address @ _#sys_buffer_user + .buffer_details
+                ELSE
+                        ." No bad buffers" CR
+                THEN
+        ;
+
+	</code> </pre>
+
+
+
+<a name=".objects"></a>
+<h5>.buffers_used</h5>
+<p>
+Print out details of objects created from the heap; I think this is quite neat. It is also a good
+reason to use objects when allocating heap areas.
+</p>
+	<pre> <code>
+	: .objects { }{
+                variable %count
+		variable %heading_done }
+	   _#sys_buffer_list_number CELLS zero DO
+	   		FALSE %heading_done !
+                        zero %count !
+			I sys_buffer_list_used + @
+			BEGIN
+				DUP
+			WHILE
+			  	DUP   [ _#sys_buffer_ip    _#sys_buffer_used_link - ]T LITERAL + @
+				[ ' heap_object ]T LITERAL = IF
+                                        1 %count +!
+					%heading_done @ not IF
+						CR
+	   					." Buffer_size---------: " I  _#buffer_sizes + @ .h
+	   					CR
+	   					TRUE %heading_done !
+	   				THEN
+					zero OVER [ _#sys_buffer_user _#sys_buffer_used_link - ]T LITERAL +
+                                          :print
+					CR
+				THEN
+				@
+			REPEAT
+			DROP
+                        %count @ IF
+                                CR ." Count---------------: "  %count @ .
+                        THEN
+		4 +LOOP
+		send
+	;
+
+    
+    ( free memory print) HEX
+    : .free ( --)
+		CR ." Dictionary : " _'h_task_top @  HERE      - 9 .R
+		CR ." Ram        : " _'ram_top    @  ram_here  - 9 .R
+		CR ." Fast ram   : " _'fast_top   @  fast_here - 9 .R 
+		CR
+		send  
+	;
+	</code> </pre>    
+
+
+
+</BODY>
+</HTML>

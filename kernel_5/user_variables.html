@@ -1,0 +1,592 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+		<a HREF="./license.html">license</a>
+		<p>
+		Describe the facility data area. Done here because the user area contains a facility.
+		</p>
+		<pre> <code>
+	zero
+|	DUP CONSTANT _#facility         CELL+   \ contains the user_base address
+	                                        \ of claiming task.
+|	DUP CONSTANT _#facility_link	CELL+   \ link from _facility_head
+|	DUP CONSTANT _#facility_back	CELL+   \ points to previous link.
+
+            \ <a name="#facility_length"></a>
+            \ needed if you intrend to add a facility to your data strcutre.
+            CONSTANT #facility_length
+		</code> </pre>
+		<p>
+		'U contains the offset of the last location allocated. uvariable uses that
+		value as the user area offset and adds the size of a variable to the contents
+		of U'. The above happens in the host machine. To the target machine is added
+		the code required to implement a user address that returns an address within the
+		user area.
+		</p>
+		<pre> <code>	
+	forth : ucreate
+		HOST 'U
+		forth @           \ addr value(--
+		HOST USER
+		forth
+	;	
+	HOST
+		</code> </pre>
+
+		<h5>host uallot ( n --)</h5>
+		<p>
+		Allocate n bytes of area in the user space</p>
+		<pre> <samp>
+		Example:
+		HEX
+		uvariable fred 10 uallot   \ create a 14 byte user area called fred.
+		</samp> </pre>
+		<pre> <code>
+
+	forth : uallot  ( n --)
+		HOST 'U			\ n addr (--
+		forth DUP @     \ n addr n1 (--
+		ROT +           \ addr n2 (--
+		SWAP            \ n1 addr (--
+		!
+		forth
+	;
+	HOST
+		</code> </pre>
+		<h5>host uvariable parent( --) child ( --  addr)</h5>
+		<p>
+		'U contains the offset of the last location allocated. uvariable uses that
+		value as the user area offset and adds the size of a variable to the contents
+		of U'. The above happens in the host machine. To the target machine is added
+		the code required to implement a user variable that returns an address within the
+		user area. The created variable is 4 bytes long
+		</p>
+			<pre> <code>	
+	forth : uvariable
+		HOST ucreate 4 uallot forth ; 
+	HOST
+		</code> </pre>
+		<h5>host uwvariable parent( --) child ( --  addr)</h5>
+		<p>
+		'U contains the offset of the last location allocated. uvariable uses that
+		value as the user area offset and adds the size of a variable to the contents
+		of U'. The above happens in the host machine. To the target machine is added
+		the code required to implement a user variable that returns an address within the
+		user area. The created variable is 2 bytes long
+		</p>
+		<pre> <code>
+	
+	forth : uwvariable
+		HOST forth ucreate 2 uallot forth ;
+	HOST
+		</code> </pre>
+		<p>
+		An interrupt routine will allocate a user area on the return stack. The used area
+		includes'buffer. 'buffer is the only cell used ( get-buffer and use-buffer are
+		interrupt code options). handler is also included so CATCH and THROW word in interrupt
+		code. All other cells belong at the start for other reasons and are used in interrupt 
+		code to make stack decoding simpler. _user_trap_intruction and STATUS contain a 
+		magic number 494E5452this is the string "INTR". The cell _task_restart_time contains 
+		the interrupt level.
+		</p>
+		<p>
+		Given a tasks user_base you should be able to determine everything.
+		</p>
+		<pre> <code>
+	HEX
+		</code> </pre> <p>
+		Describe the activation block, for backward compatibility this must remain unaltered.
+		dual port locations pointing to the task must point to the status word. So we 
+		can have standard tasks and port_tasks the activation block direclty maps over the 
+		beginning of the tasks user area.
+		</p> <pre> <code>
+
+	0
+        \ <a name="#activation_trap"></a>
+	DUP  CONSTANT #activation_trap          2+
+
+        \ <a name="#activation_status"></a>
+	DUP  CONSTANT #activation_status        2+
+
+        \ <a name="#activation_task_link"></a>
+	DUP  CONSTANT #activation_task_link     4+
+
+        \ <a name="#activation_task&gt;"></a>
+        DUP  CONSTANT #activation_task>         4+
+
+        \ <a name="#activation_^c_set"></a>
+        DUP  CONSTANT #activation_^c_set        2+
+
+        \ <a name="#activation_length"></a>
+	     CONSTANT #activation_length
+		</code> </pre> <b>
+		Not allowed to create user variables before this point.
+		</b> <pre> <code>
+	'U @ zero ??=
+		</code> </pre> <p>
+		The start of the user area.
+		</p> <pre> <code>
+        \ <a name="user_base"></a>
+	ucreate user_base
+  		</code> </pre>
+		<p>
+		Activation block can be in duel port memory, or at the start of the user area.
+                If in dual port this area is not used.
+		</p>
+		<pre> <code>
+	#activation_length uallot
+		</code> </pre>
+		Points to the activation area.
+		<pre> <code>
+	| uvariable _activation>
+		</code> </pre> <p>
+		If set the task can print the load position when an abort occues.
+		</p> <pre> <code>
+	| uwvariable _error_pos?
+		</code> </pre>
+		<pre>
+		Contains:
+		xclock+ @ start_time +
+		</pre>
+		<p>
+		In interrupt code this cell is unused.
+		</p>
+		<pre> <code>
+        | uvariable  _task_restart_time
+		</code> </pre> <p>
+		Used in interrupt code, CATCH/THROW will work.
+		</p> <pre> <code>
+	| uvariable handler
+		</code> </pre>
+		<p>
+		Used in interrupt code you can use get_buffer and kill_buffer
+		You don't have to keep the address of a buffer
+		obtained with get_buffer buffer will return it ( as
+		long as another get_buffer hasn't been used).
+		'buffer contains a pointer to current buffer.
+		see:
+		</p>
+		<pre>
+		<a HREF="#get/kill_buffer">get_buffer</a>
+		<a HREF="#get/kill_buffer">kill_buffer</a>
+		and
+		<a HREF="#buffer">buffer</a>
+		</pre>
+		<pre> <code>
+	uvariable  'buffer
+		</code> </pre> <p>
+		Including these in the interrupt task area allows interrupt code easy access
+		to the physical unit tables. These contains handle of the I/O
+		object that is active.
+		</p> <pre> <code>
+	uvariable 'output_file
+	uvariable 'input_file
+	uvariable 'abort_file
+        \ base address of the area used by the interrupt outines
+        | uvariable int_frame_pointer
+	\ set to known value in interrupt: entry. Data stack is very small
+	\ we can check this value on exit and make sure it it valid.
+	| uvariable data_guard
+		</code> </pre>
+		<b>End of area set up in interrupt code.</b>
+		<pre> <code>
+	| ucreate _interrupt_end_user
+		</code> </pre>
+		<h5>Describe the activation area</h5>
+		<pre> <code>
+
+        forth : activation_create
+		HOST CREATE t,
+		DOES> ( user_base pfa -- addr)
+		@ SWAP [ _activation> user_base - ]T LITERAL + @ +
+	;
+		</code> </pre> <p>
+		Once the task has been started ( the U register contains desired value)
+		these words can be used to access the activation area.
+		</p> <pre> <code>
+	0                         activation_create activation_base
+	#activation_trap          activation_create activation_trap
+	#activation_status        activation_create activation_status
+	#activation_task_link     activation_create activation_link
+	#activation_task>         activation_create activation_task_pointer
+	#activation_^c_set        activation_create activation_^c_set
+		</code> </pre>
+		<p>
+		Words such as net_queue and priority_queue allow you to queue
+		the task for activation when items are removed from the queue,
+		these words link the tasks through here. Note the task is still
+		linked into the task loops, they have there activation_status set to
+		sleep. The task consuming items from the queue set linked in tasks
+		activation status to wake and unlink the task.
+		</p>
+		<pre> <code>
+	| ucreate  _%task_link
+	| uvariable _%task_link_fwd
+	| uvariable _%task_link_back
+		</code> </pre> <p>
+		Return stack point saved here on a task switch.
+		</p> <pre> <code>
+        uvariable  (R)
+        \ The initial data stack pointer. Only used on task start
+        uvariable  (Sinit)
+		</code> </pre>
+		<h5>describe data areas, and task data</h5>
+		<p>
+		The task name can be a reverse counted string
+		or a forward counted string so we need to keep the
+		start address of the characters and the count.
+		</p>
+		<pre> <code>
+	uvariable _%task_name_count
+	uvariable _%task_name>
+		</code> </pre> <p>
+		The level task is running.
+		Used for documentation. How the task is linked in the task loops
+		really determines the level.
+		</p> <pre> <code>
+	uvariable _%task_level
+		</code> </pre> <p> 
+		Points to the dictionary table used to start the task.
+		</p> <pre> <code>
+    uvariable  _%task_table 
+		</code> </pre> <p>
+		<h5>describe the stacks</h5>
+		<p>
+		The user area base is kept in register U.
+		</p>
+		<pre> <code>
+	uvariable _%data_stack_base		\ set if stack is a buffer
+	uvariable _%data_stack_end      \ used on a task reset
+	
+	uvariable _%return_stack_base   \ set if stack is a buffer
+	uvariable _%return_stack_end    \ used on a task reset
+		</code> </pre>
+		<h5>Task specific vector functions</h5>
+		<p>
+		Execution token of word executed on an abort
+		</p>
+		<pre> <code>
+	uvariable  'abort
+		</code> </pre> <p> 
+		Head creation routine.
+		</p> <pre> <code>
+	uvariable   'create
+		</code> </pre> <p>   
+		When emptying the dictionary, a child task
+		is destroyed if the inital_action is in the dictionary area being
+		removed.  
+		</p> <pre> <code>
+	uvariable   _'task_initial_action
+        </code></pre>
+        <p>
+        There are three different versions of words. There support HTML files to
+        different extent.
+        </p>
+        <pre><code>
+        uvariable 'word
+	HEX
+	100 CONSTANT _#min_local_size
+
+	zero
+	DUP	CONSTANT _#dictionary_code  1+
+	DUP CONSTANT _#dictionary_file  1+
+	DUP CONSTANT _#dictionary_local 1+
+	DROP
+
+
+	uvariable _'h>                     \ will contain the address of
+	                                   \ _'h_task or _'h_file or _'h_local
+	uvariable _'h_top>                 \ points to cell that conains current top pointer
+
+	uvariable _'h_mode                 \ current dictionary mode
+		</code> </pre> <p>
+		Points to next dictionary location to be used by the task
+		<pre> <code>
+    uvariable  _'h_task                \ main dictionary pointer
+	uvariable  _'h_task_top            \ main dictionary top
+		</code> </pre>
+		This dictionary can be created when you enter a file destroyed when you leave.
+		<pre> <code>
+	uvariable _'h_file
+	uvariable _'h_file_top             \ end of buffer
+	uvariable _'h_file_base            \ base address of buffer used to store data
+	uvariable _'h_file_size            \ set minimum buffer size
+	uvariable _'h_file_wid             \ wid of vocabulary
+
+	uvariable _'h_file_old_'h>             \ value saved when file selected
+	uvariable _'h_file_old_'top>
+	uvariable _'h_file_old_mode
+		</code> </pre>
+		This dictionary can be creared after entry to a word, 
+		destroyed when you leave.
+		<pre> <code>
+	uvariable _'h_local
+	uvariable _'h_local_top            \ end of buffer
+	uvariable _'h_local_base           \ base address of buffer used to store the data
+	uvariable _'h_local_size           \ set minimum buffer size
+	uvariable _'h_local_wid             \ wid of vocabulary
+
+	uvariable _'h_local_old_'h>        \ values saved when local selected
+	uvariable _'h_local_old_'top>
+	uvariable _'h_local_old_mode
+		</code> </pre>
+		<p>
+		Ram variables
+		</p>
+		<pre> <code>
+    uvariable 'ram     
+	uvariable _'ram_top        
+		</code> </pre>
+		<p>
+		Fast memeory
+		</p>
+		<pre> <code>
+    uvariable 'fast     
+	uvariable _'fast_top        
+		</code> </pre>
+		<p>
+		Dual port memory
+		</p>
+		<pre> <code>
+    uvariable 'port     
+	uvariable _'port_top        
+
+#BVP5552  #BVP5551 + [IF]
+		</code> </pre>
+		<p>
+		The vision processors contain a static memory area.
+		</p>
+		<pre> <code>
+	uvariable 'static
+	uvariable _'static_top
+[THEN]
+		</code> </pre>
+		<p>
+		The vision processor contains banked memory that is used to
+		communicate between processors.
+		</p>
+		<pre> <code>
+#BVP5552 #BVP5551 + #BVP6551 + #BVP6552 + [IF]
+	uvariable 'bank
+	uvariable _'bank_top
+[THEN]
+		</code> </pre> <p>
+		user space, we don;t need a base address as it is always contained within U
+		</p> <pre> <code>
+	uvariable 'user    
+	uvariable _'user_top      
+		</code> </pre>	
+		<a name="BASE"></a>
+		<h5>ANS 6.1.0750 BASE</h5>
+		<p>CORE</p> 
+		<p>( -- a-addr )</p>
+		<p>
+		a-addr is the address of a cell containing the current number-conversion radix {{2...36}}. 
+		</p>
+		<pre> <code>
+		uvariable BASE
+		</code> </pre> <p>
+		<h5>real numbers</h5>
+		<p>
+		The real base is a power of 2.
+		</p>
+		<pre> <code> 
+\	uvariable %q_base
+	uvariable %fractional_digits
+		</code> </pre> <b>
+		Next 5 values are saved on return stack when stream saved. See save_stream
+		</b> <pre> <code> 	
+		</code> </pre>
+		<a name="toIN"></a>	
+		<h5>ANS 6.1.0560 >IN</h5>
+		<p>CORE</p>
+		<p>( -- a-addr )</p>
+		<p>
+		a-addr is the address of a cell containing the offset in characters 
+		from the start of the input buffer to the start of the parse area. 
+		</p>
+		<pre> <code>	       	
+    uvariable >IN
+		</code> </pre>
+		<a name="hashTIB"></a>
+                <a name="#TIB"></a>
+		<h5>ANS 6.2.0060 #TIB </h5>
+		<p>CORE EXT</p>
+		<p>( -- a-addr )</p>
+		<p>
+		a-addr is the address of a cell containing the number of characters 
+		in the terminal input buffer. 
+		</p>
+		<p>
+		Note: This word is obsolescent and is included as a concession to 
+		existing implementations. 
+		</p>
+		<p>
+		The function of #TIB has been superseded by SOURCE. 
+		</p>
+		<pre> <code>
+    uvariable #TIB
+		</code> </pre>
+		<a name="SOURCE-ID"></a>
+		<h5>6.2.2218 SOURCE-ID</h5>
+		<p>CORE EXT</p> 
+		<p>( -- 0 | -1 )</p>
+		<p>
+		Identifies the input source as follows: 
+		</p>
+		<dl>
+		<dt>SOURCE-ID       Input source
+		<dd>-1              String (via EVALUATE)
+		<dd>0               User input device
+		</dl>
+		<pre> <code>
+	uvariable SOURCE-ID
+		</code> </pre> <p>
+		Line number
+		</p> <pre> <code> 
+	uvariable %line
+		</code> </pre> <p>
+		Base character address current line is stored here. See TIB
+		</p> <pre> <code>
+	uvariable  %tib
+		</code> </pre>
+		<a name="STATE"></a>
+		<h5>ANS 6.1.2250 STATE</h5>
+		<p>( -- a-addr )</p>
+		<p>
+		a-addr is the address of a cell containing the compilation-state flag.
+		STATE is true when in compilation state, false otherwise. The
+		true value in STATE is non-zero, but is otherwise implementation-defined.
+		Only the following standard words alter the value in
+		STATE: : (colon), ; (semicolon), ABORT, QUIT, :NONAME,
+		[ (left-bracket), and ] (right-bracket).
+		</p>
+		<p>
+		Note: A standard program shall not directly alter the contents of STATE.
+		</p>
+		<pre> <code>
+	uvariable STATE
+                </code> </pre>
+                <p>
+                The address of a string descibing the input file. save_stream and restore_stream
+                maintain the old pointer.  %input_files is the head of a link list of 2 cell entries
+                the first cell is the link the second cell points to a string that decribes the source file.
+                All words up to the next entry come from the source file pointed to.
+                </p>
+                <p>
+                This sub system works like this. On file entry the old value stored in %$input is saved by
+                save_stream. If in the operator task a vectored word creates  a string describing the new
+                in the dictionary and the address of the string put into %$input. A link is added to %input_files
+                and the address of the new string written under the link. On file exit another link is added
+                to %input_file and the address of the old string written under the link.
+                </p>
+                <p>
+                To find out which file a word comes from you scan down the linked list until the word is between
+                two linked list entries, the file pointed to by the first entry is the target file.
+                </p>
+                <pre><code>
+                \ vectored words
+                uvariable (save_input$)
+                uvariable (restore_input$)
+                \ address of file
+                uvariable %$input
+                \ head of list
+                uvariable %input_files
+                \ the value of here of file entry; if no words are defined no link is added
+                \ or more correctly on exit link is added, the entry link is removed.
+                uvariable %enter_here
+		</code> </pre> <p>
+		Set to true if only the COMMAND> vocabulary is searched.
+		</p> <pre> <code>
+    uwvariable seal
+
+		\ execution token of word to print the page tile when printing
+	uvariable 'TITLE
+		\ Data are for 'TITLE
+	uvariable TITLE_DATA
+		\ Host name
+	uvariable 'HEADING
+		\ Voc head last added to
+	uvariable last
+		</code> </pre>
+		<i>_get_abort_buffer</i> returns an address, you must retain this
+		address as it is all you have that points to the buffer.
+		If the task aborts all <i>_abort_buffers</i> will be return to the 
+		central buffer pool. see: 
+		<a HREF="#ALLOCATE">ALLOCATE</a>
+		<a HREF="#FREE">FREE</a> 
+ 		<a HREF="#RESIZE">RESIZE</a>
+		<pre> <code> 
+	uvariable _head_abort_buffers 
+		</code> </pre>
+		<h5>Data area used when compiling</h5>
+		<p>
+		Local variable compiler keeps track of the amount of local data needed
+		using these variables.
+		</p>
+		<pre> <code>      
+	uvariable _%local_input_bytes
+	uvariable _%local_output_bytes
+	uvariable _%local_data_bytes
+	uvariable _%local_use
+		</code> </pre> <p>
+		Flag to tell EXIT and ; to compile in OP register save code.
+		</p> <pre> <code>
+	uvariable _%save_op
+		</code> </pre> <p>
+		When you start creating local variable 
+		these values have to be retained.
+		</p> <pre> <code>
+	uvariable _%local_entry_state
+	uvariable _%local_entry_last
+		</code> </pre> <p>
+		Current stack pointer. Set by : checked by ;
+		</p> <pre> <code>
+    uvariable csp      	
+		\ Ilan master port
+    uvariable 'MLINK        	
+	
+	\ #### both should be moved out of the user area into PU table.
+	\ Used by SCONNECT and MCONNECT , set in
+	\ _cvs_terminal_codes_decode
+    uvariable =decode_cnt
+	\ Used by _cvs_terminal_codes_decode to tell
+	\ ILAN that it needs to tell the other end if
+	\ data is present. See SCONNECT and MCONNECT  	
+	uvariable =decode_?data 	
+
+		\ Used by PAGE_HOLD
+    uvariable first_page 
+		</code> </pre> <p>
+		All assembler data stores are vectored through here)
+		to change the assembler for a xcompile these
+		vectors need to be altered, saveing an assembler load
+		reset on ABORT and by MARKER child.
+		</p> <pre> <code>
+	uvariable 'ahere
+		</code> </pre> <p>  
+		W! on an abort
+		</p> <pre> <code>
+	uvariable 'aw!
+		</code> </pre> <p>  
+		W@ on an abort
+		</p> <pre> <code>
+	uvariable 'aw@    
+		</code> </pre> <p>  
+		ALLOT on an abort
+		</p> <pre> <code>
+	uvariable 'agap 
+		</code> </pre> <p>  
+		type of cpu we are assemblering code for
+		</p> <pre> <code>
+	uvariable %cpu  
+		</code> </pre>
+</body>
+</html>

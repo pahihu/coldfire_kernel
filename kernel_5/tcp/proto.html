@@ -1,0 +1,168 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>proto class</h3>
+<a HREF="./license.html">license</a>
+<p>
+The proto task demux the packet, finds a proto object and invokes the
+:proto_demux  method.
+</p>
+	<pre> <code>
+link_class class
+
+	protected
+	cell% instance_variable %%protocol_number
+	public
+	ram_variable %defined_protocols
+
+		m: ( --)
+                        \ zero is a non used protocol number.
+                        zero %%protocol_number !
+			this [parent] :construct
+		; overrides :construct
+
+
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+		m: ( --addr)
+			%defined_protocols
+		; overrides :list_head
+
+
+		\ used by the proto task to get rid of the packet.
+		m: ( pep -- )
+			kill_free_buffer
+		; method :proto_demux
+
+
+		\ if the interface requires byte swapping this word must
+		\ be called to deal with the protocol. For machines to
+		\ interract the byte order must be correct.
+		m: ( pep -- )
+			DROP
+		; method :proto_host<>net
+
+		\ to demux a icmp destination not reached message
+		m: ( pep --)
+			kill_free_buffer
+		; method :proto_error
+
+		\ There are protocols that require checksumming
+		\ after the source ip address is known.
+		\ The source ip address should be determined by
+		\ the interface over which the packet is sent.
+		\ As routing tables can change this is not known until
+		\ the packet is routed.
+		\ Instead of guessing the source ip address we provide
+		\ the procol object and the interface calls :proto_checksun
+		\ when doing the ip checksum
+		m: ( pep --)
+			DROP
+		; method :proto_checksum
+
+                m: ( value -- flag)
+                        DUP IF
+                                %%protocol_number @ =
+                                EXIT
+                        THEN
+                 ; method :protocol_me
+
+		m: ( indent --)
+			CR DUP SPACES ." protocol | " ." Object: " this .h
+
+			DROP send
+		; overrides :print
+
+end_class protocol
+		</code> </pre>
+<p>
+Word used in the proto task. The route task deals with all datagrams the proto task
+only deals with datagrams destined to the local machine.
+</p>
+<p>
+Note we don't test for zero dequeue, we assume we got called with an item on
+the queue.
+</p>
+	<pre> <code>
+        \ 29 Aug 2001 CE checked
+        ram_variable %proto_not_found
+        : proto_find ( protocol -- object|zero)
+			%defined_protocols
+			BEGIN
+				@ DUP
+			WHILE
+				\ protocol list(--
+				2DUP link>object :protocol_me IF
+                                        NIP link>object
+                                        EXIT
+                                THEN
+				\ protocol list
+			REPEAT
+                        1 %proto_not_found +!
+			\ protocol zero(--
+                        NIP
+	;
+        | ram_variable %demuxed_packets
+        | ram_variable %failed_to_demux
+        | ram_variable %proto_found_demux
+	: proto_demux_ip_packet ( --)
+		_proto_queue dequeue
+                1 %demuxed_packets +!
+		\ pep(--
+		\ set the ipdata and ipcount fields
+		\ setting them here means they can be used in all local code.
+		DUP  _pep>ip_data_length OVER ep_ipcount + !
+		DUP  _pep>ipdata OVER ep_ipdata + !
+
+		DUP [ ep_data ip_proto + ]T LITERAL + B@ proto_find DUP IF
+                        1 %proto_found_demux +!
+                        \ pep object (--
+			\ We do the proto network to host swap here as this is the first place where
+			\ the protocol has been demuxed.
+			\ 2DUP :proto_host<>net
+			:proto_demux
+			EXIT
+		THEN
+		\ pep zero(--
+		DROP
+                1 %failed_to_demux +!
+		\ the protocol is unreachable
+		\ send an error message and return the
+		_#icc_proto_unreached SWAP icmp_error_message
+	;
+	</code> </pre>
+<a name="dot_protocols"></a>
+<p>
+Print out a list of the installed protocols
+</p>
+	<pre> <code>
+	: .protocols ( --)
+			CR ." Protocol Objects"
+			%defined_protocols
+			BEGIN
+				@ DUP
+			WHILE
+				\ list(--
+				four OVER link>object :print
+				\ list
+			REPEAT
+                        CR ." demuxed packets: " %demuxed_packets @ .h
+                           ." failed to demux: " %failed_to_demux @ .h
+                           ." proto not found: " %proto_not_found  @ .h
+                        CR ." found demux    : " %proto_found_demux @ .h
+
+			\ zero(--
+			DROP
+	;
+	</code> </pre>
+</body>
+</html>

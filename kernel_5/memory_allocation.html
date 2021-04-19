@@ -1,0 +1,403 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>Memory Allocation</h3>
+<a HREF="./license.html">license</a>
+<a name="HERE"></a>
+<h5>ANS 6.1.1650 HERE</h5> 
+<p>( -- addr )</p>
+<p>
+addr is the data-space pointer. 
+</p>
+<p>
+A system guarantees that a region of data space allocated using ALLOT, , (comma)
+, C, (c-comma), and ALIGN shall be contiguous with the last region 
+allocated with one of the above words, unless the restrictions in the following paragraphs apply. The
+data-space pointer HERE always identifies the beginning of the next 
+data-space region to be allocated. As successive allocations
+are made, the data-space pointer increases. A program may perform 
+address arithmetic within contiguously allocated regions. The
+last region of data space allocated using the above operators 
+may be released by allocating a corresponding negatively-sized region
+using ALLOT, subject to the restrictions of the following paragraphs. 
+</p>
+<p>
+CREATE establishes the beginning of a contiguous region of data space, 
+whose starting address is returned by the CREATEd
+definition. This region is terminated by compiling the next definition. 
+</p>
+<p>
+Since an implementation is free to allocate data space for use by code, 
+the above operators need not produce contiguous regions of
+data space if definitions are added to or removed from the 
+dictionary between allocations. An ambiguous condition exists if
+deallocated memory contains definitions. 
+</p>
+
+<p>
+The data space of a Forth system comes in discontinuous regions! 
+The location of some regions is provided by the system, some by
+the program. Data space is contiguous within regions, allowing 
+address arithmetic to generate valid addresses only within a single
+region. A Standard Program cannot make any assumptions about the relative 
+placement of multiple regions in memory. 
+</p>
+Section 3.3.3.2 does prescribe conditions under which contiguous regions 
+of data space may be obtained. For example: 
+<p>
+<pre> <samp>
+        CREATE TABLE   1 C, 2 C, ALIGN 1000 , 2000 ,
+</samp> </pre>
+<p>
+makes a table whose address is returned by TABLE. In accessing this table, 
+</p>
+<pre> <samp>
+TABLE C@                        will return 1
+TABLE CHAR+ C@                  will return 2
+TABLE 2 CHARS + ALIGNED @       will return 1000
+TABLE 2 CHARS + ALIGNED CELL+ @ will return 2000.
+<p>
+Similarly, 
+</p>
+<pre> <samp>
+        CREATE DATA   1000 ALLOT
+</samp> </pre>
+<p>
+makes an array 1000 address units in size. A more portable strategy would define the array in application units, such as: 
+</p>
+<pre> <samp>
+        500 CONSTANT NCELLS
+        CREATE CELL-DATA  NCELLS CELLS ALLOT
+<samp> <pre>
+<p>
+This array can be indexed like this: 
+</p>
+<pre> <samp>
+        : LOOK   NCELLS 0 DO  CELL-DATA I CELLS + ? LOOP ;
+</samp> </pre>
+<p>
+<strong>COLDFORTH MEMORY AREAS</strong> 
+There are four data spaces. The dictionary space, ram space, 
+dual port memory and the fast space. 
+The dictionary space is intended to be used for code, 
+and the ram space for variables. The area of the dictionary 
+remembered is checksummed on restart and it is considered an error if checksumming fails. 
+
+The dictionary space can be written to by a program but it is unwise, the dictionary has to
+be stable while it is being written to flash as an application. The dictionary is checksumed
+and written to flash with interrupts enabled.
+
+The variable space is reset to zero on a restart.
+The fast space is not reset and may be used to retain values between restarts.
+The dual port space is reset and resetup.
+</p>
+<pre> <samp>
+To allocate 10 bytes of dictionary space you use the pair:
+	CREATE 10 ALLOT 
+This area may be written to at comple time but not there after.
+
+To allocate ram_variable space
+	ram_create 10 ram_allot
+
+To allocate fast memory:
+	fast_create 10 fast_allot
+</samp> </pre>  
+
+	<pre> <code>
+    : HERE   ( --addr) _'h> @ @ ;
+	</code> </pre>
+<a name="UNUSED"></a>
+<h5>6.2.2395 UNUSED</h5>
+<p>CORE EXT</p> 
+<p>( -- u )</p>
+<p>
+u is the amount of space remaining in the region addressed 
+by HERE , in address units.
+</p> 
+	<pre> <code>
+	: UNUSED ( --n)
+		_'h_top> @ @ _'h> @ @ -
+	;
+
+	
+	: ?org  ( n --flag)		
+		DUP _'h> @ !
+		_'h_top> @ @ > 
+	;
+
+	: org  ( n -- )
+		?org  ABORT" Dictionary full" 
+	; 
+	</code> </pre>
+<a name="ALLOT">
+<h5>6.1.0710 ALLOT</h5> 
+<p>CORE</p> 
+<p>( n -- )</p>
+<p>
+If n is greater than zero, reserve n address units of data space. 
+If n is less than zero, release |n| address units of data space. If n is
+zero, leave the data-space pointer unchanged. 
+</p>
+<p>
+If the data-space pointer is aligned and n is a multiple of the size of a 
+cell when ALLOT begins execution, it will remain aligned
+when ALLOT finishes execution. 
+</p>
+<p>
+If the data-space pointer is character aligned and n is a multiple of 
+the size of a character when ALLOT begins execution, it will
+remain character aligned when ALLOT finishes execution. 
+</p>
+	<pre> <code>
+	: ALLOT  ( +n --)
+		HERE + org
+	;
+	</code> </pre>
+<a name="ALIGN">
+<h5>6.1.0705 ALIGN</h5>
+<p>CORE</p>
+<p>( -- )</p>
+<p>
+If the data-space pointer is not aligned, reserve enough space to align it. The data space pointer
+is only aligned to 1/2 cell boundaries.
+</p>
+
+	<pre> <code>
+	: ALIGN HERE ALIGNED org ;
+	</code> </pre>
+<p>
+<a name="ram_here"></a>
+The ram area.
+</p>
+	<pre> <code>
+
+    : ram_here  ( --addr) 'ram @ ;
+
+        </code></pre>
+    <a name="ram_allot"></a>
+	<pre> <code>
+
+	: ?ram_allot  ( n --flag)
+		'ram @ +
+		cell_aligned
+		DUP 'ram !
+		_'ram_top @ >  ;
+    : ram_allot  ( n --)
+		?ram_allot ABORT" Memeory area full"  ;
+
+</code></pre>
+<a name="ram_line_align">
+<p>
+The coldfire cache does a line read when fetching any data. If your pushing it
+you arrange things so that reads gets things you want. To that end you
+have to be able to align data areas on a cache line boundary.
+</p>
+<pre><code>
+	: ram_line_align
+		'ram @
+		line_aligned
+		'ram !
+	;
+</code> </pre>
+<a name="ram_cell_align">
+<p>
+Cell fetches work better if cell aligned.
+</p>
+<pre><code>
+	: ram_cell_align
+		'ram @
+		cell_aligned
+		'ram !
+	;
+</code> </pre>
+<p>
+code and : words have no cfa
+</p>
+	<pre> <code>
+	: _recover_cfa
+		[ _#head_cfa _#head_pfa - ]T LITERAL ALLOT ;
+	</code> </pre>
+<a name=",">
+<h5>6.1.0150 ,</h5></a>
+<p>
+comma CORE
+</p>
+<p>( x -- )</p>
+<p>
+Reserve one cell of data space and store x in the cell. If the data-space
+pointer is aligned when , begins execution, it will remain
+aligned when , finishes execution. An ambiguous condition exists if the
+data-space pointer is not aligned prior to execution of ,.
+</p>
+<p>
+The use of , (comma) for compiling execution tokens does not work.
+</p>
+<p><b>COLDFORTH</b> The last statement need some clarification, you can place execution tokens in a table,
+extract them later and use them with EXECUTE. You cannot use , as a compiler.
+</p>
+	<pre> <code>
+	: , ( x--)
+    	four ALLOT HERE cell- !
+    ;
+	</code> </pre>
+<a name="C,"></a>
+<h5>6.1.0860 C,</h5>
+<p>c-comma CORE</p>
+<p>( char -- )</p>
+<p>
+Reserve space for one character in the data space and store char
+in the space. If the data-space pointer is character aligned when
+C, begins execution, it will remain character aligned when C,
+finishes execution. An ambiguous condition exists if the data-space
+pointer is not character-aligned prior to execution of C,.
+</p>
+<p>
+Rememeber a character may not be a byte.
+</p>
+	<pre> <code>
+    : C, ( char --)
+    	HERE C! one CHARS _'h> @ +!
+    ;
+    </code> </pre>
+<a name="w,"></a>
+    <pre> <code>
+    : W, ( 32b--)
+		HERE W! two _'h> @ +!
+    ;
+
+    \ non ansi word
+    : w, ( 32b--)
+        HERE W! two _'h> @ +!
+    ;
+	</code> </pre>
+
+<h3>fast memory</h3></a>
+<a name="fast_here" </a>
+	<pre> <code>
+	: fast_here ( --addr) 'fast @ ;
+        </code></pre>
+<a name="question_fast_allot" </a>
+        <pre><code>
+	: ?fast_allot ( n --true)
+		'fast @ + cell_aligned  DUP 'fast !
+		_'fast_top @ >
+	;
+        </code></pre>
+<a name="fast_allot" </a>
+        <pre><code>
+	: fast_allot ( num --)
+		?fast_allot ABORT" High speed memory area full" ;
+    </code> </pre>
+<h3>dual port memory</h3>
+        <a name="port_here"></a>
+        <pre> <code>
+	: port_here ( --addr) 'port @ ;
+
+        </code></pre>
+        <a name="question_port_allot"></a>
+        <pre><code>
+
+	: ?port_allot ( n --true)
+		'port @ + ALIGNED  DUP 'port !
+		_'port_top @ >
+	;
+
+        </code></pre>
+        <a name="port_allot"></a>
+        <pre><code>
+
+	: port_allot ( num --)
+		?port_allot ABORT" RTI1000 dual port memory area full"
+	;
+        </code> </pre>
+	<pre> <code>
+#BVP5552  #BVP5551 + [IF]
+    </code> </pre>
+<h3>static memory</h3>
+    <a name="static_here"></a>
+	<pre> <code>
+
+	: static_here ( --addr) 'static @ ;
+
+        </code></pre>
+        <a name="static_line_align"></a>
+        <pre><code>
+	\ align satic memory to a cache line
+	: static_line_align  ( --)
+		'static @ line_aligned 'static !
+	;
+
+        </code></pre>
+        <a name="question_static_allot"></a>
+        <pre><code>
+
+	: ?static_allot ( n --true)
+		'static @ + cell_aligned  DUP 'static !
+		_'static_top @ >
+	;
+
+        </code></pre>
+        <a name="static_allot"></a>
+        <pre><code>
+
+        : static_allot ( num --)
+		?static_allot ABORT" Synch static memory area full"
+	;
+
+[THEN]
+    </code> </pre>
+
+
+	<pre> <code>
+#BVP5552 #BVP5551 + #BVP6551 + #BVP6552 + [IF]
+    </code> </pre>
+<h3>bank memory</h3>
+        <a name="bank_here"></a>
+	<pre> <code>
+
+	: bank_here ( --addr) 'bank @ ;
+
+        </code></pre>
+        <a name="question_bank_allot"></a>
+        <pre><code>
+
+
+	: ?bank_allot ( n --true)
+		'bank @ + ALIGNED  DUP 'bank !
+		_'bank_top @ >
+	;
+
+        </code></pre>
+        <a name="bank_allot"></a>
+        <pre><code>
+
+	: bank_allot ( num --)
+		?bank_allot ABORT" Bank memory area full"
+	;
+
+[THEN]
+    </code> </pre>
+
+<h5> link_here ( head --)</h5>
+<p>
+Link here into a single lnked list.
+</p>
+
+
+	<pre> <code>
+	:  link_here ( head --)
+		DUP @       \ head link (--
+		HERE ROT ! \ link (--
+		 ,
+	;
+	</code> </pre>
+
+</body>
+</html>

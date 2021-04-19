@@ -1,0 +1,32 @@
+<html>
+<head>
+<title>BVP5601_Boot_to_ram.html</title>
+<META NAME="Author" CONTENT="Charles Esson, GB">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+The bvp6651 coldforth is loaded by a boot loader, the boot loader has already setup dram, the chip selects, 
+parallel port bit select and has copied the image into DRAM. This file is reduced to patching the 
+address of _start_up into address 4 of the image.
+</p>
+
+<p>
+Change the address so it is a boot prom reference.
+patch it into the start of dram executing code.
+</p>
+	<pre> <code>
+	HOST
+	HERE
+\	_prom_kernel_start org   0 t,  _start_up _prom_kernel_start - _#sdram0_base + t,
+	_prom_kernel_start _vector_gap + org
+        $4EF9 tw,	\ ##code JMP
+        _start_up t,  	\ boot loader will vector thru here.
+	org
+	</code> </pre>
+</body>
+</html>
+

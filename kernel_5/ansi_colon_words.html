@@ -1,0 +1,684 @@
+
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<a name="FALSE"></a>
+<h5>6.2.1485 FALSE</h5> 
+<p>CORE EXT</p> 
+<p>( -- false )</p>
+<p>Return a false flag.</p>
+
+	<pre> <code>
+    0 CONSTANT FALSE
+	</code> </pre>
+<a name="TRUE"></a>
+<h5>6.2.2298 TRUE</h5>
+<p>CORE EXT</p>
+<p>( -- true )</p>
+<p>
+Return a true flag, a single-cell value with all bits set.
+</p>
+
+	<pre> <code>
+    -1 CONSTANT TRUE
+	</code> </pre>
+
+
+<a name="*/"></a>
+<h5>ANS 6.1.0100 */</h5>
+<p>( n1 n2 n3 -- n4 )</p>
+<p>
+Multiply n1 by n2 producing the intermediate double-cell result d.
+Divide d by n3 giving the single-cell quotient n4. An ambiguous condition exists
+if n3 is zero or if the quotient n4 lies outside the range of a signed number.
+If d and n3 differ in sign, the implementation-defined result returned will be the same
+as that returned by either the phrase >R M* R> FM/MOD SWAP DROP
+or the phrase >R M* R> SM/REM SWAP DROP .
+</p>
+
+	<pre> <code>
+	: */ ( n1 n2 n3 --n4)
+		&gt;R M* R&gt; SM/REM NIP
+	;
+	</code> </pre>
+
+<a name="*/MOD"><h5>6.1.0110 */MOD</h5></a>
+<p>star-slash-mod CORE</p>
+<p>( n1 n2 n3 -- n4 n5 )<p>
+<p>
+Multiply n1 by n2 producing the intermediate double-cell result d.
+Divide d by n3 producing the single-cell remainder n4 and the
+single-cell quotient n5. An ambiguous condition exists if n3 is zero,
+or if the quotient n5 lies outside the range of a single-cell signed
+integer. If d and n3 differ in sign, the implementation-defined result
+returned will be the same as that returned by either the phrase >R
+M* R> FM/MOD or the phrase >R M* R> SM/REM .
+</p>
+
+	<pre> <code>
+	: */MOD ( n1 n2 n3 -- n4 n5 )
+	&gt;R M* R&gt; SM/REM ;
+	</code> </pre>
+
+
+<a name="1+"></a>
+<h5>ANS 6.1.0290 1+</h5>
+<p>CORE</p>
+<p>( n1|u1 -- n2|u2 )</p>
+<p>
+Add one (1) to n1|u1 giving the sum n2|u2.
+</p>
+
+	<pre> <code>
+	: 1+ ( x1 - x2)
+		one +
+	;
+	</code> </pre>
+
+<a name="1-"></a>
+<h5>ANS 6.1.0300 1-</h5>
+<p>CORE</p>
+<p>( n1|u1 -- n2|u2 )</p>
+<p>
+Subtract one (1) from n1|u1 giving the difference n2|u2.
+</p>
+
+	<pre> <code>
+	: 1- ( x1 -- x2)
+		one -
+	;
+	</code> </pre>
+
+
+<a name="CELL+"></a>
+<h5>ANS 6.1.0880 CELL+</h5>
+<p>CORE</p>
+<p>( a-addr1 -- a-addr2 )</p>
+<p>
+Add the size in address units of a cell to a-addr1, giving a-addr2.
+As with ALIGN and ALIGNED, the words CELL and CELL+ were added to aid in transportability
+across systems with different cell sizes. They are intended to be
+used in manipulating indexes and addresses in integral numbers of cell-widths.
+</p>
+<pre> <samp>
+	Example:
+
+	2VARIABLE DATA
+
+	0 100 DATA 2!
+	DATA @ . 100
+
+	DATA CELL+ @ .  0
+</samp> </pre>
+
+	<pre> <code>
+	: CELL+ ( a-addr1 -- a-addr2 )
+		four +
+	;
+
+	: cell- ( a-addr -- a-addr2 )
+		four -
+	;
+	</code> </pre>
+
+<a name="2!"><h5>ANS 6.1.0310 2!</h5></a>
+<p>two-store CORE</p>
+
+<p>( x1 x2 a-addr -- )</p>
+<p>
+Store the cell pair x1 x2 at a-addr, with x2 at a-addr and x1 at the next
+consecutive cell. It is equivalent to the sequence SWAP OVER ! CELL+ !
+</p>
+
+	<pre> <code>
+	: 2!  ( x1 x2 a-addr -- )
+		SWAP OVER ! CELL+ !
+	;
+	</code> </pre>
+
+<a name="2*"><h5>ANS 6.1.0320 2*</h5></a>
+<p>CORE</p>
+<p>( x1 -- x2 )</p>
+<p>
+x2 is the result of shifting x1 one bit toward the most-significant bit, filling
+the vacated least-significant bit with zero.
+</p>
+
+	<pre> <code>
+	: 2* ( x1 -- x2 )
+		one LSHIFT
+	;
+	</code> </pre>
+
+<a name=2@><h5>ANS 6.1.0350 2@</h5></a>
+<p>two-fetch CORE</p>
+
+<p>( a-addr -- x1 x2 )</p>
+<p>
+Fetch the cell pair x1 x2 stored at a-addr. x2 is stored at a-addr and x1
+at the next consecutive cell. It is equivalent to the sequence
+DUP CELL+ @ SWAP @
+</p>
+
+	<pre> <code>
+	: 2@ ( a-addr -- x1 x2 )
+		DUP CELL+ @ SWAP @
+	;
+	</code> </pre>
+
+
+<a name="ALIGNED"></a>
+<h5>ANS 6.1.0706 ALIGNED</h5>
+<p>CORE</p>
+<p>( addr -- a-addr )</p>
+<p>
+	a-addr is the first aligned address greater than or equal to addr.
+</p>
+
+	<pre> <code>
+	: ALIGNED ( addr -- a-addr
+		1+ -2 AND ;
+	</code> </pre>
+
+<a name="BL"></>
+<h5>ANS 6.1.0770 BL</h5>
+<p>CORE</p>
+<p>( -- char )</p>
+<p>char is the character value for a space.
+Because space is used throughout Forth as the standard delimiter, this word is the only
+way a program has to find and use the system value of space. The value of a
+space character can not be obtained with CHAR, for instance.
+</p>
+
+	<pre> <code>
+	20 CONSTANT BL
+	</code> </pre>
+
+<a name="CELLS"></a>
+<h5>ANS 6.1.0890 CELLS</h5>
+<p>CORE</p>
+<p>( n1 -- n2 )</h5>
+<p>
+n2 is the size in address units of n1 cells.
+<br>
+Example:
+<pre> <samp>
+	\ Allots space in the array NUMBERS for 100 cells of data.
+	CREATE NUMBERS 100 CELLS ALLOT
+</samp> </pre>
+
+	<pre> <code>
+	: CELLS ( n1 -- n2)
+		two LSHIFT
+	;
+	</code> </pre>
+
+<a name="CHAR+"></a>
+<h5>ANS 6.1.0897 CHAR+</h5>
+<p>CORE</p>
+<p>( c-addr1 -- c-addr2 )</p>
+<p>
+Add the size in address units of a character to c-addr1, giving c-addr2.
+</p>
+	<pre> <code>
+	: CHAR+  ( c-addr1 -- c-addr2 )
+		1+
+	; inline
+	</code> </pre>
+
+<a name="CHARS"></a>
+<h5>ANS 6.1.0898 CHARS</h5>
+<p>CORE</p>
+<p>( n1 -- n2 )</p>
+<p>
+n2 is the size in address units of n1 characters.
+<strong>COLDFORTH</strong> As we plan to move to 16bit characters,this we try and use.
+</p>
+	<pre> <code>
+	: CHARS ( n1 -- n2 ) ;  inline \ it actually adds nothing to the compiled code
+	</code> </pre>
+<a name="COUNT"></a>
+<h5>ANS 6.1.0980 COUNT</h5>
+<p>CORE</p>
+<p>( c-addr1 -- c-addr2 u )</p>
+<p>
+Return the character string specification for the counted string stored at c-addr1.
+c-addr2 is the address of the first character after c-addr1. u is the contents of the
+character at c-addr1, which is the length in characters of the string at c-addr2.
+</p>
+	<pre> <code>
+
+	zero
+	| DUP CONSTANT _#$_count	1+
+	| DUP CONSTANT _#$_data
+	DROP
+
+	\ lenth of count field
+        \ <a name="#$count_length"></a>
+	_#$_data _#$_count - CONSTANT #$count_length
+
+        \ <a name="$count@"></a>
+	\ words to deal with string counts
+	: $count@ C@ ;
+
+        \ <a name="$count!"></a>
+	: $count! C! ;
+
+
+	: COUNT ( c-addr1 -- c-addr2 u )
+		DUP _#$_data + SWAP $count@
+	;
+
+
+	</code> </pre>
+
+<a name="MOD"></a>
+<h5>ANS 6.1.1890 MOD</h5>
+<p>( n1 n2 -- n3 )</p>
+<p>
+Divide n1 by n2, giving the single-cell remainder n3. An ambiguous
+condition exists if n2 is zero. If n1 and n2 differ in sign, the
+implementation-defined result returned will be the same as that returned
+by either the phrase >R S>D R> FM/MOD DROP or the phrase >R S>D
+R> SM/REM DROP. 
+</p>
+	<pre> <code>
+	.S .( MOD)
+	: MOD ( n1 n2 -- n3 )
+		&gt;R S&gt;D R&gt; SM/REM DROP 
+	;
+	</code> </pre>
+
+<a name="Dlt"></a>
+<h5>ANS 8.6.1.1110 D<</h5>
+<p>DOUBLE</p> 
+<p>( d1 d2 -- flag )</p>
+<p>
+flag is true if and only if d1 is less than d2. 
+</p>
+	<pre> <code>
+	: D&lt;            ( d1 d2 -- f )
+		            ( l1 h1 l2 h2 -- f)
+		\ Signed compare two double numbers.  If d1 &lt; d2, return TRUE.
+		2 PICK        \ l1 h1 l2 h2 h1 (--
+		OVER =        \ l1 h1 l2 h2 h1 h2 (--
+		IF
+		    DU&lt;
+		ELSE
+			NIP       \ l1 h1 h2 (--
+			ROT DROP  \ h1 h2 (--
+			&lt;
+		THEN
+	;
+	.S .( D< )
+	</code> </pre>
+<a name="D0&lt;"></a>
+<h5>ANS 8.6.1.1075 D0&lt; </h5>
+<p>DOUBLE</p>
+<p>( d -- flag )</p>
+<p>
+flag is true if and only if d is less than zero.
+</p>
+	<pre> <code>
+	: D0&lt;           ( d1 -- f1 )
+	    zero zero D<
+	;
+	</code> </pre>
+
+<a name="D0="></a>
+<h5>ANS 8.6.1.1080 D0=</h5>
+<p>DOUBLE</p>
+<p>( xd -- flag )</p>
+<p>
+flag is true if and only if xd is equal to zero.
+</p>
+
+ 	<pre> <code>
+	: D0= ( xd -- flag )
+	    OR 0=
+	;
+	</code> </pre>
+<a name="D="></a>
+<h5>8.6.1.1120 D=</h5>
+<p>d-equals DOUBLE</p>
+<p>( xd1 xd2 -- flag )</p>
+<p>
+flag is true if and only if xd1 is bit-for-bit the same as xd2.
+</p>
+	<pre> <code>
+	: D= ( d1 d2 --flag)
+		D- OR 0=
+	;
+	</code> </pre>
+<a name="D&gt;S"></a>
+<h5>8.6.1.1140 D&gt;S</h5>
+<p>d-to-s DOUBLE</p>
+<p>( d -- n )</p>
+<p>n is the equivalent of d. An ambiguous condition exists if d lies
+outside the range of a signed single-cell number.
+</p>
+
+	<pre> <code>
+	: D&gt;S
+		DROP
+	; inline
+	</code> </pre>
+<a name="DMAX"></a>
+<h5>ANS 8.6.1.1210 DMAX</h5>
+<p>DOUBLE</p>
+<p>( d1 d2 -- d3 )</p>
+<p>
+d3 is the greater of d1 and d2.
+</p>
+
+	<pre> <code>
+	: DMAX          ( d1 d2 -- d3 )
+		4dup D&lt; IF
+			2SWAP
+		THEN
+		2DROP
+	;
+	</code> </pre>
+
+<a name="DMIN"></a>
+<h5>ANS 8.6.1.1220 DMIN</h5>
+<p>DOUBLE</p>
+<p>( d1 d2 -- d3 )</p>
+<p>
+	d3 is the lesser of d1 and d2.
+</p>
+
+	<pre> <code>
+	: DMIN          ( d1 d2 -- d3 )
+		4dup 2SWAP D&lt; IF
+			2SWAP
+		THEN
+		2DROP
+	;
+	</code> </pre>
+
+<a name="ANS_extended_precision_maths"></a>
+<h4>ANS extended precision maths</h4>
+<cite>Robert Smith</cite>
+
+<a name="tnegate"></a>
+<h5>tnegate</h5>
+<p>
+	Tri negate.
+</p>
+	<pre> <code>
+	: tnegate   ( t1lo t1mid t1hi -- t2lo t2mid t2hi )
+		INVERT &gt;R
+		INVERT &gt;R
+		INVERT zero -1 -1 D+ S&gt;D R&gt; zero D+
+		R&gt; +
+	;
+	</code> </pre>
+<a name="ut*"></a>
+<h5>ut*</h5>
+<p>
+Unsigned double by an unsigned integer to give a tri result.
+</p>
+	<pre> <code>
+	: ut*   ( ulo uhi u -- utlo utmid uthi )
+		SWAP &gt;R dup&gt;r
+		UM* zero R&gt; R&gt; UM* D+
+	;
+	</code> </pre>
+
+<a name="mt*"></a>
+<h5>mt*</h5>
+<p>
+Double by a integer to give a tri result.
+</p>
+	<pre> <code>
+	.S .( mt*)
+	: mt*   ( lo hi n -- tlo tmid thi )
+		DUP 0&lt; IF
+			ABS OVER 0&lt; IF
+				&gt;R DABS R&gt; ut*
+			ELSE
+				ut* tnegate
+			THEN
+		ELSE
+			OVER 0&lt;
+			IF
+				&gt;R DABS R&gt; ut* tnegate
+			ELSE
+				ut*
+			THEN
+		THEN
+	;
+	</code> </pre>
+
+<a name="ut/"><ut/>
+<h5>ut/</h5>
+<p>
+Divide a tri number by an integer.
+</p>
+	<pre> <code>
+	.S .( ut/)
+	: ut/   ( utlo utmid uthi n -- d1 )
+		dup&gt;r UM/MOD -rot R&gt; UM/MOD
+		NIP SWAP
+	;
+	</code> </pre>
+
+<a name="M*/"></a>
+<h5>ANS 8.6.1.1820 M*/</h5>
+<p>( d1 n1 +n2 -- d2 )</p>
+<p>
+Multiply d1 by n1 producing the triple-cell intermediate result t.
+Divide t by +n2 giving the double-cell quotient d2. An ambiguous condition
+exists if +n2 is zero or negative, or the quotient lies outside of the range
+of a double-precision signed integer.
+</p>
+	<pre> <code>
+	: M*/  ( d1 n1 +n2 -- d2 )
+		&gt;R mt* DUP 0&lt; IF
+			tnegate R&gt; ut/ DNEGATE
+		ELSE
+			R&gt; ut/
+		THEN
+	;
+	</code> </pre>
+<a name="-TRAILING"></a>
+<h5>ANS 17.6.1.0170 -TRAILING</h5>
+<p>( c-addr u1 -- c-addr u2 )</p>
+<p>
+If u1 is greater than zero, u2 is equal to u1 less the number
+of spaces at the end of the character string specified by c-addr u1.
+If u1 is zero or the entire string consists of spaces, u2 is zero.
+</p>
+	<pre> <code>
+	: -TRAILING ( c-addr u1 -- c-addr u2 )
+		DUP IF
+			&gt;R DUP DUP R&gt;     \ c-addr c_addr c-addr u1 (--
+			CHARS +  [ 1 CHARS ]T LITERAL - \ c-addr c-addr end (--
+			DO
+				I char@ BL &lt;&gt; IF
+					I OVER - [ 1 CHARS ]T LITERAL +
+					UNLOOP
+					EXIT
+				THEN
+			[ 1 CHARS NEGATE ]T LITERAL +LOOP
+			\ all blank
+			zero
+			EXIT
+		THEN
+	;
+	</code> </pre>
+
+<a name="/STRING"></a>
+<h5>ANS 17.6.1.0245 /STRING</h5>
+<p>STRING</p>
+<p>( c-addr1 u1 n -- c-addr2 u2 )</p>
+<p>
+Adjust the character string at c-addr1 by n characters. The resulting character
+string, specified by c-addr2 u2, begins at c-addr1 plus n characters and is u1 minus n
+characters long.
+</p>
+<p>
+/STRING is used to remove or add characters relative to the left end of the
+character string. Positive values of n will exclude characters from the string while
+negative values of n will include characters to the left of the string.
+/STRING is a natural factor of WORD and commonly available.
+</p>
+
+	<pre> <code>
+	: /STRING ( c-addr len n -- c-addr2 len2 )
+		OVER MIN	\ c-addr len min (--
+		TUCK        \ c-addr min len min (--
+		-           \ c-addr min len2 (--
+		-rot        \ len2 c-addr min (--
+		+			\ len2 c-addr2 (--
+		SWAP        \ c-addr2 len2 (--
+	;
+	</code> </pre>
+
+<a name="BLANK"></a>
+<h5>ANS 17.6.1.0780 BLANK</h5>
+<p>STRING</p>
+<p>( c-addr u -- )</p>
+<p>
+If u is greater than zero, store the character value for space in u consecutive character
+positions beginning at c-addr.
+</p>
+
+	<pre> <code>
+	: BLANK ( c-addr u --)
+		BL FILL ;
+	</code> </pre>
+
+<a name="COMPARE"></a>
+<h5>ANS 17.6.1.0935 COMPARE</h5>
+<p>STRING</p>
+<p>( c-addr1 u1 c-addr2 u2 -- n )</p>
+<p>
+Compare the string specified by c-addr1 u1 to the string specified
+by c-addr2 u2. The strings are compared, beginning at the given addresses,
+character by character, up to the length of the shorter string or
+until a difference is found. If the two strings are identical, n is zero.
+If the two strings are identical up to the length of the shorter string,
+n is minus-one (-1) if u1 is less than u2 and one (1) otherwise.
+If the two strings are not identical up to the length of the shorter
+string, n is minus-one (-1) if the first non-matching character in
+the string specified by c-addr1 u1 has a lesser numeric value than
+the corresponding character in the string specified by c-addr2
+u2 and one (1) otherwise.
+</p>
+
+	<pre> <code>
+	\ Describe the result, sorry I hate magic numbers.
+	-1  CONSTANT _#less
+	0   CONSTANT _#same
+	1   CONSTANT _#greater
+	\
+	: COMPARE ( addr1 u1 addr2 u2 --tri)
+		ROT                  \ addr1 addr2 u2 u1 (--
+		\ If the strings are equal up to the shortest the result
+		\ depends on the length. The strings are treated as if the
+		\ missing characters are less than zero.
+		2DUP > IF            \ addr1 addr2 u2 u1 (--
+			_#less
+		ELSE
+			2DUP &lt; IF
+				_#greater
+			ELSE
+				_#same
+			THEN
+		THEN
+							\ addr1 addr2 u2 u1 value (--
+		&gt;R
+		MIN zero ?DO
+			DUP char@       \ addr1 addr2 char2 (--
+			jump char@      \ addr1 addr2 char2 char1 (--
+			2DUP         \ addr1 addr2 char2 char1 char2 char1(--
+			&gt; IF
+				4drop
+				_#less
+				UNLOOP
+				r>drop
+				EXIT
+			THEN
+			&lt; IF
+				2DROP
+				_#greater
+				UNLOOP
+				r&gt;drop
+				EXIT
+			THEN
+			CHAR+ SWAP CHAR+ SWAP \ addr1+1 addr2+1 (--
+		[ 1 CHARS ]T LITERAL +LOOP
+		2DROP
+		\ equal up to the shortest, result depends on length
+		R&gt;
+	;
+	</code> </pre>
+<a name="SEARCH"></a>
+<h5>17.6.1.2191 SEARCH</h5>
+<p>STRING</p>
+<p>
+( c-addr1 u1 c-addr2 u2 -- c-addr3 u3 flag )
+</p>
+<p>
+Search the string specified by c-addr1 u1 for the string specified by c-addr2 u2.
+If flag is true, a match was found at c-addr3 with u3 characters
+remaining.
+If flag is false there was no match and c-addr3 is c-addr1 and u3 is u1.
+</p>
+
+	<pre> <code>
+	| : _byte_data= ( c-addr c-addr2 u2 -- flag)
+		zero DO
+			OVER C@ OVER C@ &lt;&gt; IF
+				2DROP UNLOOP FALSE EXIT
+			THEN
+			1+ SWAP 1+
+		LOOP
+		2DROP
+		TRUE
+	;
+
+
+	: SEARCH { ( c-addr1 u1 ) variable c-addr2 variable u2 -- ( c-addr3 u3 flag ) }{
+
+	}
+	u2 @ 0= IF
+		TRUE
+		EXIT
+	THEN
+	\ once around for each character position
+	2DUP              \ c-addr1 u1 c-addr1 u1(--
+	BEGIN
+		\ if search string is greater in length than number of characters left
+		\ then failure.
+		u2 @ OVER &gt; IF
+			2DROP
+			FALSE
+			EXIT
+		THEN
+		OVER
+		c-addr2 @ u2 @   \ c-addr1 u1 c-addr1 u1 c-addr1 c-addr2 u2(--
+		_byte_data= IF
+			2SWAP 2DROP
+			TRUE
+			EXIT
+		THEN
+		SWAP 1+
+		SWAP 1-
+	AGAIN
+	;
+	</code> </pre>
+
+</body>
+</html>
+
+

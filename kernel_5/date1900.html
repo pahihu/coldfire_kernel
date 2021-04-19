@@ -1,0 +1,262 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	| ram_create clock #facility_length ram_allot
+	DECIMAL
+	\ The year is 1900 based
+	| : _?is_it_a_leap_year ( year --flag)
+		4 /MOD SWAP IF ( no hope)
+			DROP FALSE EXIT
+		THEN
+		25 /MOD SWAP IF ( not a century)
+			DROP TRUE EXIT
+		THEN
+		3 +                                 \ because the base year is 1900, 2000 is the quad
+		4 /MOD SWAP IF  ( not a quadcent)
+			DROP TRUE EXIT
+		THEN
+		DROP TRUE
+	;
+
+	| CREATE _days/month #31 tc, #28 tc, #31 tc, #30 tc, #31 tc, #30 tc,
+	                     #31 tc, #31 tc, #30 tc, #31 tc, #30 tc, #31 tc,
+
+
+	|        365 4 * 1 +            CONSTANT _#days/leap
+	|        _#days/leap 25 * 1 -   CONSTANT _#days/century
+	|        _#days/century 4 * 1 + CONSTANT _#days/quadcentury
+	|        12                     CONSTANT _#months/year
+	|        1900                   CONSTANT _#base_year
+	|        4                      CONSTANT _#years/leap
+	|        365                    CONSTANT _#days/year
+
+
+        \ <a name="days&gt;date"></a>
+        \ ##### needs more work to get it valid over long term
+	: days>date   ( days -- years month day )
+
+
+		DUP 58 > + ( TRUE = 1)                \ add one if number of days greater than 58
+											  \ this allows for the short leap in 1900
+											  \ 59 will now only occure if in following leap
+											  \ The initial 59 is now 60.
+		_#days/leap /MOD                      \ days_within_leap leaps (--
+		_#years/leap * _#base_year + >R       \ Did your know that every 400 years the
+											  \ turn of the century is a leap year.
+											  \ But all the others are not.
+											  \ The year 2000 is a leap year.
+											  \ Imagine the mess if we had computers
+											  \ in 1900. I wonder will we get the year 2100 right.
+											  \ This bit of code won't, 2100 is not a leap year.
+		DUP 59 = IF                           \ Remember what was said above for initial 59.
+											  \ This is a non 1900 leap
+			DROP 29 2 0                       \ days month years_in_leap (--
+		ELSE
+			DUP 59 > - ( TRUE = 1)            \ The first year has an extra day after 59
+			_#days/year /MOD                  \ days_in_year years_within_leap (--
+			>R
+			_days/month _#months/year OVER + SWAP DO
+				I C@ - DUP 0< IF
+					 I C@ + 1+				  \ days_in_month (--
+					 I _days/month 1-  -      \ days_in_month month_in_year (--
+					 LEAVE
+				THEN
+			 LOOP                             \ days month (--
+			 R>
+		THEN                                  \ days month years_in_leap (--
+		R>
+		+                                     \ days months year (--
+		-rot SWAP                             \ year month day (--
+	;
+
+
+
+	| CREATE _days_into_year
+						   zero  DUP tw,   ( first month is included in day)
+						   #31 + DUP tw,
+						   #28 + DUP tw,
+						   #31 + DUP tw,
+						   #30 + DUP tw,
+						   #31 + DUP tw,
+						   #30 + DUP tw,
+						   #31 + DUP tw,
+						   #31 + DUP tw,
+						   #30 + DUP tw,
+						   #31 + DUP tw,
+						   #30 + DUP tw,
+						   #31 + DUP tw,
+	DROP
+
+	\ test assumptions
+	_#base_year #100 /MOD DROP zero ??=
+	TRUE -1 ??=
+         \ <a name="date&gt;days"></a>
+
+	: date>days ( y m d --n)
+		jump		\ y m d y (--
+		[ _#base_year 1 - ]T LITERAL > IF				\ take off offset
+			ROT _#base_year - -rot
+		THEN						\ y m d (--
+		jump						\ y m d y (--
+									\ calulate the number of days to be added for leaps
+		4/							\ y m d l (--
+									\ will round down so 00 not included
+		DUP 25  /					\ number of centeries a sub
+									\ y m d l c (--
+		DUP                         \ y m d l c c (--
+		[ _#base_year 100 / 4 /MOD DROP ]T LITERAL +
+		4/							\ number of quad_cent a add
+									\ y m d l c qc (--
+		\ we assume base year is a multiple of 100
+		\ If _#base_year a quadcentuary year we have to add 1
+		\ first quad from today is 2000
+		[ _#base_year 100 / 4 /MOD DROP 0=  NEGATE ( TRUE now = 1 ) ]T LITERAL +
+		SWAP -                      \ subtract number of centuries
+		SWAP +						\ y m d lc (--  add_quads subtract_cent
+		SWAP  1 -                   \ first day is included in month
+		+							\ y m dc (--
+		jump _?is_it_a_leap_year    \ y m dc flag(--
+		IF
+			\ If it is a leap year the year calcuation will
+			\ have added a day. This should only be added if we are into
+			\ the third month.
+			OVER 3 < IF
+				1 -
+			THEN
+		THEN
+		SWAP
+		_#months/year MIN			\ y dc m (--
+		1- 2* _days_into_year + W@  \ y dc dc2 (--
+		+ SWAP						\ dc3 y (--
+		_#days/year * +
+	;
+
+
+        \ <a name="$days"></a>
+
+	: $days ( n1 addr n -- $)
+		2>R
+		days>date
+		2R> $date ;
+
+
+        \ <a name=".days"></a>
+	: .days ( n1 --)
+		#picture_min get_buffer
+			buffer #picture_min $days
+			$type
+		kill_buffer
+	;
+
+
+        \ <a name="@date"></a>
+        : @date  (  -- y m d )
+		%today @ days>date
+	;
+
+
+        \ <a name="!date"></a>
+        :  !date  ( year month day --)
+		date>days %today !
+	;
+
+        \ <a name="!days"></a>
+        : !days days>date !date  ;
+
+
+	| #60             CONSTANT _#sec/min
+	| _#sec/min #60 * CONSTANT _#sec/hour
+	| _#sec/hour #24 * CONSTANT _#sec/day
+
+
+        \ <a name="&gt;hns"></a>
+        : >hms ( sec -- h m s )
+		_#sec/hour /MOD SWAP
+		_#sec/min  /MOD SWAP
+	;
+
+
+        \ <a name="!ticks"></a>
+	: !ticks  ( ticks --)
+                %ticks !
+                TRUE %ticks_set !
+	;
+
+        \ <a name="@ticks"></a>
+        : @ticks ( --n)
+		%ticks @
+	;
+
+
+        \ <a name="@days"></a>
+        : @days ( --days)
+		%today @
+	;
+
+
+        \ <a name="@standard_ms"></a>
+	\ _#trr1_value is the number of clock inc in a tick
+
+#BVP6552 #BVP6551 + #ECM160 + [IF]
+
+	: @standard_ms { ( --ms )  }{
+		$80000000 CONSTANT _#non_standard
+		#10 CONSTANT _#ticks>ms }
+		_lock_word
+		_lreg_SCNT0 @
+  		_#slt0_value - 		\ 5474 uses a down counter.
+		\ round up by dividing by half required amount adding one
+		\ and then finish off with a divide by 2.
+		[ _#slt0_value #5 / ]T LITERAL  /
+		1+ 2/
+		%ticks @ _#ticks>ms *  +
+		_unlock_word
+		%ticks_set @ not IF
+			_#non_standard OR
+		THEN
+	;
+
+[ELSE]
+
+	: @standard_ms { ( --ms )  }{
+		$80000000 CONSTANT _#non_standard
+		#10 CONSTANT _#ticks>ms }
+		_lock_word
+		_wreg_TCN1 W@
+		\ round up by dividing by half required amount adding one
+		\ and then finish off with a divide by 2.
+		[ _#trr1_value #5 / ]T LITERAL  /
+		1+ 2/
+		%ticks @ _#ticks>ms *  +
+		_unlock_word
+		%ticks_set @ not IF
+			_#non_standard OR
+		THEN
+	;
+[THEN]
+
+        \ <a name="!standard_ms"></a>
+	\ we do not try for better than the nearest tick
+	: !standard_ms { ( ms --) }{
+		$80000000 CONSTANT _#non_standard }
+		DUP _#non_standard AND IF
+			DROP EXIT
+		THEN
+		$0A /
+		%ticks !
+		TRUE %ticks_set !
+	;
+
+
+	</code> </pre>
+</body>
+</html>

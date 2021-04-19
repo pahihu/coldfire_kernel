@@ -1,0 +1,83 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<pre> <code>
+\ I have to convert it to our assembler
+0 CONSTANT offset1
+2 CONSTANT offset2
+4 CONSTANT offset3
+6 CONSTANT offset4
+8 CONSTANT datalength
+ram_create test_data datalength ram_allot
+
+0 test_data W!
+2 test_data 2 + W!
+4 test_data 4 + W!
+6 test_data 6 + W!
+ 
+CODE m_mul ( addr a b c --result)
+    S )+ D0  MOV
+    S )+ D1 MOV
+    S )+ D2 MOV
+    S )+ A0 MOV
+    offset1 0) D0 MULS
+    offset2 0) D1 MULS
+    offset3 0) D2 MULS
+    D0 D1 ADD
+    D1 D2 ADD
+    8 # D2 ASR
+    8 # D2 ASR
+    offset4 0) D2 ADD
+    D2 S -) MOV
+NEXT
+
+
+test_data 1 2 3 m_mul .
+
+\ ok multiply 3 values together adding the results use high word and add in a 
+\ constant.
+CODE m1_mul ( addr a b c --result)
+    \ move date from register to stack so I can test
+    S )+ D0  MOV
+    S )+ D1 MOV
+    S )+ D2 MOV
+    S )+ A0 MOV
+    \ clear the accumulator
+    0 # ACC MOV	
+    \ get things started
+    offset1 0) D3 W. MOV
+    D0 D3 offset2 0) D4  W. MACL
+    D1 D4 offset3 0) D5  W. MACL
+    D2 D5 offset4 0) D6  W. MACL
+    ACC D2 MOV
+    D2 SWP   \ swap register halves
+    D2 A0 W. MOV \ sign extend
+    A0 D6 ADD
+    D6 S -)  MOV
+NEXT
+
+test_data 1 2 3 m1_mul .
+
+
+: the_loop  xclock+ @ $100000 0 DO test_data DROP LOOP xclock+ @ SWAP - . ;
+: fred xclock+  @ $100000 0 DO test_data 1 2 3 m_mul DROP LOOP xclock+ @ SWAP - . ;
+\ gives 1.29 secs
+: fred1 xclock+ @ $100000 0 DO test_data 1 2 3 m1_mul DROP LOOP xclock+ @ SWAP - . ;
+\ gives 1.21 secs
+
+
+\ The data is badly structured to take advantage of the MAC. You can load 32bits
+\ that is both words of a word multiple while you are doing the mult with the MACL
+\ instruction, in above example we have only used 16 bits
+
+</code> </pre>
+
+</body>
+</html>
+

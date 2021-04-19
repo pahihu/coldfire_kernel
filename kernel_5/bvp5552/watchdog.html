@@ -1,0 +1,38 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+
+    <pre> <code>
+    
+	ram_variable %watchfault
+ 
+	: set_timeout_led ( --)
+		TRUE %watchfault !
+	;
+	: trigger_clock
+		$55 _breg_SWSR C!
+		$AA _breg_SWSR C!
+	;
+
+	: start_watchdog
+		[ _#sypcr_watchdog_enable
+		_#sypcr_timeout_enable_reset +
+		_#sypcr_prescale +
+		_#sypcr_swt +
+		]T LITERAL _breg_SYPCR C!
+	;
+
+
+	</code> </pre>    
+    
+
+</body>
+</html>

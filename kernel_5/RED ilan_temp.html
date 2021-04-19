@@ -1,0 +1,117 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	\ codes for the file_server
+    | 1 CONSTANT #ilan_block
+    | 2 CONSTANT #bus_block
+    | 3 CONSTANT #bus_file  ( 25Oct1996)
+	</code> </pre>
+<p>
+A modern system will use NFS, old cards use the rti file system. The rti request is
+converted to a file request ( be it local or NFS) by the master file server. The muster file
+server has to deal with commands structure as follows.
+The packets sent from the RTI cards.
+</p>
+<pre> <code>
+	\ can be used as a buffer to store an abort error
+
+        #$buffer ubuffer $error
+
+	( file commands)
+	| 03   CONSTANT #read_ilan
+	| 04   CONSTANT #write_ilan
+	| 05   CONSTANT #open_ilan
+	| 06   CONSTANT #close_ilan
+	| 0FF  CONSTANT #error_ilan
+
+	zero
+	| DUP CONSTANT #ilan_disk_code            1+
+
+	| DUP CONSTANT #ilan_disk_i/o_id
+	| DUP CONSTANT #ilan_directory_name
+	| DUP CONSTANT #ilan_error_string
+                                        CELL+
+	| DUP CONSTANT #ilan_close_header_length
+	| DUP CONSTANT #ilan_disk_where
+	| DUP CONSTANT #ilan_disk_mode
+                                        CELL+
+	| DUP CONSTANT #ilan_open_header_length
+	| DUP CONSTANT #ilan_disk_length
+                                        CELL+
+
+        \ error packet
+        \ #error_ilan     1+
+        \ $error_string
+
+        \ the opener privides the id.
+        \ open
+        \ #open_code 1+
+        \ file_id 4+
+        \ mode       4+
+        \ $directory_name
+
+        \ close
+        \ #close_code
+        \ file_id 4+
+
+        \ read
+        \ #read_code 1+
+        \ file_id    4+
+        \ seek pointer 4+
+        \ count 4+
+        \
+
+        \ write
+        \ #write_code 1+
+        \ file_id     4+
+        \ seek_pointer 4+
+        \ count 4+
+        \ data
+
+        | CONSTANT #ilan_disk_header_length
+
+	| CREATE $lost_interest
+		," ILAN master didn't process request."
+
+	| CREATE $strange_command
+		," ILAN Got read data without requesting it"
+
+	| CREATE $no_buffer
+		," ILAN received data, but had nowhere to put it"
+
+	| CREATE $wrong_file
+		," ILAN data returned wasn't from file requested"
+
+	| CREATE $wrong_file_pointer
+		," ILAN data returned wasn't from where requested"
+
+	| CREATE $wrong_length
+		," ILAN data returned was longer than requested"
+
+	| CREATE $command_length_wrong
+		," ILAN packet didn't contain correct control data"
+
+	| CREATE $?data_length
+		," ILAN returned data didn't contain promised data"
+
+	| CREATE $unknown_command
+		," ILAN returned command unknown"
+
+	| CREATE $no_command
+		," Command not implemented."
+
+	| CREATE $bad_receive
+		," Reply came before command sent"
+
+	</code> </pre>
+</body>
+</html>

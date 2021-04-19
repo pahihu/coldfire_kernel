@@ -1,0 +1,34 @@
+<html>
+<head>
+<title>Interrupt Trap Routines</title>
+<META NAME="Author" CONTENT="Charles Esson, GB">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre><code>
+	ram_variable %cpu2_int
+
+	: cpu2_serve
+		zero _#Reset_cpu_int5 !
+		1 %cpu2_int +!
+	;
+
+
+	interrupt: cpu2_interrupt ( --)
+		cpu2_serve
+	;interrupt
+
+: set_processor_fault
+	
+;
+</code></pre>
+
+
+</body>
+</html>
+
+

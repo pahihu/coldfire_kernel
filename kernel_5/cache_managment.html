@@ -1,0 +1,162 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+
+#5307 [IF]
+CODE cache_flush
+	_#sdram0_base # A0 MOV
+	_#cache_size # D0 MOV
+	BEGIN
+		A0 ) A0 ) MOV
+		_#cache_line_size # A0 ADD
+		_#cache_line_size # D0 SUB
+	EQ UNTIL
+	NOP
+NEXT inline
+[THEN]
+
+#5407 [IF]
+??HEX
+80 CONSTANT #cache_sets
+4   CONSTANT #cache_ways
+0   CONSTANT #cache_ins_data
+
+\ after this is done all data is in memory.
+CODE (clear_data_cache)
+	#cache_ins_data # A0 MOV
+	#cache_ways # D0 MOV
+	BEGIN
+		#cache_sets # D1 MOV
+		BEGIN
+			DC A0 CPUSHL
+			\ next set index
+			10 # A0 ADD
+			1 # D1 SUB
+		LE UNTIL
+		\ undo damage
+		10 #cache_sets * # A0 SUB
+		$1 # A0 ADD
+		1 # D0 SUB
+	LE UNTIL
+	\ make sure the push buffer has eptied.
+	NOP
+NEXT
+
+
+
+: clear_data_cache ( --)
+	['] (clear_data_cache) super_execute
+;
+
+
+\ I don't know manual says it can't be done errate shows code that
+\ reads the CACR
+
+CODE (clear_ins_cache)
+
+	_#cacr_DEC      \ Data enable cache
+	_#cacr_ESB  +   \ enable store buffer
+	_#cacr_DDPI +   \ Disable data CPUSHL invalidate. This is what we want. We have to
+	                \ clear the data cache when compiling we want it to run
+	                \  as quickly as possible.
+    	_#cacr_DCM  +   \ Data cache mode; non cachable inprecise
+	_#cacr_BEC  +   \ branch cache enable
+	_#cacr_IEC  +   \ Enable instruction cache
+	_#cacr_ICINVA +
+	    # D0 MOV
+	D0 CACR MOV
+NEXT
+
+: clear_ins_cache ( --)
+	['] (clear_ins_cache) super_execute
+;
+
+
+: (cache_flush)
+	(clear_data_cache)
+	(clear_ins_cache)
+;
+
+: cache_flush
+	['] (cache_flush)
+	super_execute
+;
+[THEN]
+
+#5474 [IF]
+??HEX
+200 CONSTANT #cache_sets
+4   CONSTANT #cache_ways
+0   CONSTANT #cache_ins_data
+
+\ after this is done all data is in memory.
+CODE (clear_data_cache)
+	#cache_ins_data # A0 MOV
+	#cache_ways # D0 MOV
+	BEGIN
+		#cache_sets # D1 MOV
+		BEGIN
+			DC A0 CPUSHL
+			\ next set index
+			10 # A0 ADD
+			1 # D1 SUB
+		LE UNTIL
+		\ undo damage
+		10 #cache_sets * # A0 SUB
+		$1 # A0 ADD
+		1 # D0 SUB
+	LE UNTIL
+	\ make sure the push buffer has eptied.
+	NOP
+NEXT
+
+
+
+: clear_data_cache ( --)
+	['] (clear_data_cache) super_execute
+;
+
+
+CODE (clear_ins_cache)
+
+	_#cacr_DEC      \ Data enable cache
+	_#cacr_DESB  +  \ enable store buffer
+	_#cacr_DDPI +   \ Disable data CPUSHL invalidate. This is what we want. We have to
+	                \ clear the data cache when compiling we want it to run
+	                \  as quickly as possible.
+    	_#cacr_DCM  +   \ Data cache mode; non cachable precise
+	_#cacr_BEC  +   \ branch cache enable
+	_#cacr_IEC  +   \ Enable instruction cache
+        _#cacr_IDCM +	\ inhibit cache outside ACR's
+	_#cacr_ICINVA + \ invalidate instruction cache.
+	    # D0 MOV
+	D0 CACR MOV
+NEXT
+
+: clear_ins_cache ( --)
+	['] (clear_ins_cache) super_execute
+;
+
+: (cache_flush)
+	(clear_data_cache)
+	(clear_ins_cache)
+;
+
+: cache_flush
+	['] (cache_flush)
+	super_execute
+;
+
+[THEN]
+	</code> </pre>
+</body>
+</html>

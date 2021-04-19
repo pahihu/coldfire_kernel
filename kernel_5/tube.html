@@ -1,0 +1,1049 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+tube.
+This is object installed by the server
+</p>
+	<pre> <code>  
+
+	| 1  CONSTANT #expect_code
+	| 2  CONSTANT #send_code
+
+
+	io_common class
+
+		cell% instance_variable %%character
+		cell% instance_variable %%line
+		cell% instance_variable %%page
+		cell% instance_variable %%character_max
+		cell% instance_variable %%line_max
+		cell% instance_variable %%?page
+		cell% instance_variable %%always_send
+
+
+
+		\ This class describes the I/O from the server point of view.
+	    zero
+		\ The user_base of the server task; that is task doing the work
+		| DUP   CONSTANT #p_status     	4+
+		\ The user base of the client task; that is task supplying
+		\ terminal servises.
+		| DUP   CONSTANT #p_owner      	4+
+		\ Set to true if there is an active request.
+		| DUP   CONSTANT #p_request    	2+  ( expect/type set on req)
+		\ the type of request
+		| DUP   CONSTANT #p_function   	2+  ( expect/type, the function)
+		\ the data count
+		| DUP   CONSTANT #p_count      	2+
+		\ the data address if remote will point to transfer buffer
+		\ if local will point to actual data
+		| DUP   CONSTANT #p_address    	4+
+		\ address of the trnsfer buffer, only required if talking across dual
+		\ port memory.
+		| DUP   CONSTANT #p_tpoint     	4+
+		\ actual number of caracters received
+		| DUP   CONSTANT #p_actual     	2+  ( expect only)
+		\ set to true by client checked by server
+		| DUP   CONSTANT #p_^C         	2+
+		\ set to true by client if it has data
+		| DUP   CONSTANT #p_?data      	2+  \ set if data available
+		\  task to set ^C flag
+		| DUP   CONSTANT #p_^C_task       4+  \
+		| DUP   CONSTANT #p_local         2+  \ set to true if local logon
+		| DUP   CONSTANT #p_spare         2+
+		\ tpoint gets altered by old logon tasks
+		CONSTANT _#control_block_size
+
+		\ long word boundry; write buffer moves work better
+		_#control_block_size 03 AND ??
+
+		_#control_block_size bytes% instance_variable %%control_block
+
+
+		cell% instance_variable %%control_block>
+
+		\ The old decode function used a counted string, boo hiss.
+		$104 CONSTANT _#write_buffer_length
+
+		m: ( --)
+			\ does the unlinking
+			this [parent] :destruct
+		; overrides :destruct
+
+		m: ( parent--)
+			this [parent] :construct
+			zero %%?page !
+			zero %%page !
+			zero %%character !
+			zero %%line !
+			#23 %%line_max !
+			#79 %%character_max !
+
+			FALSE %%always_send !
+
+			%%control_block _#control_block_size ERASE
+
+			\ the buffer has to be _#write_buffer_length long as we communicate
+			\ with systems that make this assumption.
+                        \ The buffer is returned in io_common
+			_#write_buffer_length get_free_buffer
+			DUP %%type_buffer> !
+
+			%%control_block #p_tpoint + !
+
+                        \ what count should we use? One less so we can always fit in the termiantor.
+                        _#write_buffer_length 1 - %%type_buffer_size !
+
+                        %%control_block this :!control_block
+		; overrides :construct
+
+
+		\ Call if sent data is to wait for a logged on user
+		\ The correct option for a prompt terminal
+		m: ( --)
+			TRUE %%always_send !
+		; method :always_send
+
+
+		\ Once we have set up for a local read we have to be committed to
+		\ the local read. It is possible for the local task to log off and
+		\ a remote task to log on.
+		m: ( addr num --  num_bytes )
+			send
+			10 %%control_block> @ #p_status + port_xgrab $ABORT
+			\ for ^C
+			user_base activation_status this :@control_block #p_^C_task + !
+
+			#expect_code  %%control_block> @ #p_function + W!
+		    #p_count %%control_block> @ + W!
+			\ addr(--
+			%%control_block> @ #p_local + W@ TUCK IF
+				\ flag addr(--
+				DUP #p_address %%control_block> @ + !
+			ELSE
+				%%control_block> @ #p_tpoint + @
+				%%control_block> @ #p_address + !
+			THEN
+
+			\ local addr (--
+			zero %%control_block> @ #p_actual + W!
+
+			xsleep
+
+			TRUE %%control_block> @ #p_request + W!
+
+			%%control_block> @ #p_owner + @
+			IF
+				\ local addr<-
+				OVER  IF
+					%%control_block> @ #p_owner + @
+					wake SWAP  W!
+				THEN
+			ELSE
+				\ If no one is logged on seal the interpreter
+				TRUE seal W!
+			THEN
+
+			xnext
+			\ local addr(--
+
+			\ If not local data is now in buffer pointed to by address, we now copy it
+			\ to the users buffer. Look at port_tube for reason.
+			SWAP not IF
+				%%control_block> @ #p_address + @
+				OVER
+    			%%control_block> @ #p_actual + W@ \ includes termination code
+				\ long word align, makes for faster copy. And as dual port
+				\ will only allow word moves a valid copy.
+				3+ $FFFFFFFC AND
+				\ from to num (--
+				MOVE
+			THEN
+
+			\ addr(--
+			DROP
+			%%control_block> @ #p_actual + W@ 1- \ exclude termination code
+			%%control_block> @ #p_status + port_release
+
+		; overrides :read
+
+		m: ( addr num --  num_bytes flag )
+			send
+			10 %%control_block> @ #p_status + port_xgrab $ABORT
+
+			\ for the ^C
+			user_base activation_status this :@control_block #p_^C_task + !
+
+			#expect_code  %%control_block> @ #p_function + W!
+		    #p_count %%control_block> @ + W!
+			\ addr(--
+			%%control_block> @ #p_local + W@ TUCK IF
+				\ local addr(--
+				DUP #p_address %%control_block> @ + !
+			ELSE
+				%%control_block> @ #p_tpoint + @
+				%%control_block> @ #p_address + !
+			THEN
+			\ local addr (--
+
+			zero %%control_block> @ #p_actual + W!
+
+			xsleep
+
+			TRUE %%control_block> @ #p_request + W!
+
+			%%control_block> @ #p_owner + @
+			IF
+				\ local addr(--
+				OVER IF
+					%%control_block> @ #p_owner + @
+					wake SWAP  W!
+				THEN
+			ELSE
+				\ If no one is logged on seal the interpreter
+				TRUE seal W!
+			THEN
+
+			xnext
+			\ local addr(--
+
+			\ If not local data is now in buffer pointed to by address, we now copy it
+			\ to the users buffer. Look at port_tube for reason.
+			SWAP not IF
+				%%control_block> @ #p_address + @
+				OVER
+    			%%control_block> @ #p_actual + W@ \ includes termination code
+				_#write_buffer_length MIN
+				\ long word align, makes for faster copy. And as dual port
+				\ will only allow word moves a valid copy.
+				3+ $FFFFFFFC AND
+				\ addr from to num (--
+				MOVE
+			THEN
+			\ addr(--
+        		%%control_block> @ #p_actual + W@
+			\ deal with termination
+			this :termination>code
+
+			%%control_block> @ #p_status + port_release
+
+		; overrides :read_line
+
+
+		\ manipulate the input data to produce a termination code
+		\ addr is the start of the buffer
+		\ num is the numbr of characters including the terminator
+		\ num1 excludes the terminator code; which is now one byte only.
+		\ flag is true if more data
+		m: ( addr num --num flag)
+			1- TUCK CHARS + char@
+			#end_eof = IF
+				FALSE
+			ELSE
+				TRUE
+			THEN
+		; overrides :termination>code
+
+		\ returns the character position of the previous line.
+		\ a pipe cannot do such a thing
+		m: \ compile time ( --xt)
+		   \ runtime ( n -- n true | false )
+			FALSE
+		; overrides :previous_line
+
+
+    	| : _tube_send  ( addr count --)
+
+			DUP not IF \ Don't send null packet.
+				2DROP
+				xpause
+				EXIT
+			THEN
+
+			10 %%control_block> @ #p_status + port_xgrab $ABORT
+
+			\ for the ^C
+			user_base activation_status this :@control_block #p_^C_task + !
+
+
+			\ addr count(--
+
+			\ Only pause if there is an owner. This feature
+			\ allows you to use tubes for debugging. If no one
+			\ is logged on the message is gobbled up. If logged
+			\ on you get the message.
+			%%control_block> @ #p_owner + @ %%always_send @ OR IF
+
+				#send_code %%control_block> @ #p_function + W!
+	    		DUP %%control_block> @ #p_count + W!
+
+				FALSE %%control_block> @ #p_?data + W!
+
+				xsleep
+
+				%%control_block> @ #p_local + W@ IF
+					\ If local is set there is an owner
+					\ addr count(--
+					DROP
+					%%control_block> @ #p_address + !
+
+					TRUE %%control_block> @ #p_request + W!
+
+					wake %%control_block> @ #p_owner + @ W!
+
+					xnext
+				ELSE
+					\ addr count(--
+					\ If remote move data into dual port transfer buffer)
+					\ addr count(--
+	    			%%control_block> @ #p_tpoint + @ SWAP
+					_#write_buffer_length MIN
+					3 + $FFFFFFFC AND
+					\ addr addrfrom addrto count(--
+					MOVE
+
+					%%control_block> @ #p_tpoint + @
+					%%control_block> @ #p_address + !
+
+					TRUE %%control_block> @ #p_request + W!
+
+\ 					%%control_block> @ #p_owner + @ IF
+\ This is the correct code but there is serious problems
+\ with the BCM522 interrupt code
+\						#10 %port_i_unit port_xgrab $ABORT
+\						%%control_block> @ %port_i_unit !
+\						TRUE %port_i_terminal W!
+\						interrupt_master
+\					THEN
+
+					xnext
+
+				THEN
+			ELSE
+				2DROP
+				\ xpause
+			THEN
+			%%control_block> @ #p_status + port_release
+		;
+
+
+		m: ( --)
+			\ terminate the write buffer with a send
+			$82 %%type_buffer> @ %%type_buffer_count @ + C!
+			1 %%type_buffer_count +!
+			%%type_buffer> @ %%type_buffer_count @
+			_tube_send
+			zero %%type_buffer_count !
+		; overrides :flush_file
+
+
+		m: ( addr num --)
+			this :write
+			this :cr
+		; overrides :write_line
+
+		m: ( addr num --)
+			DUP %%character +!
+			this :write
+		; overrides :type
+
+		\ 8A is a mark code and it expects a following string
+		m: ( addr num -- )
+			DUP %%character +!
+			DUP 2+ this :?send
+			$8A _emit_buffer C! _emit_buffer 01 this :write
+			this :write
+			$81 _emit_buffer C! _emit_buffer 01 this :write
+		; overrides :mark     ( send out data highlighted)
+
+
+		</code> </pre>
+		<h4> Methods needed for serial devices</h4>
+		<pre> <code>
+
+		\ The task is asking the other device
+		m: ( --flag)
+			\ updatad last transaction. Force a transaction.
+			\ see if there is data. The data will be for
+			\ current transaction as the transaction put this
+			\ task to sleep until other task done.
+			$84 _emit_buffer C!
+			_emit_buffer 01 this :write
+			this :flush_file
+			%%control_block> @ #p_?data + W@
+		; overrides :key?
+
+		\ force clearing of input buffer
+		m: ( --)
+			$85 _emit_buffer C!
+			_emit_buffer 01 this :write
+			this :flush_file
+		; overrides :clear
+
+		m: ( data --)
+			2 this :?send
+			$86 _emit_buffer C!
+			_emit_buffer 1+ C!
+			_emit_buffer 02 this :write
+		; overrides :!control
+
+		m: ( addr --)
+			DUP COUNT NIP 2+ this :?send
+			$87 _emit_buffer C! _emit_buffer  01 this :write
+			COUNT CHARS this :write
+			$81 _emit_buffer C! _emit_buffer 01 this :write
+		; overrides :!eot
+
+		m: ( data --)
+			2 this :?send
+			$88 _emit_buffer C!
+			_emit_buffer 1+ C!
+			_emit_buffer 02 this :write
+		; overrides :!device
+
+		m: ( data --)
+			5 this :?send
+			$89 _emit_buffer C! _emit_buffer 01 this :write
+			_emit_buffer ! _emit_buffer 4 this :write
+		; overrides :baud
+
+
+		m: ( --)
+			%%?page @ not IF
+				EXIT
+			THEN
+			%%page @ IF
+				\ The read is against the active input device.
+				\ This is correct.
+	   			keybuffer one ACCEPT DROP
+			THEN
+		; overrides :?page
+
+		m: ( flag --)
+			%%?page !
+		; overrides :!?page
+
+		</code> </pre>
+		<h5>Application access to current character line and page</h5>
+		<pre> <code>
+
+		m: ( -- num)
+			%%character @
+		; overrides :character#
+
+		m: ( --num)
+			%%line @
+		; overrides :line#
+
+		m: ( --num)
+			%%page @
+		; overrides :page#
+
+		m: ( num--)
+			%%page !
+		; overrides :page!
+
+		m: ( --addr)
+			%%line_max
+		; overrides :line_max
+
+		m: ( --addr)
+			%%character_max
+		; overrides :character_max
+		</code> </pre>
+		<h5>Method of displaying data</h5>
+		<pre> <code>
+
+		\ normal character presentation
+		| CREATE _$pipe_norm $019E0000 t,
+		m: ( --)
+			_$pipe_norm COUNT this :write
+		; overrides :normal
+
+		\ reverse character presentation
+		| CREATE _$pipe_rev $019F0000 t,
+		m: ( --)
+			_$pipe_rev COUNT this :write
+		; overrides :rev
+
+		\ blink character presentation
+		| CREATE _$pipe_blink $01A00000 t,
+		m: ( --)
+			_$pipe_blink COUNT this :write
+		; overrides :blink
+
+		\ dim character presentation
+		| CREATE _$pipe_dim $01A10000 t,
+		m: ( --)
+			_$pipe_dim COUNT this :write
+		; overrides :dim
+
+		\ underline character presentation
+		| CREATE _$pipe_udl $01A20000 t,
+		m: ( --)
+			_$pipe_udl COUNT this :write
+		; overrides :udl
+
+		| CREATE _$pipe_dim&blink $01A30000 t,
+		m: ( --)
+			_$pipe_dim&blink COUNT this :write
+		; overrides :dim&blink
+
+		| CREATE _$pipe_rev&blink $01A40000 t,
+		m: ( --)
+			_$pipe_rev&blink COUNT this :write
+		; overrides :rev&blink
+
+		| CREATE _$pipe_rev&dim $01A50000 t,
+		m: ( --)
+			_$pipe_rev&dim COUNT this :write
+		; overrides :rev&dim
+
+		| CREATE _$pipe_rev&udl $01A60000 t,
+		m: ( --)
+			_$pipe_rev&udl COUNT this :write
+		; overrides :rev&udl
+
+		| CREATE _$pipe_rev&dim&blink $01A70000 t,
+		m: ( --)
+			_$pipe_rev&dim&blink COUNT this :write
+		; overrides :rev&dim&blink
+
+
+		| CREATE _$pipe_rev&dim&udl $01A80000 t,
+		m: ( --)
+			_$pipe_rev&dim&udl COUNT this :write
+		; overrides :rev&dim&udl
+
+		</code> </pre>
+		<h5>Cursor control</h5>
+		<pre> <code>
+
+		m: ( line char -- )
+			3 this :?send
+			2DUP
+			$8B _emit_buffer C!
+			_emit_buffer 1+ C!
+			_emit_buffer 2+ C! _emit_buffer 03 this :write
+			%%character !
+			%%line !
+		; overrides :tab
+
+		| CREATE _$pipe_terminator  $018D0000 t,
+		m: ( -- )
+			0 %%character !
+			1 %%line +!
+			_$pipe_terminator COUNT this :write
+		; overrides :cr
+
+		| CREATE _$pipe_page $018C0000 t,
+		m: ( --)
+			1 %%page +!
+			0 %%character !
+			0 %%line !
+			_$pipe_page COUNT this :write
+		; overrides :page
+
+		</code> </pre>
+		<h5>Grapic characters</h5>
+		<pre> <code>
+
+		\ to graphics
+		| CREATE _$pipe_>| $018E0000 t,
+		m: ( --)
+			_$pipe_>| COUNT this :write
+		; overrides :>|
+
+		\ from graphics
+		| CREATE _$pipe_|> $018F0000 t,
+		m: ( --)
+			_$pipe_|> COUNT this :write
+		; overrides :|>
+
+		\ pc element input
+		| CREATE _$pipe_|i $01900000 t,
+		m: ( --)
+			_$pipe_|i COUNT this :write
+		; overrides :|i
+
+		\ pc element output
+		| CREATE _$pape_|o $01910000 t,
+		m: ( --)
+			_$pape_|o COUNT this :write
+		; overrides :|o
+
+		\ pc element vertical line
+		| CREATE _$page_|v $01920000 t,
+		m: ( --)
+			_$page_|v COUNT this :write
+		; overrides :|v
+
+		\ pc element horizontal line
+		| CREATE _$page_|h $01930000 t,
+		m: ( --)
+			_$page_|h COUNT this :write
+		; overrides :|h
+
+		\ pc element not
+		| CREATE _$page_|n $01940000 t,
+		m: ( -- )
+			_$page_|n COUNT this :write
+		; overrides :|n
+
+		\ pc element top left
+		| CREATE _$page_|tl $01950000 t,
+		m: ( --)
+			_$page_|tl COUNT this :write
+		; overrides :|tl
+
+		\ pc element top right
+		| CREATE _$page_|tr $01960000 t,
+		m: ( --)
+			_$page_|tr COUNT this :write
+		; overrides :|tr
+
+		\ pc element bottom left
+		| CREATE _$page_|bl $01970000 t,
+		m: ( --)
+			_$page_|bl COUNT this :write
+		; overrides :|bl
+
+		\ pc element bottom left
+		| CREATE _$page_|br $01980000 t,
+		m: ( --)
+			_$page_|br COUNT this :write
+		; overrides :|br
+		</code> </pre> <p>
+		PC elements have been supported by CVS.
+		</p> <pre> <code>
+		m: ( line character -- )
+			3 this :?send
+			$9A _emit_buffer C!
+			_emit_buffer 1+ C!
+			_emit_buffer 2+ C! _emit_buffer 03 this :write
+		; overrides :box
+
+
+		m:  ( line character depth width num.in num.out -- }
+			7 this :?send
+			$9B _emit_buffer  C!
+			_emit_buffer 1+  C!
+			_emit_buffer 2+  C!
+			_emit_buffer 3 + C! _emit_buffer 04 this :write
+			_emit_buffer     C!
+			_emit_buffer 1+  C!
+			_emit_buffer 2+  C! _emit_buffer 03 this :write
+		; overrides :element
+
+
+		m: ( line character number -- }
+			4 this :?send
+			$9C _emit_buffer C!
+			_emit_buffer 1+ C!
+			_emit_buffer 2+ C!
+			_emit_buffer 3 + C! _emit_buffer 04 this :write
+		; overrides :line
+
+
+		m: ( line character line -- )
+			4 this :?send
+			$9D _emit_buffer C!
+			_emit_buffer 1+  C!
+			_emit_buffer 2+  C!
+			_emit_buffer 3 + C! _emit_buffer 04 this :write
+		; overrides :zed
+
+
+
+		</code> </pre> <p>
+		It seemed like a good idea at the time. The functions labels are
+		stored in the application as a series of counted strings. Each string is
+		aligned. The series is ended with a -1.
+		This word takes those strings, removes the alignment bytes and the
+		termination character. The resultant string starts with a count field. <br>
+		i.e: <br>
+		<pre><b>source     :</b></pre> -$string- -aligment- -$string- -alignment- -terminator-<br>
+		<pre><b>destination:</b></pre> -count- -$string- -$string-
+		</p> <pre> <code>
+
+		| 0FF CONSTANT _#labels_finished
+		| : pack_labels ( source destination--)
+			>R R@     \ source dest(--
+			\ data goes after the count
+			#$count_length +        \ source dest(--
+			BEGIN
+				OVER $count@  _#labels_finished <>
+			WHILE
+				2DUP #$buffer $move
+				OVER COUNT CHARS +  \ source dest after(--
+				jump -              \ source dest length(--
+				+                   \ source new_dest(--
+				SWAP COUNT CHARS +
+				1+ -2 AND
+				SWAP                \ new_source new_dest(--
+			REPEAT
+			\ new_source new_dest(--
+			NIP
+			R@ - 1-               \ number_bytes(--
+			R> $count!
+		;
+
+    	m: ( table_addr -- )
+		DUP IF
+			$buffer
+				buffer pack_labels
+				buffer $count@ 2 + this :?send
+				$A9 _emit_buffer C! _emit_buffer 01 this :write
+				buffer COUNT this :write
+				$81 _emit_buffer C! _emit_buffer 01 this :write
+			kill_buffer
+		ELSE
+			2 this :?send
+			$A9 _emit_buffer    C!
+			$81 _emit_buffer 1+ C! _emit_buffer 02 this :write
+		THEN
+		; overrides :labels
+
+		m: ( table_addr -- )
+		DUP IF
+			$buffer
+				buffer pack_labels
+				buffer C@ 2 + this :?send
+				$AA _emit_buffer C! _emit_buffer 01 this :write
+				buffer COUNT this :write
+				$81 _emit_buffer C! _emit_buffer 01 this :write
+			kill_buffer
+		ELSE
+			2 this :?send
+			$AA _emit_buffer    C!
+			$81 _emit_buffer 1+ C! _emit_buffer 02 this :write
+		THEN
+		; overrides :shift_labels
+
+
+		| CREATE _$pipe_cursor $01AB0000 t,
+		m: ( --)
+			_$pipe_cursor COUNT this :write
+		; overrides :cursor
+
+		| CREATE _$pipe_no_cursor $01AC0000 t,
+		m: ( --)
+			_$pipe_no_cursor COUNT this :write
+		; overrides :no_cursor
+
+		m: ( addr num --)
+			DUP 2+ this :?send
+			$AD _emit_buffer C! _emit_buffer one this :write
+			this :write
+			$81 _emit_buffer C! _emit_buffer one this :write
+		; overrides :message
+
+		| CREATE _$pipe_no_mess 01AE0000 t,
+		m: ( --)
+			_$pipe_no_mess COUNT this :write
+		; overrides :no_message
+
+		m: ( colour --)
+			2 this :?send
+			$AF _emit_buffer C!
+			_emit_buffer 1+ C! _emit_buffer 02 this :write
+		; overrides :foreground  ( forground colour)
+
+		m: ( colour --)
+			2 this :?send
+			$B0 _emit_buffer C!
+			_emit_buffer 1+  C! _emit_buffer 02 this :write
+		; overrides :background ( backgroung colour)
+
+		m: ( colour --)
+			2 this :?send
+			$B1 _emit_buffer C!
+			_emit_buffer 1+ C! _emit_buffer 02 this :write
+		; overrides :border     ( Border colour)
+		</code> </pre> <p>
+		End of words used to access the terminal driver.
+		</p> <pre> <code>
+		ram_variable %xx
+		m: ( --)
+			$83 _emit_buffer C!
+			_emit_buffer 01 this :write
+		; overrides :bye
+
+		m: ( indent --)
+			CR DUP SPACES ." pipe | " ." Object: " this .h
+			\ indent(--
+			DROP
+			send
+			; overrides :print
+
+		</code> </pre> <p>
+		The control_block is used to communicate with the terminal object.
+		For this to work external objects must be able to set and reset the control block.
+		</p> <pre> <code>
+
+		m: ( addr --)
+			%%control_block> !
+		; overrides :!control_block
+
+		m: ( --addr)
+			%%control_block> @
+		; overrides :@control_block
+
+
+		\ relevent for pipes, set to true if someone using
+		m: ( --flag)
+			%%control_block> @ #p_owner + @
+		; method :inuse?
+
+		m: ( indent --)
+			CR DUP SPACES ." tube | " ." Object: " this .h
+			DROP send
+		; overrides :print
+
+
+target_also
+&drivers
+target_definitions
+
+	end_class tube
+
+target_previous_definitions
+target_previous
+
+	</code> </pre> <p>
+	The client. If we have the control block we can fiddle with that
+	and not get involved any further.
+	These words will work agains a tube or port_tube. The data is moved through
+	the buffer pointed to by tpoint because port_tube requires this action.
+	</p> <pre> <code>
+
+		| : _expect_action { ( control_block --control_block) }{
+				variable %terminator
+			}
+			\ have to receive into a buffer as the receive area may be in
+			\ dual port memory.
+			DUP #p_count + W@ get_buffer
+				buffer OVER #p_count + W@ ACCEPT \ control_block count(--
+				buffer jump #p_address + @ jump
+				1 + \ add in terminator
+				3+ $FFFFFFFC AND \ round to long word count
+				MOVE
+			kill_buffer
+			\ control_block actual_count(--
+			\ we want control C set befor the task is told about expect
+			user_base activation_^c_set W@ IF ( ^C )
+				TRUE jump #p_^C + W!
+				FALSE user_base activation_^c_set W!
+				OVER #p_^C_task + @
+				IF
+					TRUE jump #p_^C_task + @
+					[ #activation_^c_set #activation_status - ]T LITERAL + W!
+				THEN
+			THEN
+			'input_file @ :terminal_mode@ IF
+				OVER #p_address + @ OVER + portC@ %terminator !
+			ELSE
+				\ in binary mode there is no terminator
+				zero %terminator !
+			THEN
+			1 CHARS + \ add in termination code
+			OVER #p_actual + W!
+			KEY? OVER #p_?data + W!
+			xtest
+			DUP #p_status + @ ?DUP IF
+				zero jump #p_function + W!
+				wake SWAP  W!
+			THEN
+			%terminator @ #end_eof = ABORT" Disconnected"
+		;
+
+
+		| : _type_action   ( control_block --control_block)
+			DUP #p_address + @
+			OVER #p_count + W@
+			_cvs_terminal_codes_decode
+			KEY? OVER #p_?data + W!
+			\ wake up task we are supplying terminal services too
+			xtest
+			DUP #p_status + @ ?DUP IF
+				zero jump #p_function + W!
+				wake SWAP  W!
+			THEN
+		;
+
+		| : _no_action ( control_block -- control_block)
+
+		;
+
+         CREATE  function.vectors
+         4 tw,
+         ' _no_action     t,
+         ' _expect_action t,
+         ' _type_action   t,
+         ' _no_action     t,
+
+
+
+		: logon  { variable %object -- }
+
+			%object @ :@control_block
+			10 OVER #p_owner + port_xgrab $ABORT
+			TRUE OVER #p_local + W!
+
+
+			\ Old rlogon code reset request on logoff. We need to turn to the function
+			\ code. If the function code is non zero then it is a safe bet that
+			\ the task is waiting for the terminal. The old logon code doesn't
+			\ reset the function code under normal operation so there is a risk
+			\ but small.
+			DUP #p_function + W@ IF
+				DUP #p_status + @ ?DUP IF
+					zero jump #p_function + W!
+					\ hopefully the other task will wake us
+					xtest
+					wake SWAP  W!
+					#100 xwait
+				THEN
+			THEN
+
+			\ control block(--
+			BEGIN
+				user_base activation_^c_set W@ IF ( ^C )
+					TRUE OVER #p_^C + W!
+					FALSE user_base activation_^c_set W!
+					DUP #p_^C_task + @
+					IF
+						TRUE OVER #p_^C_task + @
+						[ #activation_^c_set #activation_status - ]T LITERAL + W!
+					THEN
+				THEN
+				DUP #p_request + W@ IF
+					FALSE OVER #p_request + W!
+					DUP #p_function + W@
+					\ as we use the function code on logon to
+					\ determine if the task is waiting for
+					\ the terminal we must set it to zero in
+					\ normal operation, if we wake te task.
+					\ limit to number of vectors in table
+					function.vectors W@ 1- MIN
+					\ get vector
+                                        \ the function called sets out status area back to xtest
+                                        \ for the xwait that follows.
+					4* function.vectors + 2 + @
+                                        CATCH ?DUP IF
+                                                \ table $(--
+					        SWAP
+					        \ start the task as it may have been
+					        \ a bye and the task may be waiting
+					        \ for us to ack
+					        DUP #p_status + @ ?DUP IF
+					        	zero jump #p_function + W!
+					                wake SWAP  W!
+					        THEN
+					        SWAP
+                                                \ able $ (--
+						\ a remote logon will not set this
+						\ flag so the default has to be remote.
+						FALSE jump #p_local + W!
+						SWAP #p_owner + port_release \ $(--
+						$ABORT
+					THEN
+				THEN
+				\ hopefully other task will wake us up.
+                                \ the function called above has set our status area to xtest
+				2 xwait
+				\ transfer line and character size.
+				\ If we are logged in from telnet the window
+				\ size can alter at runtime.
+				'input_file @ :character_max @ %object @ :character_max !
+				'input_file @ :line_max @ %object @ :line_max !
+			AGAIN
+		;
+
+		\ for tasks that only output data; ^C stops this instead of
+		\ being transfered to listening task.
+		: listen  { variable %object -- }
+
+			%object @ :@control_block
+			10 OVER #p_owner + port_xgrab $ABORT
+			TRUE OVER #p_local + W!
+
+
+			\ Old rlogon code reset request on logoff. We need to turn to the function
+			\ code. If the function code is non zero then it is a safe bet that
+			\ the task is waiting for the terminal. The old logon code doesn't
+			\ reset the function code under normal operation so there is a risk
+			\ but small.
+			DUP #p_function + W@ IF
+				DUP #p_status + @ ?DUP IF
+					zero jump #p_function + W!
+					\ hopefully the other task will wake us
+					xtest
+					wake SWAP  W!
+					#100 xwait
+				THEN
+			THEN
+
+			\ control block(--
+			BEGIN
+				^C
+				DUP #p_request + W@ IF
+					FALSE OVER #p_request + W!
+					DUP #p_function + W@
+					\ as we use the function code on logon to
+					\ determine if the task is waiting for
+					\ the terminal we must set it to zero in
+					\ normal operation, if we wake te task.
+					\ limit to number of vectors in table
+					function.vectors W@ 1- MIN
+					\ get vector
+					4* function.vectors + 2 + @
+					CATCH ?DUP IF
+							SWAP
+							\ start the task as it may have been
+							\ a bye and the task may be waiting
+							\ for us to ack
+							DUP #p_status + @ ?DUP IF
+								zero jump #p_function + W!
+								wake SWAP  W!
+							THEN
+							SWAP
+						\ a remote logon will not set this
+						\ flag so the default has to be remote.
+						FALSE jump #p_local + W!
+						SWAP #p_owner + port_release \ (--
+						$ABORT
+					THEN
+				THEN
+				\ transfer line and character size.
+				\ If we are logged in from telnet the window
+				\ size can alter at runtime.
+				'input_file @ :character_max @ %object @ :character_max !
+				'input_file @ :line_max @ %object @ :line_max !
+				xpause
+			AGAIN
+		;
+
+
+	: open_tube
+			$" tube" R/W $open
+			DUP 'output_file !
+			DUP 'input_file !
+			'abort_file !
+	;
+
+
+
+
+	</code> </pre>
+
+</body>
+</html>

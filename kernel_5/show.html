@@ -1,0 +1,44 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+<p>
+Using the address find the nearest head and display the word in disassembled forth.
+</p>
+<p>
+It will get better.
+</p>
+	<pre> <code>
+	: show ( addr n --)
+		OVER code? not IF
+			DROP
+			CR ." Not in code space"
+		ELSE
+			SWAP $30 - SWAP DUMP
+		THEN
+	;
+	</code> </pre>
+<p>
+It will get better
+</p>
+<h5>15.6.1.2194 SEE</h5> 
+<p>TOOLS</p> 
+<p>( "<spaces>name" -- )</p>
+<p>
+Display a human-readable representation of the named word's definition. 
+The source of the representation (object-code decompilation, source block, etc.)
+and the particular form of the display is implementation defined. 
+</p>
+<p>
+SEE may be implemented using pictured numeric output words. Consequently, 
+its use may corrupt the transient region identified by #>.
+</p> 
+
+</body>
+</html>

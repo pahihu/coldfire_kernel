@@ -1,0 +1,283 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a name="inline_strings"></a>
+<h3>Inline strings</h3>
+<a HREF="./license.html">license</a>
+<dl>
+<dt>$ -> counted strings
+<dt>S -> string described by two stack items
+<dt>z -> zero terminated, not implemented in kernel.
+</dl>
+<a name=",string"></a>
+<h5>,string ( addr count --)</h5>
+<p>
+Take a string pointed to by addr and count and place it in the dictionary.
+</p>
+
+	<pre> <code>
+	: ,string ( addr count--)
+		2DUP              \ addr count addr  count (--
+		NIP HERE $count!
+		#$count_length ALLOT    \ addr count (--
+		TUCK                    \ count addr count(--
+		HERE SWAP CMOVE         \ count(--
+		ALLOT
+		ALIGN
+    ;
+	</code> </pre>
+
+<h5>S string run time code</h5>
+<p>
+Place the address of the string on the stack and adjust things so that the
+string is missed.
+</p>
+
+	<pre> <code>
+	\ Run time code
+	: _S"_do ( -- addr count )
+		R>				 \ Next execution on return
+		COUNT            \ addr u (--
+		2DUP             \ addr u addr u (--
+		+                \ addr u next1
+		ALIGNED          \ addr count next2
+		>R
+	;
+	</code> </pre>
+
+<a name=",_"></a>
+<h5>," ( --) </h5>
+<p>
+Take a string delimited by " from the input stream and place it in the dictionary.
+</p>
+
+	<pre> <code>
+	: ," ( --)
+		[CHAR] " PARSE ,string
+	;
+	</code> </pre>
+<a name=".quote"><h5>6.1.0190 ."</h5></a>
+<p>
+dot-quote CORE
+</p>
+<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+<p>Compilation: ( "ccc"" -- )</p>
+<p>Parse ccc delimited by " (double-quote).
+Append the run-time semantics given below to the current definition.</p>
+<p>Run-time: ( -- )</p>
+<p>Display ccc. </p>
+<samp>
+Typical use: : X ... ." ccc" ... ;
+</samp>
+<p>
+An implementation may define interpretation semantics for ." if desired.
+In one plausible implementation, interpreting ." would
+display the delimited message. In another plausible implementation,
+interpreting ." would compile code to display the message later.
+In still another plausible implementation, interpreting ."
+would be treated as an exception. Given this variation a Standard Program
+may not use ." while interpreting. Similarly, a Standard Program may
+not compile POSTPONE ." inside a new word, and then use
+that word while interpreting.
+</p>
+	<pre> <code>
+    : ."
+    	COMPILE dot" ,"
+    ;  IMMEDIATE
+	</code> </pre>
+
+<a name="SLITERAL"></a>
+<h5>17.6.1.2212 SLITERAL</h5>
+<p>STRING</p>
+<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+<p>Compilation: ( c-addr1 u -- )</p>
+<p>Append the run-time semantics given below to the current definition.</p>
+<p>Run-time:       ( -- c-addr2 u )</p>
+<p>Return c-addr2 u describing a string consisting of the characters
+specified by c-addr1 u during compilation.
+A program shall not alter the returned string.
+</p>
+
+	<pre> <code>
+	: SLITERAL \ compile time ( addr n--)
+	           \ runtime ( --add n)
+		COMPILE _S"_do ,string ; IMMEDIATE
+
+	</code> </pre>
+
+<h5>$ string run time code</h5>
+<p>
+Place the address of the string on the stack and adjust things so that the
+string is missed.
+</p>
+
+
+	<pre> <code>
+	\ Run time code
+	: _$"_do ( -- addr)
+		R>
+		DUP
+		COUNT +    \ addr addr1 (--
+		ALIGNED    \ addr addr2 (--
+		>R
+	;
+	</code> </pre>
+
+
+<a name="$_"></a>
+<h5>$"</h5>
+<p>
+ANS standard defines this word as C", however COLDFORTH has a word set
+that is based on calling a counted string $, therefor the $" definition
+should remain.
+</p>
+
+
+	<pre> <code>
+        #$buffer ubuffer _stemp_buffer
+
+	: $"    \ interpret ( "string" -- c_addr )
+			\ compile   ( "string" -- )
+			\ runtime   ( -- c_addr )
+	        STATE @ IF
+					COMPILE _$"_do ,"
+	        ELSE  \ interpret action
+			[CHAR] " WORD
+			_stemp_buffer OVER C@ 1+ MOVE
+                        _stemp_buffer
+		THEN
+	; IMMEDIATE
+
+	forth : $"
+		HOST
+		COMPILE _$"_do ,"
+	; TARGET
+	</code> </pre>
+
+
+<a name="C_"></a>
+<h5>ANS 6.2.0855 C"</h5>
+<p>CORE EXT</p>
+<p>
+Interpretation: Interpretation semantics for this word are undefined.
+</p>
+<p>
+Compilation: ( "ccc< quote >" -- )
+</p>
+<p>
+Parse ccc delimited by " (double-quote) and append the run-time semantics given below to the current definition.
+</p>
+<p>
+Run-time: ( -- c-addr )
+</p>
+<p>
+Return c-addr, a counted string consisting of the characters ccc.
+A program shall not alter the returned string.
+</p>
+	<pre> <code>
+ 	: C"    \ interpret ( "string" -- c_addr )
+			\ compile   ( "string" -- )
+			\ runtime   ( -- c_addr )
+	        STATE @ IF
+					COMPILE _$"_do ,"
+	        ELSE  \ interpret action
+			[CHAR] " WORD
+			_stemp_buffer OVER C@ 1+ MOVE
+                        _stemp_buffer
+		THEN
+	; IMMEDIATE
+
+        forth : C"
+		HOST
+		COMPILE _$"_do ,"
+	; TARGET
+	</code> </pre>
+
+
+<a name="S_"></a>
+<h5>ANS 6.1.2165 S"</h5>
+<h5>ANS 11.6.1.2165 S"</h5>
+<p>CORE and FILE</p>
+<p>
+Interpretation: ( "ccc" -- c-addr u )
+</p>
+<p>
+Parse ccc delimited by " (double quote). Store the resulting
+string c-addr u at a temporary location. The maximum length of the
+temporary buffer is implementation-dependent but shall be no
+less than 80 characters. Subsequent uses of S" may overwrite the
+temporary buffer. At least one such buffer shall be provided.
+</p>
+<p>
+Compilation: ( "ccc< quote >" -- )
+</p>
+<p>
+Parse ccc delimited by " (double-quote). Append the run-time semantics
+given below to the current definition.
+</p>
+<p>
+Run-time: ( -- c-addr u )
+</p>
+<p>
+Return c-addr and u describing a string consisting of the characters ccc.
+A program shall not alter the returned string.
+</p>
+<pre> <samp>
+		Typical use: : X ... S" ccc" ... ;
+</samp> </pre>
+<p>
+This word is found in many systems under the name " (quote). However,
+current practice is almost evenly divided on the use of ", with many
+systems using the execution semantics given here, while others return
+the address of a counted string. We attempt here to satisfy both camps
+by providing two words, S" and the Core Extension word C" so that
+users may have whichever behavior they expect with a simple renaming
+operation.
+</p>
+
+	<pre> <code>
+	: S"    \ interpret ( "string" -- c_addr n )
+			\ compile   ( "string" -- )
+			\ runtime   ( -- c_addr n )
+		STATE @ IF
+			[CHAR] " PARSE  [COMPILE] SLITERAL
+	    ELSE  \ interpret action
+			\ This is required to meet 11.6.1.2165
+			\ The standard requires this to be valid until
+			\ S" is used in interpretive mode again, so,
+			\ I suppose we had better have a special buffer for
+			\ this one word, another 4 bytes of user space zip
+			\ out the window.
+			[CHAR] " WORD
+			_stemp_buffer OVER C@ 1+ MOVE
+            _stemp_buffer COUNT
+		THEN
+	; IMMEDIATE
+
+	</code> </pre>
+	<pre> <code>
+    forth : S" 
+		HOST
+		COMPILE _S"_do ," 
+	; TARGET
+	</code> </pre>
+<p>
+So an application can panic
+</p>
+	<pre> <code>
+	: panic" 
+		COMPILE _panic"_do ," 
+	; IMMEDIATE
+	</code> </pre>
+
+
+
+</BODY>
+</HTML>

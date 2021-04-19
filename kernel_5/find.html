@@ -1,0 +1,303 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<h5>hash ( c-addr u wid --thread )</h5>
+<p>
+Given the address of a character string, 
+the number of chracters and the wid return the address
+of the thread that should contain the word.
+</p>
+
+
+	<pre> <code>
+	\ hash value of last word hashed
+	uvariable %name_hash
+	: hash ( c-addr u wid -- list)
+		-rot checksum %name_hash !
+		[ _#voc_head> _#voc_wid - ]T LITERAL + @                     \ c-addr heads<-
+		%name_hash @                                                 \ heads char (--
+		OVER [ _#voc_heads_count  _#voc_heads_base - ]T LITERAL + @  \ heads char count (-- 
+		1- AND                                                       \ heads list (--
+		CELLS                                                        \ heads offset (-- 
+		[ _#voc_heads_data _#voc_heads_base - ]T LITERAL + + 
+	;
+	</code> </pre>
+
+<a name="search_thread"></a>
+<h5>search_thread ( c-addr u head -- 0 | xt 1 | xt -1 )</h5>
+<p>
+Find the definition identified by the string c-addr u in the thread 
+identified by head. If the definition is not found, return zero. 
+If the definition is found, return its execution token xt and one (1) 
+if the definition is immediate, minus-one (-1) otherwise. 
+</p>
+
+
+	<pre> <code>
+
+
+
+	0  CONSTANT _#not_found
+	1  CONSTANT _#immediate
+	-1 CONSTANT _#otherwise
+
+	: search_thread ( c-addr u thread -- 0 | xt 1 | xt -1 )
+		>R                             \ c-addr u (--
+		BEGIN
+			R> @ >R
+			R@
+		WHILE  
+			R@ 	[ _#head_hash _#head_link - ]T LITERAL + @
+			%name_hash @ = IF  \ c-addr u(--
+				R@                         \ c-addr u lfa (--
+				lfa>nfa                    \ c-addr u nfa (--
+				name_count NIP             \ c-adr u u1 (--
+				[ _#name_count_bits _#smudge_bit OR ]T LITERAL AND OVER
+				= IF \ counts are equal and smudge bit not set
+					\ c-addr u (--
+					2DUP R@ lfa>nfa      \ c-addr u c-addr u addr (--
+					name_count _#name_count_bits AND \ c-addr u c-addr u c-addr1 u1(--
+					COMPARE not IF         \ we have a match
+						2DROP              \ (--
+						( R@ last_lfa ! ) R@ lfa>nfa C@ _#immediate_bit AND IF
+							R> lfa>xt _#immediate
+						ELSE
+							R> lfa>xt _#otherwise 
+						THEN
+						EXIT
+					THEN
+					\ count u (--
+				THEN
+			THEN
+		REPEAT
+		r>drop
+		2DROP
+		_#not_found
+	;
+
+
+	</code> </pre>
+
+<a name="SEARCH-WORDLIST"></a>
+<h5>ANS 16.6.1.2192 SEARCH-WORDLIST</h5> 
+<p>( c-addr u wid -- 0 | xt 1 | xt -1 )</p>
+<p>
+Find the definition identified by the string c-addr u in the word-list 
+identified by wid. If the definition is not found, return zero. 
+If the definition is found, return its execution token xt and one (1) 
+if the definition is immediate, minus-one (-1) otherwise. 
+</p>
+<p> 
+The string argument to SEARCH-WORDLIST is represented by c-addr u, 
+rather than by just c-addr as with FIND. The committee wishes to 
+establish c-addr u as the preferred representation of a string on 
+the stack, and has adopted that representation for all new functions 
+that accept string arguments. While this decision may cause the 
+implementation of SEARCH-WORDLIST to be somewhat more difficult in 
+existing systems, the committee feels that the additional difficulty 
+is minor. 
+</p>
+<p>
+When SEARCH-WORDLIST fails to find the word, it does not return 
+the string, as does FIND. This is in accordance with the general 
+principle that Forth words consume their arguments.
+</p>
+<p>
+<strong>COLDFORTH</strong>
+No truncated names here. The head is the name string with no
+truncation
+</p>
+
+
+	<pre> <code>
+	: SEARCH-WORDLIST ( c-addr u wid -- 0 | xt 1 | xt -1 )
+		3DUP                           \ c-addr u wid c-addr u wid (--
+		hash                          \ c-addr u wid thread (--
+		NIP                            \ c-addr u thread(--
+		search_thread
+	;
+	</code> </pre>
+
+
+
+<a name="FIND"></a>
+<h5>FIND</h5>
+<p>ANS 6.1.1550 FIND</p>
+<p>( c-addr -- c-addr 0  |  xt 1  |  xt -1 )</p>
+<p>
+Find the definition named in the counted string at c-addr.
+If the definition is not found, return c-addr and zero.
+If the definition is found, return its execution token xt.
+If the definition is immediate, also return one (1), otherwise
+also return minus-one (-1). For a given string, the values
+returned by FIND while compiling may differ from those returned
+while not compiling.
+</p>
+<p>
+One of the more difficult issues which the Committee took on was the
+problem of divorcing the specification of implementation mechanisms
+from the specification of the Forth language. Three basic implementation
+approaches can be quickly enumerated:
+</p>
+<p>
+<dl>
+<dt>1) Threaded code mechanisms.
+<dd>These are the traditional approaches to
+	implementing Forth, but other techniques may be used.
+<dt>2) Subroutine threading with macro-expansion (code copying).
+<dd>Short routines,
+	like the code for DUP, are copied into a definition rather than compiling a
+	JSR reference.
+
+<dt>3) Native coding with optimization.
+<dd>This may include stack optimization
+(replacing such phrases as SWAP ROT + with one or two machine instructions,
+for example), parallelization (the trend in the newer RISC chips is to
+have several functional subunits which can execute in parallel), and so on.
+</dl>
+<p>
+The initial requirement (inherited from Forth-83) that compilation addresses
+be compiled into the dictionary disallowed type 2 and type 3 implementations.
+</p>
+<p>
+Type 3 mechanisms and optimizations of type 2 implementations were
+hampered by the explicit specification of immediacy or non-immediacy
+of all standard words. POSTPONE allowed de-specification of immediacy
+or non-immediacy for all but a few Forth words whose behavior must be
+STATE-independent.
+</p>
+<p>
+One type 3 implementation, Charles Moore's cmForth, has both compiling
+and interpreting versions of many Forth words. At the present, this
+appears to be a common approach for type 3 implementations. The Committee
+felt that this implementation approach must be allowed. Consequently,
+it is possible that words without interpretation semantics can be found
+only during compilation, and other words may exist in two versions: a
+compiling version and an interpreting version. Hence the values returned
+by FIND may depend on STATE, and ' and ['] may be unable to find words
+without interpretation semantics.
+</p>
+<p>
+Complete search for a string
+</p>
+	<pre> <code>
+        | : _sfind  ( addr n -- 0 | at 1 | xt -1 )
+                2DUP checksum %name_hash !
+		n_context_count @ zero ?DO
+			2DUP 				    \ addr n addr n (--
+			I CELLS context + @		\ addr n  addr  n wid(--
+			SEARCH-WORDLIST			\ addr n ; 0 | xt 1 | xt -1 (--
+			?DUP IF					\ addr n ; xt 1 | xt -1 (--
+				2SWAP 2DROP UNLOOP EXIT	\ xt 1 | xt -1 (--
+			THEN					\ addr n (--
+		LOOP
+                2DROP
+                zero
+        ;
+        </code></pre>
+        <p>
+        Search for the supplied case, if that failes change case and search again.
+        </p>
+        <p>
+        This search method makes COLDFORTH case sensetive, but not case specific. That is HI and hi are
+        different words, but is only one is defined hi and HI can be used to find the defined one.
+        </p>
+        <p>
+        If you want fast compiles you should use <samp>check_case</samp> and get your case in order.
+        <pre><code>
+
+        uvariable %check_case
+        : check_case TRUE %check_case ! ;
+
+        : alphi? ( char -- flag)
+            DUP [CHAR] A < IF \ >
+                DROP FALSE EXIT
+            THEN
+            DUP [CHAR] z > IF
+                DROP FALSE EXIT
+            THEN
+            DUP [CHAR] Z > OVER [CHAR] a < AND IF \ >
+                DROP FALSE EXIT
+            THEN
+            DROP TRUE
+        ;
+
+        : change_case ( addr n --)
+                zero ?DO
+                        DUP char@ DUP alphi? IF
+                                $20 XOR OVER char!
+                        ELSE
+                                DROP
+                        THEN
+                        1 CHARS +
+                LOOP
+                DROP
+        ;
+
+        : lowercase ( addr n --)
+                zero ?DO
+                        DUP char@ DUP alphi? IF
+                                $20 OR OVER char!
+                        ELSE
+                                DROP
+                        THEN
+                        1 CHARS +
+                LOOP
+                DROP
+        ;
+
+
+
+	: sfind  ( addr n -- 0 | xt 1 | xt -1 )
+                2DUP _sfind DUP IF
+                        \ addr n xt flag (--
+                        2SWAP 2DROP
+                        EXIT
+                THEN
+                DROP
+                \ addr n(--
+                \ If the user is checking the case give up now.
+                %check_case @ IF
+                        2DROP
+                        zero
+                        EXIT
+                THEN
+                \ addr n(--
+                \ we failed with the case supplied; now change the case and have another go.
+                \ The supplied string should not be altered.
+                \ As you can see, getting the case wrong isn't a show stopper, but it does slow things down
+                DUP get_buffer  \ addr n (--
+                        TUCK
+                        buffer SWAP MOVE \ n(--
+                        buffer SWAP      \ add n(--
+                        2DUP change_case
+                        2DUP _sfind ?DUP IF
+                                2SWAP 2DROP
+                                kill_buffer
+                                EXIT
+                        THEN
+                        \ don't give up now convert it to lowercase in case it was mixedcase.
+                        \ A lower case dictionary entry will match all case search word.
+                        2DUP lowercase
+                        _sfind
+                kill_buffer
+	;
+
+	: FIND  ( $ -- $ 0 | xt 1 | xt -1 )
+		DUP COUNT sfind DUP IF
+			ROT DROP
+		THEN
+	;
+	</code> </pre>
+
+</BODY>
+</HTML>
+

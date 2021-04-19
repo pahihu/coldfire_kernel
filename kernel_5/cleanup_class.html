@@ -1,0 +1,78 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>cleanup_class</h3>
+<a HREF="./license.html">license</a>
+<p>
+All I/O has to be derived from this class.
+</p>
+
+<p> 
+We provide two lists as i/o object often have to be linked twice, once
+when the objects are being constructed. Once in cleanup lists.
+The second link is intended for the cleanup list. Hence it's name.
+</p>
+	<pre> <code>
+	\ object 
+	\ 	:construct
+	\ 	:destruct
+	\ 	:print
+	\	 	link_class
+	\			:list_head
+        \			:number_of_links
+        \                               cleanup_class
+	\			                :link_cleanup
+	\			                :unlink_cleanup
+
+        link_class class
+
+		double% instance_variable %%cleanup_link
+                cell%   instance_variable %%cleanup_inuse
+
+                m: ( --)
+                        this [parent] :construct
+                        FALSE %%cleanup_inuse !
+                        \ something to indicate that it is unset
+			\ has to be eight bytes.
+			S" -notset-" %%cleanup_link SWAP MOVE
+		; overrides :construct
+
+		m: ( --)
+                        %%cleanup_inuse @ IF
+			        %%cleanup_link unlink_double
+                                FALSE %%cleanup_inuse !
+                        THEN
+		; method :unlink_cleanup
+
+		m: ( --)
+                        this :unlink_cleanup
+                        this [parent] :destruct
+		; overrides :destruct
+
+		\ The cleanup link
+		\ ----------------
+		m: ( head --)
+                        %%cleanup_inuse @ not IF
+			        %%cleanup_link SWAP link_double
+                                TRUE %%cleanup_inuse !
+                        ELSE
+                                panic" cleanup double link"
+                        THEN
+		; method :link_cleanup
+
+
+		: cleanup>object ( addr --obj)
+			[ %%cleanup_link ]T LITERAL
+			-
+		;
+	end_class cleanup_class
+	</code> </pre>
+</body>
+</html>

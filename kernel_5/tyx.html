@@ -1,0 +1,864 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h5>serial devices</h5>
+<a HREF="./license.html">license</a>
+<pre> <code>	 
+	??HEX
+
+
+
+    	$20 CONSTANT _#m68command_reset_receive
+	$30 CONSTANT _#m68command_reset_transmit
+	$10 CONSTANT _#m68command_reset_mode
+
+
+	| $01  CONSTANT _#m68_tx
+	| $02  CONSTANT _#m68_rx
+	| $04  CONSTANT _#m68_break
+	| $80  CONSTANT _#m68_inputs
+
+	 | : _m68init ( --)
+
+
+[ #BCM550h #BCM550j + #BVP5552 + #BVP5551 + [IF] ]T
+
+		\ port a
+		_#m68command_reset_receive  _#m68a_base _#m68_control + C!  \ reset receiver
+		_#m68command_reset_transmit _#m68a_base _#m68_control + C!
+		_#m68command_reset_mode     _#m68a_base _#m68_control + C!  \ table_entry device(--mode1 can now be accessed
+
+
+		_#m68a_vector               _#m68a_base _#m68_int_vector + C!
+
+		\ select timer as source
+		$60                          _#m68a_base _#m68_aux_control + C!
+		\ mode 1 first, 8 bits no parity
+		$13                         _#m68a_base _#m68_mode + C!
+		\ mode 2 second, 1 stop bit
+		$0F                         _#m68a_base _#m68_mode + C!		
+		\ timer
+		$0DD                        _#m68a_base _#m68_clock_select + C!
+
+		[ _#bus_clock #32 / #9600 / ]T LITERAL 
+		                            _#m68a_base _#m68_prescaler_LSB + C!
+		[ _#bus_clock #32 / #9600 / $8 RSHIFT ]T LITERAL
+		                            _#m68a_base _#m68_prescaler_MSB + C!
+
+		\ enable tranmit and receive interrupts
+		$3                           _#m68a_base _#m68_int_enable + C!
+
+
+
+		\ port b
+
+		_#m68command_reset_receive   _#m68b_base _#m68_control + C!  \ reset receiver
+		_#m68command_reset_transmit  _#m68b_base _#m68_control + C!
+		_#m68command_reset_mode      _#m68b_base _#m68_control + C!  \ table_entry device(--mode1 can now be accessed
+
+		_#m68b_vector                _#m68b_base _#m68_int_vector + C!
+
+		\ select timer as source
+		$60                           _#m68b_base _#m68_aux_control + C!
+		\ mode 1 first, 8 bits no parity
+		$13                           _#m68b_base _#m68_mode + C!
+		\ mode 2 second, 1 stop bit
+		$0F                           _#m68b_base _#m68_mode + C!
+		$0DD                          _#m68b_base _#m68_clock_select + C!
+
+		[ _#bus_clock #32 / #9600 / ]T LITERAL
+		                             _#m68b_base _#m68_prescaler_LSB + C!
+		[ _#bus_clock #32 / #9600 / #8 RSHIFT ]T LITERAL
+		                             _#m68b_base _#m68_prescaler_MSB + C!
+
+		$3                            _#m68b_base _#m68_int_enable + C!
+[ [THEN] ]T
+
+
+	;
+
+
+
+	io_common class
+
+
+		protected
+
+		$200 CONSTANT _#expect_buffer_size
+
+		ram_variable _%opened_files
+
+		\ bas address of device. Required because two devices
+		\ use the same code
+		ram_variable %%device
+                cell% instance_variable %%exp_interrupts
+                cell% instance_variable %%type_interrupts
+                cell% instance_variable %%exp_unexpected
+                cell% instance_variable %%exp_process_char
+
+		\ expect buffer
+		\ This is implementented as a rotating buffer with an in
+		\ and out pointer
+		_#expect_buffer_size bytes% instance_variable %%expect_buffer
+		cell% instance_variable %%expect_in>
+		cell% instance_variable %%expect_out>
+
+		\ interrupt control
+		\ positive for type
+		\ negative for expect
+		\ It comminicates  to the interrupt routine the tasks desire.
+		\ A task can only be expecting or typeing. Not both.
+		cell% instance_variable %%task_count
+		cell% instance_variable %%task_data_point
+		\ characters received into %%task_data_point
+		cell% instance_variable %%task_received
+		\ buffer to store character to be echoed.
+
+		\ flags that control how the serial device behaves.
+		1 bytes% instance_variable %%rubbish
+		1 bytes% instance_variable %%spare
+		1 bytes% instance_variable %%echo
+		1 bytes% instance_variable %%sxon_enable
+
+		\ flags that control program flow.
+		1 bytes% instance_variable %%do_echo
+		1 bytes% instance_variable %%echo_character
+		1 bytes% instance_variable %%waiting_xon
+		1 bytes% instance_variable %%in_buffer
+
+
+
+		\ describe the following table
+		\ This is used by <i>!control</i> <i>!control</> takes a code that is
+		\ system wide. In this case the code sets or resets the progrma flow
+		\ control flags.
+		zero
+		|	DUP CONSTANT _#code>code_instance	CELL+
+		|	DUP CONSTANT _#code>code_data		CELL+
+				CONSTANT _#code>code_length
+
+
+	    | CREATE code>code
+		#10 t,    \ number of entries
+	    ' %%rubbish           t, \ unused code
+		FFFFFFFFF             t,
+		' %%echo              t, \ echo
+		FFFFFFFFF             t,
+		' %%echo              t, \ exho_off
+		000000000             t,
+	    ' %%rubbish           t, \ rxon_on
+		FFFFFFFFF             t,
+		' %%rubbish           t, \ rcon_off
+		000000000             t,
+		' %%sxon_enable       t, \ sxon_on
+		FFFFFFFFF             t,
+		' %%sxon_enable       t,
+		000000000             t,
+		' %%terminal_mode     t, \ binary_on
+		000000000             t,
+		' %%terminal_mode     t, \ binary_off
+		FFFFFFFFF             t,
+		' %%rubbish           t,
+		000000000             t,
+
+		public
+
+
+		m:  ( parent_ihandle -- )
+			this [parent] :construct
+			%%expect_buffer %%expect_in> !
+			%%expect_buffer %%expect_out> !
+
+			TRUE %%echo C!
+			TRUE %%terminal_mode !
+			TRUE %%sxon_enable C!
+
+			\ echoing received character
+			FALSE %%do_echo C!
+			\ waiting for remote device to send an xon
+			FALSE %%waiting_xon C!
+			\ input into user buffer
+			FALSE %%in_buffer C!
+		; overrides :construct
+
+
+		m: ( --)
+			this [parent] :destruct
+		; overrides :destruct
+
+		\ Add a character to the rotating buffer
+		\ flag is true if operation was ok
+		| : !rotating_buffer ( char --flag)
+			%%expect_in> @ char!
+			\ (--
+			\ Need to save front point on stack
+			\ If we run out of room we have to restore.
+			%%expect_in> @
+
+			1 CHARS %%expect_in> +!
+			%%expect_in> @ %%expect_buffer _#expect_buffer_size + < not IF
+				%%expect_buffer %%expect_in> !
+			THEN
+			%%expect_in> @ %%expect_out> @ = IF \ we have run out of room
+				\ restore front pointer
+				%%expect_in> !
+				\ operation failed
+				FALSE
+				EXIT
+			ELSE
+				DROP
+			THEN
+			TRUE
+		;
+
+		\ call after checking that there is data using KEY?
+		\ This word just assumes there is
+		: @rotating_buffer ( --char )
+			%%expect_out> @ char@ \ char(--
+			1 CHARS %%expect_out> +!
+			%%expect_out> @  %%expect_buffer _#expect_buffer_size + < not IF
+				%%expect_buffer %%expect_out> !
+			THEN
+		;
+
+		\ you can open the device but no files
+
+
+		m: ( --addr)
+			_%opened_files
+		; overrides :list_head
+
+		</code> </pre>
+<h>Interrupt routine</h>
+		<pre> <code>
+
+
+		| CREATE (_m68expect_int_process_char) 0 t,
+
+		m:  ( --)
+
+			\ When we want to send a character we enable type interrupts, when we get the
+			\ interrupt we send the character.
+                        1 %%type_interrupts +!
+			%%do_echo C@
+			IF
+				%%echo_character char@
+				%%device @
+				_#m68_data + C!
+				FALSE %%do_echo C!
+				EXIT
+			THEN
+			\ If we have received a xoff we just disable interrupts.
+			%%waiting_xon C@ IF
+				%%device @ _m68_transmit_disable
+				EXIT
+			THEN
+			%%task_count @
+			0&lt; IF
+				\ we are expecting, received interrupt because we are echoing
+				\ characters from the rotating buffer
+				this :key? not IF \ The rotating buffer is empty.
+					%%in_buffer C@ IF
+						\ The interrupt that occures from the echo, in which case
+						\ switch further interrupts off. The next character will
+						\ switch it back on.
+						\
+						%%device @ _m68_transmit_disable
+						EXIT
+					THEN
+					TRUE %%in_buffer C!
+					%%device @ _m68_transmit_disable
+				ELSE \ more rotating buffer to deal with
+					@rotating_buffer
+					(_m68expect_int_process_char) @execute
+				THEN
+			ELSE
+				\ if count was zero we should not have got an interrupt.
+				%%task_count @ 0<> IF
+					-1 %%task_count +!
+					%%task_count @ 0<> IF
+						%%task_data_point @ char@
+						%%device @ _#m68_data + C!
+						1 CHARS %%task_data_point +!
+					ELSE
+						this :facility @ ?DUP IF
+                                                        wake SWAP W!
+                                                THEN
+						%%device @ _m68_transmit_disable
+					THEN
+				ELSE \ get to here and it was a false interrupt
+					%%device @ _m68_transmit_disable
+				THEN
+			THEN
+		; method :m68type_int_service
+
+
+		| : _m68expect_int_output ( char --)
+			%%echo C@ IF \ echo reguired
+				%%terminal_mode @ IF \ operator
+					DUP BL < IF \ it is a control character
+						DUP #back_space <> IF
+							DROP zero
+						THEN
+					THEN
+				THEN
+				%%echo_character char!
+				TRUE %%do_echo C!
+				%%device @ _m68_transmit_enable
+			ELSE DROP THEN
+		;
+
+		\ save the character into the buffer.
+		\ Set count back to zero
+		\ Reset %%in_buffer
+		\ Wake task expecting the data
+		| : _m68expect_int_finished ( char --)
+			%%task_data_point @ char!
+			\ %%task_received gives the number of characters
+			zero %%task_count !
+			FALSE %%in_buffer C!
+			this :facility @ ?DUP IF
+                                wake SWAP W!
+                        THEN
+			\ (--
+		;
+
+    	\ set the ^c_set flag.
+		: _m68expect_int_^Creceived ( --)
+			%%terminal_mode @ IF
+				TRUE
+				this :facility @ ?DUP IF
+                                        TRUE SWAP
+				        [ #activation_^c_set #activation_status - ]T LITERAL + W!
+                                THEN
+			THEN
+		;
+
+		\ If the task isn'r waiting for data ( task_count is not negative)
+		\ then received characters go into a rotating buffer.
+		| : _m68expect_int_unexpected ( char --)
+                        1 %%exp_unexpected +!
+			%%terminal_mode @ IF \ Have to see if unit_^ced
+				DUP 7F AND #^c = IF
+					_m68expect_int_^Creceived
+					DROP
+					EXIT
+				THEN
+			THEN
+			\ char(--
+			!rotating_buffer
+			\ If the operation failed, the operation failed.
+			\ We buffer to stop the system dropping characters.
+			\ The system just dropped a character.
+			DROP
+		;
+
+
+
+
+		| : _m68expect_int_process_char  ( char --)
+                        1 %%exp_process_char +!
+			%%terminal_mode @ IF
+				\ convert 7F to 08
+				7F AND DUP 7F = IF  \ char(--
+					DROP #back_space
+				THEN
+				DUP #back_space = IF
+					%%task_received @ 0= IF  \ can't delete anymore characters
+						DROP #bell
+						_m68expect_int_output
+						EXIT
+					THEN
+					\ char(--
+					-1 %%task_received +!
+					\ remember count size is negative on input
+					\ this increases the number of characters yet to be received.
+					-1 %%task_count +!
+					-1 CHARS %%task_data_point +!
+					_m68expect_int_output
+					EXIT
+				THEN
+				DUP #^c = IF
+					_m68expect_int_^Creceived
+					DROP BL
+					DUP _m68expect_int_finished
+					_m68expect_int_output
+					EXIT
+				THEN
+			THEN \ end of special carry on for operator
+			\ char(--
+			\ is it an %%eot character
+			%%eot #$count_length + %%eot $count@ zero DO
+				\ char addr (--
+				2DUP char@ = IF
+					DROP
+					DUP _m68expect_int_finished
+					_m68expect_int_output
+					UNLOOP
+					EXIT
+				THEN
+				1 CHARS +
+			LOOP \ char addr(--
+			DROP \ char(--
+			\ now to save the input character
+			DUP %%task_data_point @ char!
+			1 CHARS %%task_data_point +!
+			1 %%task_received +!
+			1 %%task_count +!
+			\ If count has reached zero terminate input.
+			%%task_count @ 0= IF
+				\ This is placed there so system knows
+				\ input was terminated by count, and not control character
+				BL _m68expect_int_finished
+			THEN
+			_m68expect_int_output
+		;
+			' _m68expect_int_process_char (_m68expect_int_process_char) t!  ( Install forward referance)
+
+		HOST
+
+
+		m:  ( --)
+                        1 %%exp_interrupts +!
+			%%device @ _#m68_data + C@   \ char(--
+			%%sxon_enable C@ IF
+				DUP 7F AND DUP #xoff = IF \ char1 char2(--
+					\ This is tested at the start of the type interrupt
+					\ if on type interrupts are ignored.
+					TRUE %%waiting_xon C!
+					2DROP
+					EXIT
+				THEN
+				#xon = IF \ received character is an xon
+					%%waiting_xon C@ IF  \ and we are waitin for it
+						FALSE %%waiting_xon C!
+						\ This will send another interrupt.
+						%%device @ _m68_transmit_enable
+					THEN
+					DROP
+					EXIT
+				THEN
+			THEN
+			\ char(--
+			%%in_buffer C@ not IF
+				_m68expect_int_unexpected
+				EXIT
+			THEN
+			 _m68expect_int_process_char
+		; method :m68expect_int_service
+
+
+		</code> </pre>
+<h5>Character output</h5>
+		<pre> <code>
+		\ only from method
+		| : _m68_type ( add n --)
+			DUP IF
+				1+ %%task_count !
+				%%task_data_point !
+				xsleep
+				%%device @ _m68_transmit_enable
+				xnext
+				EXIT
+			THEN
+			2DROP
+		;
+
+
+
+	\ when data has been receive word will finished. Expect interrupts finish
+	\ the job.
+	| : _receive_data_into_buffer  ( --)
+		%%timeout @ ?DUP IF
+			xtest
+			TRUE %%in_buffer C!
+			_unlock_word
+			xwait
+			\ following is only needed on timeout.
+			\ transfer reception of characters from task buffer
+			\ to rotating buffer
+			FALSE %%in_buffer C!
+			\ reset count
+			zero %%task_count !
+		ELSE
+			xsleep
+			TRUE %%in_buffer C!
+			_unlock_word
+			xnext
+		THEN
+	;
+
+
+	| : _68_expect
+		BEGIN
+			%%task_count @ 0<> IF
+				_lock_word
+				KEY? not IF
+					_receive_data_into_buffer
+					EXIT
+				THEN
+				%%echo C@ IF \ can use type ints to get rest.
+				    \ type to echo rotating buffer as we transfer it to the input buffer
+					\ This word outputs the first, it will exit when the entire job is done
+					\ Type interrupt code will finish the job.
+					xsleep
+					%%device @ _m68_transmit_enable
+					_unlock_word
+					xnext
+					EXIT
+				ELSE \ we have to do the job ourselves
+					@rotating_buffer
+					xsleep
+					_m68expect_int_process_char
+					_unlock_word
+				THEN
+			ELSE
+				xwake
+			THEN
+			status W@ wake =
+		UNTIL
+	;
+
+
+
+	m: ( --)
+                %%type_buffer_count @
+	        \ do the flush
+	        %%type_buffer> @ %%type_buffer_count @
+	        _m68_type
+	        zero %%type_buffer_count !
+                %%seek_pointer +!
+                this :facility release
+	; overrides :flush_file
+
+
+	m: ( addr num -- num)
+		send
+                this :facility grab
+		zero %%task_received !
+		NEGATE %%task_count !
+		%%task_data_point !
+		_68_expect
+		%%task_received @
+                this :facility release
+	; overrides :read
+
+	m: { variable %addr variable %num ( -- num flag) }
+		send
+                this :facility grab
+		zero %%task_received !
+		\ leave room for the termination code
+		%num @ 1- NEGATE %%task_count !
+		%addr @ %%task_data_point !
+		_68_expect
+		\ Converts the strings sent by function keys to a termination code
+		\ The conversion is terminal type specific, so the conversion
+		\ is vectored through the %%terminal object
+		%addr @ %%task_received @ 1+ this :termination>code
+                this :facility release
+		\ num flag(--
+	; overrides :read_line
+
+
+		</code> </pre>
+<h5> Methods needed for serial devices</h5>
+	<pre> <code>
+	m: ( --flag)
+		%%expect_out> @ %%expect_in> @ <>
+	; overrides :key?
+
+	m: ( --)
+			%%expect_out> @ %%expect_in> !
+	; overrides :clear
+	</code> </pre>
+	<a name=":!control"></a>
+<p>
+The input code was long ago determined and is passed across networks. See the code>code
+table for values.
+</p>
+	<pre> <code>
+	m: ( code --)
+		 code>code @ 1- MIN  \ restict range
+		_#code>code_length * CELL+ code>code + \ base of table entry
+		DUP _#code>code_data + @
+		SWAP _#code>code_instance + @execute C!
+	; overrides :!control
+
+
+    \ describe following table
+	zero
+	| DUP CONSTANT _#m68_device_code_spare 1+
+	| DUP CONSTANT _#m68_device_code_or    1+
+	| DUP CONSTANT _#m68_device_code_and   1+
+	\ set to 00 for mode register 1, FF for mode register 2
+	| DUP CONSTANT _#m68_device_code_reg   1+
+	DROP
+
+    ( Altering communication format) HEX
+    ( used in form AABBCCDD device-set name )
+    ( AA = spare BB = OR data CC = AND data DD = register)
+    | CREATE m80codes
+    00000000 t, ( unused)
+    0004E300 t, ( PARITY_ODD )
+    0000E300 t, ( PARITY_EVEN)
+    0010E300 t, ( PARITY_OFF )
+    0007F0FF t, ( SBIT1      )
+    0010F0FF t, ( SBIT1.5    )
+    000FF0FF t, ( SBIT2      )
+    0002FCFF t, ( BITS7      )
+    0003FCFF t, ( BITS8      )
+
+
+
+	\ note section 14.4.1 User's manual.
+	\ Don' write to UMR1 or UMR2 without disableing the receiver
+	\ and transmiter
+	| : _(!8device) ( data addr base_addr --)
+		_#m68command_reset_receive  OVER _#m68_control + C!  \ reset receiver
+		_#m68command_reset_transmit OVER _#m68_control + C!
+		\ write the register
+		-rot
+		C!
+		\ re-enable the receiver
+		01 OVER _#m68_control + C!
+		\ We can re_enabble transmit interrupts, the interrupt code
+		\ is well enough written to accept false transmit int.
+		_m68_transmit_enable
+	;
+
+	m: ( data --)
+		W@ 4* m80codes +                       \ table_entry(--
+    	%%device @                                \ table_entry device(--
+		OVER _#m68_device_code_reg + C@ not IF  \ mode 1 register, have to issue command
+		                                        \ to reset register pointer
+			_lock_word
+			_#m68command_reset_mode OVER _#m68_control + C!  \ table_entry device(--mode1 can now be accessed
+			DUP _#m68_mode + C@             \ table_entry device current(--
+    			jump _#m68_device_code_and + C@ AND
+			jump _#m68_device_code_or + C@ OR \ table_entry device new(--
+			SWAP                              \ table_entry new device(--
+			_#m68command_reset_mode OVER _#m68_control + C!
+			DUP _#m68_mode + SWAP _(!8device)  \ table_entry
+			_unlock_word
+		ELSE  \ table_entry device (--mode2 is just there
+			DUP _#m68_mode + C@                   \ table_entry device current(--
+    			jump _#m68_device_code_and + C@ AND
+			jump _#m68_device_code_or + C@ OR     \ table_entry device new(--
+			SWAP
+			DUP _#m68_mode + SWAP _(!8device)     \ table_entry(--
+		THEN
+		DROP
+	; overrides :!device
+
+	m: ( baud --)
+		[ _#bus_clock #32 / ]T LITERAL SWAP /  \ timer_value(--
+		_#m68command_reset_receive  %%device @ _#m68_control + C!  \ reset receiver
+		_#m68command_reset_transmit %%device @ _#m68_control + C!
+
+		DUP %%device @ _#m68_prescaler_LSB + C!
+		8 RSHIFT %%device @ _#m68_prescaler_MSB + C!
+
+		\ re-enable the receiver
+		01 %%device @ _#m68_control + C!
+		\ We can re_enabble transmit interrupts, the interrupt code
+		\ is well enough written to accept false transmit int.
+		%%device @ _m68_transmit_enable
+	; overrides :baud
+
+
+		\ manipulate the input data to produce a termination code
+		\ addr is the start of the buffer
+		\ num is the numbr of characters including the terminator
+		\ num1 excludes the terminator code; which is now one byte only.
+		m: ( addr num --num1  flag)
+			\ echo off
+			%%echo @ >R
+			FALSE %%echo !
+			this %%terminal @ ::termination>code
+			R> %%echo !
+		; overrides :termination>code
+
+
+
+
+
+
+	m: ( indent --)
+		CR DUP SPACES ." tyx | " ." Object: " this .h
+			SPACE ." file: " this :@name TYPE
+			SPACE ." timeout: " %%timeout @ .h
+			SPACE ." linked_objects: " this :number_of_links .h
+		\ indent(--
+                CR DUP SPACES ." expect buffer: " %%expect_buffer .h
+                              ." in_pointer   : " %%expect_in> @ .h
+                              ." out_pointer  : " %%expect_out> @ .h
+
+               CR DUP SPACES  ." in buffer    : " %%in_buffer C@ .h
+                              ." Task count   : " %%task_count @ .h
+                              ." Task received: " %%task_received @ .h
+
+                CR DUP SPACES
+                              ." int in       : " %%exp_interrupts @ .h
+                              ." int out      : " %%type_interrupts @ .h
+                              ." int unexpect : " %%exp_unexpected @ .h
+                CR DUP SPACES
+                              ." int in proc  : " %%exp_process_char @ .h
+
+		DROP
+		send
+	; overrides :print
+
+	end_class tyx
+
+
+	tyx class
+
+		ram_variable _%ty0_object
+
+		\ ty0
+		\ There can only be one object created at a time
+		\ to allow otherwise only creates unneeded complications.
+		m:  ( parent_ihandle -- )
+                	\ panic" open ty0" _#mba_base .panic
+			this [parent] :construct
+			_#m68a_base %%device !
+			this _%ty0_object !
+		; overrides :construct
+
+		\ on object destruct get rid of file name.
+		m: ( --)
+			this [parent] :destruct
+			zero _%ty0_object !
+		; overrides :destruct
+
+		interrupt: _8monitor_a
+			_%ty0_object @ 'output_file !
+			_%ty0_object @ 'input_file !
+			[ _#m68a_base _#m68_int_state + ]T LITERAL C@
+			\ If the device is not open 'output_file will be zero
+			DUP _#m68_rx AND IF
+				'output_file @ IF
+					'output_file @ :m68expect_int_service
+				ELSE
+					[ _#m68a_base _#m68_data + ]T LITERAL C@ DROP
+				THEN
+			THEN
+			DUP _#m68_tx AND IF
+				'output_file @ IF
+					'output_file @ :m68type_int_service
+				ELSE
+					_#m68a_base _m68_transmit_disable
+				THEN
+			THEN
+			DROP
+		;interrupt
+
+		m: ( indent --)
+			CR DUP SPACES ." ty0 | "
+                                      ." Object: " this .h
+                                      ." owner : " this :facility @ .h
+                        CR DUP SPACES
+                        DUP this [parent] :print
+                        DROP send
+
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+	end_class ty0
+
+target_previous_definitions
+target_previous
+
+: .ty0 ( --)
+        _%ty0_object @ ?DUP IF
+                zero SWAP :print
+        ELSE
+                ." Not created"
+        THEN
+;
+
+
+        tyx class
+
+		ram_variable _%ty1_object
+
+
+		\ ty1
+		\ There can only be one object created at a time
+		\ to allow otherwise only creates unneeded complications.
+		m:  ( parent_ihandle -- )
+                	\ panic" open ty1" _#m68b_base .panic
+			this [parent] :construct
+			_#m68b_base %%device !
+			this _%ty1_object !
+		; overrides :construct
+
+		\ on object destruct get rid of file name.
+		m: ( --)
+			this [parent] :destruct
+			zero _%ty1_object !
+		; overrides :destruct
+
+
+		interrupt: _8monitor_b
+			_%ty1_object @ 'output_file !
+			_%ty1_object @ 'input_file !
+			[ _#m68b_base _#m68_int_state + ]T LITERAL  C@
+			\ If the device is not open 'output_file will be zero
+			DUP _#m68_rx AND IF
+				'output_file @ IF
+					'output_file @ :m68expect_int_service
+				ELSE
+					[ _#m68b_base _#m68_data + ]T LITERAL C@ DROP
+				THEN
+			THEN
+			DUP _#m68_tx AND IF
+				'output_file @ IF
+					'output_file @ :m68type_int_service
+				ELSE
+					_#m68b_base _m68_transmit_disable
+				THEN
+			THEN
+			DROP
+		;interrupt
+
+		m: ( indent --)
+			CR DUP SPACES ." ty1 | "
+                                      ." Object: " this .h
+                                      ." owner : " this :facility @ .h
+			send
+                        CR DUP SPACES
+                        DUP this [parent] :print
+                        DROP
+		; overrides :print
+
+target_also
+&drivers
+target_definitions
+
+	end_class ty1
+
+target_previous_definitions
+target_previous
+
+: .ty1 ( --)
+        _%ty1_object @ ?DUP IF
+                zero SWAP :print
+        ELSE
+                ." Not created"
+        THEN
+;
+</code> </pre>
+
+</body>
+</html>

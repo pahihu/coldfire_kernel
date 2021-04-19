@@ -1,0 +1,140 @@
+
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>parented_object</h3>
+<a HREF="./license.html">license</a>
+<p>
+Parented_objects are the basic building block used by the I/O system.
+The aim of this object is to put in place the structure used
+across all I/O objects. It is a linked object with the name string added.
+</p>
+	<pre> <code>
+	\ base_class
+	\ :construct
+	\ :destruct
+	\ :print
+	\	link_class
+	\	:list_head
+	\	:number_of_links
+        \               cleanup_class
+        \	        :link_cleanup
+	\	        :unlink_cleanup
+	\		        parented_object
+	\		        :facility
+	\		        :parent_instance
+	\		        :!name
+	\		        :@name
+	\	        	:@root
+	\		        :inode_instance
+	\	        	:inode_head
+	\
+
+	\ the string is fixed length as I want the string to be stored in an object
+	\ so .object provides the result; the maximum string length is FF
+
+	cleanup_class class
+	        #facility_length bytes% instance_variable %%facility
+		cell% instance_variable %%parent_instance
+		cell% instance_variable %%name>
+
+		m: ( parent_instance --)
+			\ saving parent first allows the head to be in the parent.
+			\ see inode_class for an example
+			%%parent_instance !
+			zero %%name> !
+                        %%facility #facility_length ERASE
+			this [parent] :construct
+		; overrides :construct
+
+
+		m: ( --)
+			%%name> @ ?DUP IF
+				heap_object_free
+			THEN
+			\ does the unlinking
+			this [parent] :destruct
+                        \ cannot be claimed when destroyed as a facility is linked
+                        \ into a linked list when claimed. We grab it first so that
+                        \ we are sure another thread hasn't got it claimed.
+                        %%facility grab
+                        %%facility _#facility_link + unlink_double
+		; overrides :destruct
+
+		m: ( --addr)
+			%%facility
+		; method :facility
+
+		\ Many routines need access to the parent
+		m: ( --object )
+			%%parent_instance @
+		; method :parent_instance
+
+		m: ( indent --)
+			CR DUP SPACES ." parented_object | " ." Object: " this .h
+			CR DUP SPACES ." linked_objects: " this :number_of_links .h
+			\ indent(--
+			DROP
+			send
+		; overrides :print
+
+		\ just something to keep it sensible
+		$100 CONSTANT _#max_driver_string
+
+		m: ( add n --)
+			DUP #$count_length +
+			_#max_driver_string > ABORT" driver specification string too long"
+			string_class heap_object %%name> !
+		; method :!name
+
+		m: ( -- addr n )
+			%%name> @ DUP IF
+				:string@
+			ELSE
+				\ another zero for length
+				zero
+			THEN
+			 
+		; method :@name
+
+		\ Scan down the parent list until we find the root. The root 
+		\ will contain the string used to open the file. 
+		\ This can be handy if the file causes problems.
+		m: ( -- addr n )
+			this :parent_instance
+			BEGIN
+				DUP :parent_instance 
+			WHILE
+				:parent_instance
+			REPEAT
+			:@name
+		; method :@root
+
+		\ this is here because the inode was made a class based on this class instead
+		\ of an interface. 
+		m: ( -- addr)
+			TRUE ABORT" No inodes"
+		; method :inode_head
+
+		m: ( -- addr)
+			TRUE ABORT" No inode"
+		; method :inode_instance
+
+		m: ( indent --)
+			CR DUP SPACES ." parented_object | " ." Object: " this .h  
+			DROP send
+		; overrides :print
+
+
+	end_class  parented_object
+	</code> </pre>
+
+</body>
+</html>

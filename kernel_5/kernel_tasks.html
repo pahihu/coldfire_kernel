@@ -1,0 +1,294 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    ram_variable 'local
+	</code> </pre>
+<p>
+The tcp/ip tasks are written so they can abort and recover. Every effort was made to make 
+them bug free, but nothing like insurance.
+</p>
+<p>
+You can log onto the task and see a stack printout.
+</p>
+<pre> <samp>
+ALSO &tasks taskname task_logon
+</samp> </pre>
+<p>
+Will do the job.
+</p> 
+	<pre> <code>
+#tcp/ip_included [IF]
+	: _routeing_action ( --)
+		BEGIN
+			_ip_queue xawait
+			'output_file @ :inuse? IF
+				.S  ^C
+			THEN
+			_route_ip_packet
+		AGAIN
+	;
+	
+	ram_variable _%routeing_aborts
+	: _routeing_abort ( --)
+		1 _%routeing_aborts +!
+		\ just in case a ^C
+		'output_file @ :inuse? IF
+			'output_file @ :bye
+		THEN
+		$BACE0000 _%routeing_aborts @ +
+		_routeing_action
+	;
+	: _proto_action
+		BEGIN
+			_proto_queue xawait
+			'output_file @ :inuse? IF
+				.S  ^C
+			THEN
+			proto_demux_ip_packet
+		AGAIN
+	;
+
+	ram_variable _%proto_aborts
+	: _proto_abort ( --)
+		1 _%proto_aborts +!
+		\ just in case a ^C
+		'output_file @ :inuse? IF
+			'output_file @ :bye
+		THEN
+		$BACE0000 _%proto_aborts @ +
+		_proto_action
+	;
+
+
+	: _tcp_action ( --)
+		BEGIN
+			_tcp_transmit_action
+			xpause
+		AGAIN
+	;
+
+	ram_variable _%tcp_aborts
+	: _tcp_abort ( --)
+		1 _%tcp_aborts +!
+		\ just in case a ^C
+		'output_file @ :inuse? IF
+			'output_file @ :bye
+		THEN
+		$BACE0000 _%tcp_aborts @ +
+		_tcp_action
+	;
+
+
+	\ This times out arm enties.
+	ram_variable %ip_timeout_loops
+	: _ip_timeout_action ( --)
+		BEGIN
+			1 %ip_timeout_loops +!
+			_arptimer
+			_fragment_table_timeout
+			_tcp_timeout
+			'output_file @ :inuse? IF
+				.S  ^C
+			THEN
+			\ redo every second is heaps
+			xtest #1sec xwait
+		AGAIN
+	;
+
+	ram_variable _%ip_timeout_aborts
+	: _ip_timeout_abort ( --)
+		1 _%ip_timeout_aborts +!
+		\ just in case a ^C
+		'output_file @ :inuse? IF
+			'output_file @ :bye
+		THEN
+		$BACE0000 _%ip_timeout_aborts @ +
+		_ip_timeout_action
+	;
+
+	: _udp_echo_action
+		_udp_echo_server
+	;
+
+	ram_variable _%udp_echo_aborts
+	: _udp_echo_abort ( --)
+		1 _%udp_echo_aborts +!
+		\ just in case a ^C
+		'output_file @ :inuse? IF
+			'output_file @ :bye
+		THEN
+		$BACE0000 _%udp_echo_aborts @ +
+		_udp_echo_action
+	;
+[THEN]
+	</code> </pre>
+<p>
+Now starts the definiton of the tasks. Words defined within following
+block end up in the &task vocabulary.
+</p>
+	<pre> <code>
+
+	target_also
+    &tasks
+	target_definitions
+	\ needed if local task is going to have disk services
+    #clock_low port_task: local
+		[  #BVP5552 #BVP5551 + [IF] ]T
+		$" ty1"
+		[ [THEN] ]T
+		[ #BCM550h #BCM550j +  #BVP6551 + #BVP6552 + #ECM160 + [IF] ]T
+		$" ty0"
+		[ [THEN] ]T
+		R/W $open
+		DUP 'output_file !
+		DUP 'input_file !
+		DUP 'abort_file !
+		DROP
+  		ws60
+ 		cursor send
+                CR
+                'local
+                @execute
+                \ if we come out of 'local nothing more to do
+                xoff xnext
+	;task
+	</code> </pre>  
+	<a name="buffer_reclaim"></a>
+	<pre> <code> 
+    #clock_low task: buffer_reclaim
+		BEGIN
+			xtest 1 xwait
+    		_join_buffer_code
+		AGAIN
+	;task
+
+	#clock_low task: flash_write
+		BEGIN
+			\ maximum rate once every 100 msec
+			xtest #10 xwait
+			_%flash_write_queue xawait
+    		_write_buffers_to_flash
+		AGAIN
+	;task
+
+	\ <a name="kill_task"></a>
+	#clock_low task: kill_task
+		kill_task_action 
+	;task
+
+
+
+   #clock_medium task: watch_task
+  	BEGIN
+   		  watchcheck  xpause
+   	AGAIN
+   ;task
+
+
+</code> </pre>
+<h5>tcp/ip</h5>
+<p>
+If the packet is for local consumption, the packet
+will end up in the _proto_queue after defragmentation
+if destined for local machine.
+<p>
+<p>
+This task will see all datagrams.
+</p>
+	<pre> <code>
+#tcp/ip_included [IF]
+	#tcp/ip task: route_ip
+		open_tube
+		['] _routeing_abort 'abort !
+		_routeing_action
+	;task
+	</code> </pre>
+<p>
+The order these tasks are started is important as it
+effects system performance.
+The last started task is executed first. Tasks are started in
+<dt> <a HREF="./MCF5307_init.html">MCF5307_init.html</a>
+</p>
+<p>	
+This will demux packets to correct protocol.
+only packets destined for local machine will 
+be dealt with by this task.  Must be on the
+same level as the transmit task as acks will
+remove datagrams from the tcp sent queues.
+The sent queues must be stable for transmit.
+It is the tranmit task that takes data from the unsent
+to sent queue.
+</p>
+	<pre> <code>
+	#tcp/ip task: proto_demux
+		open_tube
+		['] _proto_abort 'abort !
+		_proto_action
+	;task
+	</code> </pre>
+<p>
+transmit tcp segments for all channels
+</p>
+	<pre> <code>
+	#tcp/ip task: tcp_transmit
+		open_tube
+		['] _tcp_abort 'abort !
+		_tcp_action
+	;task
+	</code> </pre>
+<p>
+udp echo server
+well known port 07
+</p>
+	<pre> <code>
+	#clock_low task: udp_echo_serv
+		open_tube
+		['] _udp_echo_abort 'abort !
+		_udp_echo_action
+	;task
+	</code> </pre>
+<p>
+udp error server, cvs known port #400, used to test stacks; see <i>error_ping</i>.
+</p>
+	<pre> <code>
+\	#clock_low task: udp_error_serv
+\		_udp_error_server
+\	;task
+	</code> </pre>
+<p>
+Timeout arp table entries.
+Timeout refragmentation tables
+Timeout tcp syn entries
+Timeout tcp timewait
+</p>
+	<pre> <code>
+	#clock_low task: ip_timeout
+		open_tube
+		['] _ip_timeout_abort 'abort !
+		_ip_timeout_action
+	;task
+[THEN]
+
+
+\ as the os is now written there has to be an idle task. The task selection code is now done
+\ without traps back to user state. When in superuser state interrupts are disabled while
+\ slecting next task. If there is not a task that is always run interrupts will never be enabled.
+        #clock_low task: idle_task
+                BEGIN
+                        xpause
+                AGAIN
+        ;task
+	target_previous_definitions
+	target_previous
+
+	</code> </pre>
+</body>
+</html>

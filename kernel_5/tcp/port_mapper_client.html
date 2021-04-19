@@ -1,0 +1,28 @@
+<html>
+<head>
+<title>port mapper</title>
+<META NAME="Author" CONTENT="M.Anton Ertl/Charels Esson">
+<META NAME="keywords" CONTENT="objects forth"> 
+<META NAME="description" CONTENT="object extension for forth">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc793.html">RFC1014 XDR</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1057.html">RFC1057 RPC</a><br>
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc793.html">RFC1094 NFS</a><br>
+<p>
+Thre spec looks hard doesn't it. RFC1014 describes a method to describe data, 
+nothing more. RFC1057 describes a data structure to send for a RPC and the 
+reply to expect. RFC1094 describes the functions available for NFS.
+</p>
+<p>
+In the end it is all pretty simple, send a UDP datagram to port 111, with data
+as speced in:
+<a HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc1057.html">RFC1057 RPC</a>
+and you will get back the required data, unpack the data and put it on the stack and 
+it is done.
+</p>
+
+
+</body>
+</html>

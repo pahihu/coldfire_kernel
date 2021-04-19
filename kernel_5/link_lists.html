@@ -1,0 +1,174 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a name="link_list_support"></a>
+<h3>linked list support</h3>
+<a HREF="./license.html">license</a>
+<p>
+Link lists are used to join together items that must be treated in some manner
+when some sort of event occures. The list need to be created in a manner that allows
+items to be added to the list in the kernel and in the application. 
+</p>
+<p>
+A common linked list structure allows empty to deal with removing links that point to
+the code that is about to be removed. 
+<pre> <code>
+HEX
+</code> </pre>
+<p>
+All kernel lists are linked back to here.    
+</p>
+	<pre> <code>
+	CREATE _lists_head 0 t,
+	</code> </pre>
+<p>Describe the list head entry.</p>
+	<pre> <code>
+		zero
+	|	DUP CONSTANT _#lh_dict_pointer  CELL+
+	|	DUP CONSTANT _#lh_init_link     CELL+
+	|	DUP CONSTANT _#lh_link_type     CELL+           
+		DROP
+	</code> </pre>
+<p>
+Different types of linking methods are supported. We need to be able to extract from
+the list head the link type so that _empty_lists can unlink items correctly.
+</p>	
+	<pre> <code>
+	zero
+	|	DUP CONSTANT _#single_linked_list 1+
+	|   DUP CONSTANT _#double_linked_list 1+
+		DROP
+	</code> </pre>
+  <h5>Meta compiler new list extension</h5>
+  <p>
+  Used within kernel code to create a new kernel list. List created in this manner are
+  cleaned up with _empty_Lists.
+  </p>
+		</code> </pre>
+	
+	<pre> <code>
+	forth : _create_listhead
+		HOST
+		>IN @  
+			dictionary_here 
+			constant_host 
+		>IN ! 
+		(CREATE)
+		dictionary_here t,
+		cell dictionary_allot
+	    HERE _lists_head t@ t, _lists_head t!
+		_#single_linked_list t,
+			DOES>
+				@ 
+	;
+
+	forth : _create_double_listhead
+		HOST
+		>IN @  
+			dictionary_here 
+			constant_host 
+		>IN ! 
+
+		(CREATE)
+		dictionary_here t,
+		cell dictionary_allot
+	    HERE _lists_head t@ t, _lists_head t!
+		_#double_linked_list t,
+			DOES>
+				@ 
+	;
+
+	</code> </pre>
+<a name="unlink_double"></a>
+<h5>unlink_double ( link_addr -- )</h5>
+<p>
+The words link_double and unlink_double work against link list as shown in the following 
+diagram. Such lists allow you to unlink with just the address of the item to be
+removed. These words are writen so the list can be accessed from multiple 
+tasks.
+</p>
+<img SRC="double_list.png" HEIGHT=70 WIDTH=485 >
+<p>
+For this to work the back pointer must be at CELL+
+The link must point to next link_addr and back pointer must point to previous link_addr
+These are pretty useful words.
+</p>
+	<pre> <code>
+	: unlink_double ( link_addr --)
+		_lock_word
+			DUP CELL+ SWAP  \ back_addr link_addr (--
+			@ DUP IF        \ back_addr (link_addr) (--
+				SWAP @              \ (link) (back) (--
+				2DUP                \ (link) (back) (link) (back) (--
+				!                   \ (link) (back) (--
+				SWAP                \ (back) (link) (--
+				CELL+
+				!                   \ (--
+			ELSE					\ set the link pointing to us to zero
+				SWAP @ !            \ (--
+			THEN
+		_unlock_word
+	;
+	</code> </pre>
+<a name="link_double"></a>
+<h5>link_double ( link_addr head --)</h5>
+<p>
+The words link_double and unlink_double work against link list as shown in the following 
+diagram. Such lists allow you to unlink with just the address of the item to be
+removed. These words are written so the list can be accessed from multiple 
+tasks.
+</p>
+<img SRC="double_list.png" HEIGHT=70 WIDTH=485 >
+
+	<pre> <code>
+	: link_double ( link_addr head --)
+		2DUP                                   \ link_addr head link_addr head (-- 
+		SWAP                                   \ link_addr head head link_addr (--
+		\ back pointer for new link is the head
+		CELL+ !                                \ link_addr head
+		TUCK                                   \ head link_addr head (--
+		_lock_word
+			@ DUP IF ( buffer linked into head already)
+											   \  head link_addr (head) (--
+				2DUP                           \  head link_addr (head) link_addr (head) (--
+				\ fix up the back pointer of the following buffer
+				CELL+                          \ ... link_addr back_point (--
+				!                              \  head link_addr (head) (--
+				OVER                           \  head link_addr (head) link_addr (--
+				!                              \  head link_addr (--    
+				SWAP                           \  link_addr head (--
+				!                              \  (--
+			ELSE ( this is first)
+											   \ head link_addr (head) (--
+				OVER                           \ head link_addr  zero link_addr (--
+				!                              \ head link_addr (--
+				SWAP                           \ link_addr head (--
+				!
+			THEN                               \ (--	
+		_unlock_word
+
+	;
+	</code> </pre>
+<p>
+Counting number in list method is same 
+for single and double linked lists.
+</p>
+	<pre> <code>
+	: number_in_list ( head --n)
+			zero SWAP
+			BEGIN
+				@ ?DUP
+			WHILE
+				SWAP 1+ SWAP
+			REPEAT
+	;
+	</code> </pre>
+</body>
+</html>

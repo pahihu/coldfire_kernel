@@ -1,0 +1,503 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    HEX
+	    zero
+ |            DUP   CONSTANT #p_status        4+
+ |            DUP   CONSTANT #p_owner         4+
+ |            DUP   CONSTANT #p_request       2+  ( expect/type set on req)
+ |            DUP   CONSTANT #p_function      2+  ( expect/type, the function)
+ |            DUP   CONSTANT #p_count         2+
+ |            DUP   CONSTANT #p_address       4+
+ |            DUP   CONSTANT #p_tpoint        4+
+ |            DUP   CONSTANT #p_actual        2+  ( expect only)
+ |            DUP   CONSTANT #p_^C            2+
+ |            DUP   CONSTANT #p_?data         2+  ( set if data available)
+ |            DUP   CONSTANT #p_pipe          2+  ( logged on pipe )
+ |            DUP   CONSTANT #p_buffer         ( end dual port)
+        DROP
+	\ describe a standard RTI1000 card
+|	$8000 CONSTANT _#RTI1000_interrupt_reset
+|	$C000 CONSTANT _#RTI1000_card_code
+|	$10000 CONSTANT _#RTI1000_address_range
+
+    ( There is a subroutine address for each slot in this table)
+
+
+	( cards that will be served)
+ |   CREATE served_cards
+    03 t, ( number)
+    03 t, ( code  BVP500)
+    08 t, ( BCM600 )
+    05 t, ( BCM522)
+
+
+    ram_variable iservice 3C ram_allot
+
+
+	</code> </pre>
+	\ #### we really should add excape codes to string constants
+	\ so this can be done properly.
+	<p>
+    Because strings get padded out to even boundry the)
+    the number of caracters in the string has to be odd)
+    for the 83 to be seen. The 83 causes the logging task)
+    to ABORT.
+	</p>
+	<pre> <code>
+ |   CREATE $can't_log
+    	," Not a pipe!"  8300 tw,
+
+ |   CREATE $in_use
+    	," Others are using!" 8300 tw,
+
+ |   CREATE $not_pu
+    	," No pu defined!!" 8300 tw,
+
+    ( disk task queue)
+    queue disk_queue
+
+
+
+	\ #### this is the wrong way to do it.
+	\ When the type of card is determined ( see ?CARDS )
+	\ the right driver should be installed
+
+	\ flag is true if we should serve
+	: ?serve ( base_address -- flag)
+		_#RTI1000_card_code + W@ $FF AND
+		served_cards CELL+
+		served_cards @ zero DO
+			\ code addr(--
+			2DUP @ = IF
+				2DROP
+				UNLOOP
+				TRUE
+				EXIT
+			THEN
+			CELL+
+		LOOP
+		2DROP
+		FALSE
+	;
+
+
+	\ The complication; the RTI1000 only supports word writes
+	\ the destination address will be on a word boundry the source
+	\ may be.
+	\ The coldfire can handle a missaligned W@
+	: _missaligned_W@ ( addr --value)
+		W@
+	; inline
+
+	: _move_to_rti1000 ( from to num --)
+		zero ?DO
+			OVER I + _missaligned_W@
+			OVER I + W!
+		2 +LOOP
+		2DROP
+	;
+
+
+	: _report_error { variable $error variable %remote_unit -- }
+		#send_code %remote_unit @  #p_function + W!
+		%remote_unit @ #p_buffer + %remote_unit @ #p_address + !
+		$error @ COUNT CHAR+ \ allow for terminator code that is not in string
+		%remote_unit @ #p_buffer + SWAP
+		\ source desctination count (--
+		_move_to_rti1000
+		TRUE %remote_unit @ #p_request + W!
+	;
+
+    : >local ( addr base -- local_addr)
+		TUCK
+		[ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - +
+	;
+
+
+	: serve { variable %card_num variable %card_addr -- }{
+				variable %remote_unit
+				variable %local_unit
+			}
+		\ reset interrupt.
+		zero %card_addr @  _#RTI1000_interrupt_reset + W!
+
+		%card_addr @ ?serve not IF
+			EXIT
+		THEN
+		\ (--
+\		%card_addr @ [ %port_i_disking _#RTI1000_dual_port_base - ]T LITERAL  + W@ IF
+\			FALSE %card_addr @ [ %port_i_disking _#RTI1000_dual_port_base - ]T LITERAL + W!
+\			%card_addr @ [ %port_table_disk _#RTI1000_dual_port_base - ]T LITERAL + @ %card_addr @ >local
+\			#bus_block OVER #dk_source + W!
+\			\ addr(--
+\			disk_queue enq
+\		THEN
+		\ (--
+		%card_addr @ [ %port_i_file _#RTI1000_dual_port_base - ]T LITERAL + W@ IF
+			FALSE %card_addr @ [ %port_i_file _#RTI1000_dual_port_base - ]T LITERAL + W!
+			%card_addr @ [ %port_(file_table) _#RTI1000_dual_port_base - ]T LITERAL + @ %card_addr @ >local
+			#bus_file OVER #flbus_source + W!
+			\ addr(--
+			disk_queue enq
+		THEN
+		\ (--
+		%card_addr @ [ %port_i_?who _#RTI1000_dual_port_base - ]T LITERAL + W@ IF
+			%card_num @ %card_addr @ [ %port_who _#RTI1000_dual_port_base - ]T LITERAL + W!
+			FALSE %card_addr @ [ %port_i_?who _#RTI1000_dual_port_base - ]T LITERAL + W!
+		THEN
+		\ (--
+\		%card_addr @ [ %port_i_terminal _#RTI1000_dual_port_base - ]T LITERAL + W@ IF
+\			FALSE %card_addr @ [ %port_i_terminal _#RTI1000_dual_port_base - ]T LITERAL + W!
+\			%card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + @
+\			zero %card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + !
+\			%card_addr @ >local
+\			%remote_unit !
+\			%remote_unit @ #p_pipe + W@ \ local unit connect to
+\			\ local_unit_num(--
+\			4* PUBASE + @
+\			%local_unit !
+\			\ (--
+\			%local_unit @ IF
+\				%local_unit @ _#unit_owner + @ 0= IF
+\					\ not logged on deal with it
+\					%local_unit @ _#pu_type + W@ #pipe = IF
+\						\ can log on
+\						\ claim pipe using the
+\						\ base address of the card
+\						%card_addr @ %local_unit @ _#unit_owner + !
+\						%remote_unit @ #p_buffer +
+\						%remote_unit @ #p_tpoint + !
+\						%remote_unit @ %local_unit @ #p_base + !
+\						%remote_unit @ #p_function + W@
+\						#expect_code = IF
+\							%remote_unit @ #p_buffer +
+\							%remote_unit @ #p_address + @
+\							%remote_unit @ #p_actual + W@
+\							MOVE
+\						THEN
+\						%local_unit @ _#unit_facility + @ ?DUP IF
+\							wake SWAP  W!
+\						THEN
+\					ELSE \ not a pipe, report error
+\						$can't_log %remote_unit @ _report_error
+\					THEN
+\				ELSE
+\					\ something logged on
+\					%local_unit @ _#unit_owner + @ %card_addr @ <> IF
+\						\ already in use
+\						$in_use %remote_unit @ _report_error
+\					ELSE
+\						\ we own the pipe
+\						%remote_unit @ #p_function + W@
+\						#expect_code = IF
+\							%remote_unit @ #p_buffer +
+\							%remote_unit @ #p_address + @
+\							%remote_unit @ #p_actual + W@
+\							MOVE
+\						THEN
+\						%local_unit @ _#unit_facility + @ ?DUP IF
+\							wake SWAP  W!
+\						THEN
+\					THEN
+\				THEN
+\			ELSE \ there is no local unit
+\				\ report error remotely
+\				$not_pu %remote_unit @ _report_error
+\			THEN
+\			\ if we are here logoff and ^C don't have to be checked
+\			EXIT
+\		THEN
+\		\ (--
+\		%card_addr @ [ %port_i_logoff _#RTI1000_dual_port_base - ]T LITERAL + W@ IF
+\			FALSE %card_addr @ [ %port_i_logoff _#RTI1000_dual_port_base - ]T LITERAL + W!
+\			%card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + @
+\			zero %card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + !
+\			%card_addr @ >local
+\			%remote_unit !
+\			%remote_unit @ #p_pipe + W@ \ local unit connect to
+\			\ local_unit_num(--
+\			4* PUBASE + @
+\			%local_unit !
+\			%local_unit @ IF
+\				%local_unit @ _#unit_owner + @ %card_addr @ = IF
+\					zero %local_unit @ _#unit_owner + !
+\				THEN
+\			THEN
+\			TRUE %remote_unit @ #p_request + W!
+\		THEN
+\		\ (--
+\		%card_addr @ [ %port_i_^ced _#RTI1000_dual_port_base - ]T LITERAL + W@ IF
+\			FALSE %card_addr @ [ %port_i_^ced _#RTI1000_dual_port_base - ]T LITERAL + W!
+\			%card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + @
+\			zero %card_addr @ [ %port_i_unit _#RTI1000_dual_port_base - ]T LITERAL + !
+\			%card_addr @ >local
+\			%remote_unit !
+\			%remote_unit @ #p_pipe + W@ \ local unit connect to
+\			\ local_unit_num(--
+\			4* PUBASE + @
+\			%local_unit !
+\			%local_unit @ IF
+\				%local_unit @ _#unit_facility + @ ?DUP IF
+\					TRUE SWAP  [ _activation> user_base - ]T LITERAL + @
+\					[ ^c_set user_base - ]T LITERAL + W!
+\				THEN
+\			THEN
+\			TRUE %remote_unit @ #p_request + W!
+\		THEN
+		\ (--
+	;
+
+
+
+    | : remote_init
+		#slot_num zero DO
+    		['] serve iservice I 4* + !
+		LOOP
+    ;
+
+    \ count of interrupts from cards
+    ram_variable %slot_int  #slot_num 4* ram_allot
+
+    ( RTI1000 BUS INTERRUPT SERVICE )
+    HEX
+    HEX
+    interrupt: 0rti_service
+    	1 %slot_int +!
+		iservice @ IF
+			0 _#RTI1000_bus_base iservice @execute
+		ELSE
+			zero
+			[ _#RTI1000_bus_base
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 1rti_service
+    	1 [ %slot_int 4+ ]T LITERAL  +!
+		[ iservice 4+ ]T LITERAL @ IF
+			1
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range + ]T LITERAL
+			[ iservice 4+ ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 2rti_service
+    	1 [ %slot_int 8 + ]T LITERAL  +!
+		[ iservice 8 + ]T LITERAL @ IF
+			2
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 2 * + ]T LITERAL
+			[ iservice 8 + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 2 * +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 3rti_service
+    	1 [ %slot_int $0C + ]T LITERAL  +!
+		[ iservice $0C + ]T LITERAL @ IF
+			3
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 3 *  + ]T LITERAL
+			[ iservice $0C + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 3 *  +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 4rti_service
+    	1 [ %slot_int $10 + ]T LITERAL  +!
+		[ iservice $10 + ]T LITERAL @ IF
+			4
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 4 * + ]T LITERAL
+			[ iservice $10 + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 4 * +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 5rti_service
+    	1 [ %slot_int $14 + ]T LITERAL  +!
+		[ iservice $14 + ]T LITERAL @ IF
+			5
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 5 * + ]T LITERAL
+			[ iservice $14 + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 5 * +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 6rti_service
+    	1 [ %slot_int $18 + ]T LITERAL  +!
+		[ iservice $18 + ]T LITERAL @ IF
+			6
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 6 * + ]T LITERAL
+			[ iservice $18 + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 6 * +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+		THEN
+	;interrupt
+
+	interrupt: 7rti_service
+    	1 [ %slot_int $1C + ]T LITERAL  +!
+		[ iservice $1C + ]T LITERAL @ IF
+			7
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 7 *  + ]T LITERAL
+			[ iservice $1C + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 7 *  +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 8rti_service
+    	1 [ %slot_int $20 + ]T LITERAL  +!
+		[ iservice $20 + ]T LITERAL @ IF
+			8
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 8 * + ]T LITERAL
+			[ iservice $20 + ]T LITERAL  @execute
+		ELSE
+			zero [ _#RTI1000_bus_base
+			_#RTI1000_address_range 8 * +
+			_#RTI1000_interrupt_reset +
+			]T LITERAL W!
+    	THEN
+	;interrupt
+
+	interrupt: 9rti_service
+    	1 [ %slot_int $24 + ]T LITERAL  +!
+		[ iservice $24 + ]T LITERAL @ IF
+			9
+			[ _#RTI1000_bus_base
+			_#RTI1000_address_range 9 *  + ]T LITERAL
+			[ iservice $24 + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range 9 *  + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+    
+	interrupt: Arti_service     
+    	1 [ %slot_int $28 + ]T LITERAL  +!
+		[ iservice $28 + ]T LITERAL @ IF
+			$0A
+			[ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0A * + ]T LITERAL 
+			[ iservice $28 + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0A * + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+    
+	interrupt: Brti_service     
+    	1 [ %slot_int $2C + ]T LITERAL  +!
+		[ iservice $2C + ]T LITERAL @ IF
+			$0B
+			[ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0B * + ]T LITERAL 
+			[ iservice $2C + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0B * + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+
+	interrupt: Crti_service     
+    	1 [ %slot_int $30 + ]T LITERAL  +!
+		[ iservice $30 + ]T LITERAL @ IF
+			$0C
+			[ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0C * + ]T LITERAL 
+			[ iservice $30 + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0C * + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+    
+	interrupt: Drti_service     
+    	1 [ %slot_int $34 + ]T LITERAL  +!
+		[ iservice $34 + ]T LITERAL @ IF
+			$0D
+			[ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0D * + ]T LITERAL 
+			[ iservice $34 + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0D * + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+    
+	interrupt: Erti_service     
+    	1 [ %slot_int $38 + ]T LITERAL  +!
+		[ iservice $38 + ]T LITERAL @ IF
+			$0E
+			[ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0E * + ]T LITERAL 
+			[ iservice $38 + ]T LITERAL  @execute
+		ELSE 
+			zero [ _#RTI1000_bus_base 
+			_#RTI1000_address_range $0E * + 
+			_#RTI1000_interrupt_reset + 
+			]T LITERAL W! 
+    	THEN
+	;interrupt
+    
+	\ we get this interrupt with a card in the slot.
+	interrupt: Frti_service     
+    	1 [ %slot_int $3C + ]T LITERAL  +!
+	;interrupt
+    HOST
+	</code> </pre>
+</BODY>
+</HTML>

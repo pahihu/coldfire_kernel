@@ -1,0 +1,56 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	ram_variable %dig0_interrupts
+	#interrupt4 3 ??=
+	interrupt: digital_int0
+		panic" in digital_int0"
+		zero _breg_int_reset_digital0 C!
+		1 %dig0_interrupts +!	
+\		#interrupt4 activate_task_level
+	;interrupt
+
+	ram_variable %dig1_interrupts
+	#interrupt3 4 ??=	
+	interrupt: digital_int1 ( --)
+		panic" in digital_int1"
+		zero _breg_int_reset_digital1 C!
+		1 %dig1_interrupts +!
+\		#interrupt3 activate_task_level
+	;interrupt
+
+	ram_variable %aclow_interrupts
+	interrupt: aclow ( --)
+		panic" in aclow"
+		zero _breg_int_reset_aclow C!
+		1 %aclow_interrupts +!	
+	;interrupt
+
+
+	ram_variable %sysfail_interrupts
+	interrupt: sys_fail ( --)
+		panic" in sys_fail"
+		zero _breg_int_reset_sys_fail C!
+		1 %sysfail_interrupts +!	
+	;interrupt
+
+	ram_variable %remote_io_interrupts
+	interrupt: remote_io ( --)
+		panic" in remote_io"
+		zero _breg_int_reset_remote_i/o C!
+		1 %remote_io_interrupts +!	
+	;interrupt
+
+	</code> </pre>        
+
+</BODY>
+</HTML>

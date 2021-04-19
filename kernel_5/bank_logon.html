@@ -1,0 +1,123 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<p>
+This is loaded into cpu2
+</p>
+	<pre> <code>
+	| 1F CONSTANT #remote_develop
+    
+    
+    
+    ( offsets relative to status)  HEX
+    | 0A CONSTANT #port_^C
+ 
+    
+    : remote_ptable ( port --)
+    	4* %bank_pbase @ 
+    	%bank_offset @ - _#bank_mem_start +
+		+ @ DUP IF
+			%bank_offset @ - _#bank_mem_start +
+			EXIT
+		ELSE
+		     TRUE ABORT" Port not available" 
+    	THEN
+    ;
+    
+
+    ( flag is true if all ok)
+    | : remote_logon ( port --)
+      remote_ptable 'MLINK ! 
+	  \ this is not strickly correct as slave does not use
+	  \ address. But the location cannot be link so this will do.
+      064 'MLINK @ #p_owner + port_xgrab
+      ABORT" remote pipe busy."
+      ( wake remote task)
+      %bank_wake W@   'MLINK @ #p_status + @ %bank_offset @ - _#bank_mem_start + W!
+      ;
+      
+    
+    | : remote_logoff ( --)
+      zero 'MLINK @ #p_request + W!
+      'MLINK @ #p_owner + port_release
+      0 'MLINK !
+      ['] QUIT 'abort ! ABORT 
+      ;
+    
+    ( action codes)
+    | 1 CONSTANT #expect_data
+    | 2 CONSTANT #sending_data
+    
+     
+    ( expect)
+    | : expect_function ( --)
+		#$buffer get_buffer
+			buffer 'MLINK @ #p_count + W@ ACCEPT
+			1 + \ add in termination code 
+			\ n(--
+			user_base activation_^c_set W@ IF ( ^C )
+				'MLINK @ #p_^C_task + @ IF
+    				TRUE 'MLINK @ #p_^C_task + @  %bank_offset @ - _#bank_mem_start +  #port_^C + W!
+    			THEN
+				FALSE  user_base activation_^c_set W! 
+			THEN
+    		buffer 'MLINK @ #p_address + @  %bank_offset @ - _#bank_mem_start +
+    		jump CHARS 
+		1+ -2 AND  \ a word move 
+		#$maximum_data MIN MOVE
+    	kill_buffer
+		'MLINK @ #p_actual + W! 
+	;
+    
+    ( type)
+    | : type_function ( --)
+    		'MLINK @ #p_address + @  %bank_offset @ - _#bank_mem_start +
+    		'MLINK @ #p_count + W@
+    		_cvs_terminal_codes_decode 
+		;
+    
+    ( rlog_functions)
+    | CREATE rlog_functions
+    0 t,
+    ' expect_function t,
+    ' type_function   t,
+    
+    : cpui ( --)
+    	#remote_develop  remote_logon
+     	['] remote_logoff 'abort ! BEGIN
+    	 	KEY? 'MLINK @ #p_?data + W!
+    	 	user_base activation_^c_set W@ IF ( ^C )
+				'MLINK @ #p_^C_task + @ IF
+			   				TRUE 'MLINK @ #p_^C_task + @  %bank_offset @ - _#bank_mem_start + #port_^C + W!
+ 				THEN
+    			FALSE  user_base activation_^c_set W! 
+			THEN
+			'MLINK @ #p_request + W@ IF
+    			'MLINK @ #p_function + W@ 4* rlog_functions + @execute
+    			 zero 'MLINK @ #p_request + W!
+    			%bank_wake W@
+    			'MLINK @ #p_status + @  %bank_offset @ - _#bank_mem_start + W!
+    	 	THEN 
+    	 	xpause 
+    	 AGAIN 
+    ;
+
+
+	\ also allow n rlogon to match the rti logon method 
+
+	: rlogon ( n --)
+		DROP cpui
+	;
+
+    </code> </pre>
+
+</BODY>
+</HTML>

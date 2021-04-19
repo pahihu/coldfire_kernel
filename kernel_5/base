@@ -1,0 +1,9 @@
+./bvp560_rtiload.html:		0 SLOT>BASE $4000 + W@       \ generate the interrupt
+./bvp560_rtiload.html:		 0 SLOT>BASE _#RTI1000_command + W!           \ command_code  = cmd
+./bvp560_rtiload.html:		 0 SLOT>BASE _#RTI1000_param1 + W!    
+./bvp560_rtiload.html:		 0 SLOT>BASE _#RTI1000_param2 + W!    
+./bvp560_rtiload.html:		 0 SLOT>BASE _#RTI1000_param3 + W!    
+./bvp560_rtiload.html:		 0 SLOT>BASE _#RTI1000_param4 + W!    
+./bvp560_rtiload.html:		0 SLOT>BASE SWAP MOVE	 \ write the data  ( a size -- )
+./bvp560_rtiload.html:		0 SLOT>BASE 8000 0 FILL \ reset the dual port to all zeros
+./rlogon.html:    CODE SLOT>BASE ( n -- addr)

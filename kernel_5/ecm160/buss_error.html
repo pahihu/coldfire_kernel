@@ -1,0 +1,76 @@
+<html>
+<head>
+<title>Buss error interrupt</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<h1>Buss error interrupt</h1>
+<pre>
+<code>
+ 
+
+
+	interrupt: buss_error
+		\ read bit one of _breg_SYPRC if set it was a bus error
+		\ and we continue. If not set we are dealing with a software problem
+		\ and must do a cpu reset
+		_breg_SYPCR byte@ _#sypcr_swtaval AND not IF
+			\ reset cpu by forcing a second timeout with reset on timeout enabled.
+			0 _breg_SYPCR byte!
+			$55 _breg_SWSR byte!
+			$AA _breg_SWSR byte!
+			[ _#sypcr_watchdog_enable
+			_#sypcr_timeout_enable_reset +
+			]T LITERAL _breg_SYPCR byte!
+			BEGIN
+			AGAIN
+		ELSE
+			\ reset the software watchdog and continue to buss error
+			0 _breg_SYPCR byte!
+			$55 _breg_SWSR byte!
+			$AA _breg_SWSR byte!
+			[ _#sypcr_watchdog_enable
+			_#sypcr_prescale +
+			_#sypcr_swt +
+			_#sypcr_swta + 
+			\ clear the bit indicating buss error
+			_#sypcr_swtaval +
+			]T LITERAL _breg_SYPCR byte!
+		THEN
+		save_fault_stack
+		panic_cr
+		panic" Bus Error"
+		.panic_registers
+		panic_cr
+		set_processor_fault
+		['] _abort_bus_error int_return!
+        ;interrupt
+
+
+        ram_variable %bus_trapped
+        interrupt: _address_check
+                zero  _breg_int_reset_bus_error byte!
+                TRUE %bus_trapped !
+        ;interrupt
+ 
+
+        : check_bus_address ( addr --)
+                0 %bus_trapped !
+  \              _address_check #buss_error_vector EXCEPTION
+                \ operation may or may not succeed.
+                @s >R
+                W@
+                R> !s DROP
+   \             buss_error #buss_error_vector EXCEPTION
+                %bus_trapped @
+        ;
+
+</code> 
+</pre>
+</body>
+</html>

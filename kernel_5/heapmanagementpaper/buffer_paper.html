@@ -1,0 +1,298 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h2>COLDFORTH Heap Management</h2>
+<p>
+TCP/IP places unknown memory demands on a system. 
+</p>
+<p>
+IP requires you to receive an unknown number of datagrams, of unknown 
+size. The datagrams could be IP fragments. You can have an unknown number
+of datagrams being reconstructed from the fragments. The number of routes is unknown. 
+The number of entries in your ARP table is unknown, and so it goes.
+</p>
+<p>
+If you are going to support TCP/IP in a manner that is close to the RFC 
+requirements,  pre allocation of the memory needed for IP reception is 
+difficult. You have to support <i>ALLOCATE</i> and <i>FREE</i>. 
+</p>
+<p>
+This article describes the COLDFORTH heap management system. 
+</p>
+
+<h3>Design Aims</h3>
+<ul>
+<li>Portability. All code is in FORTH.</li>
+<li>Run without an MMU</li>
+<li>Buffers are self describing; that is all you need to return a buffer is
+ the buffers address.
+</li>
+<li>
+Memory fragmentation is controlled.
+</li>
+<li>
+You can work out what is going on; where and when a buffer is 
+used is recorded.
+</li>
+<li>
+As fast as possible, given the other design aims.
+</li>
+</ul>
+<p>
+Dealing with fragmentation was and is the most difficult problem.
+</p>
+
+<h3>Fragmentation</h3>
+Its difficult to put Humpty Dumpty back together.
+<p>
+A system that doesn't use a MMU for memory control has to create a small memory
+area from a larger area, leaving a remainder.  When the small area is returned 
+to the heap management system, there is a fair chance that the some of the 
+remainder has been allocated to another task and the large area can no 
+longer be reconstructed.
+</p>
+<p>
+The COLDFORTH heap management system does not solve this problem, but the 
+design makes it possible to quickly recombine buffers that are meant 
+to be combined.
+</p>
+<p>
+Two design decisions set the tone of the whole heap management package.  
+Both reduce de-fragmentation costs.
+</p>
+<p>
+Memory-blocks from which user buffers are created  are binary multiples, that 
+is they have a size $40 bytes, $80 bytes, $100 bytes etc.
+</p>
+<p>
+The address of a memory block has bits below its size  set to zero. 
+That is, the address of a $80 byte memory block can have the base address 
+$180, but cannot have the base address $140. The following diagram tries 
+to demonstrate the reason for this restriction.
+</p> 
+<img src="./joining_buffer.png" HEIGHT=421 WIDTH=460 >
+<p>
+Because we insist that the bits below the block size are zero the first case will not happen.
+</p>
+<h3>The heap management system </h3>
+<p>
+The heap management system can be divided into two parts. The code you 
+interact  with when getting or returning a buffer. And the low level task that
+recombines the buffers.
+</p>
+<h4>The data structures</h4>
+<p>
+The following diagram shows a $40 byte memory block linked into the $40 byte
+Empty list.
+</p>
+<img src="./small_buffer.png" HEIGHT=358 WIDTH=432 >
+
+<p> 
+The following is worth noting:
+</p>
+<ul>
+<li>Every memory block starts with a system header.</li>
+<li>The user buffer is shorter than the memory block</li>
+<li>The address of the user buffer is after the system header</li>
+<li>Memory blocks are build out of units that are binary multiple of the 
+minimum memory block size.</li>
+</ul>
+<p>
+If you  use the word <i>ALLOCATE</i> you will be returned a memory block 
+from one of the empty lists. For example a buffer created from a $40 byte
+memory block will be returned for any <i>ALLOCATE</i> request less than $1C bytes. 
+The memory block will be $40 bytes, the address returned will be after the
+system header, and no matter what length requested, the usable data area 
+will be $1C bytes.
+</p>
+<p>
+Any <i>ALLOCATE</i> request greater than $1C bytes and less than $5D bytes will be 
+returned a buffer created from a memory block that was linked into the 
+$80 byte memory block list.
+</p>
+<p>
+This may seem pretty dam inefficient, from a $40 byte memory block the user only 
+gets $1C bytes of usable memory. If you want a $8000 byte buffer, it is created 
+from a $10000 byte memory block. The heap management system has given you a usable buffer 
+$7FDC bytes longer than you need.
+</p>
+<p>
+Yep it's pretty inefficient, but it's a lot better than having your memory
+broken up into a lot of small chunks that you can't put back together.
+</p>
+<h4>Getting the memory block</h4>
+<p>
+When you ask for a memory area, the heap management system first goes to the memory block list 
+that has memory blocks that will just satisfy your needs. If there is no buffer 
+available in the list, the buffer splitting routine 
+<i><a HREF="./heap_control.html#_get_more_buffers"> _get_more_buffers</a></i>
+is called. This routine will go to the next list and attempt to split a buffer form that list into two. 
+If there is no buffer in that list it will go to the next list and .......
+<i>_get_more_buffers</i> is a recursive routine.
+</p>
+<p>
+Life is tough for <i>_get_more_buffers</i> , the COLDFIRE heap management system has to be 
+able to meet the needs of tasks running at many different priorities, 
+in a manner that doesn't hold the system up.
+</p>
+<p>
+A low level task can be using <i>_get_more_buffers</i> just to find that a high level task
+has pinched the buffers created. <i>_get_more_buffers</i> has to be happy and just
+do the job again, this it does.
+</p>
+<h4>Putting Humpty Dumpty back together</h4>
+<p>
+The buffer return words and the 
+<i><a HREF="./kernel_tasks.html#buffer_reclaim">buffer_reclaim</a></i> 
+task co-operate. The buffer return words return the buffers to the list
+in an address sorted order. This may seem like an excessive runtime overhead.
+Two things have to be remembered. The <i>buffer_reclaim</i> is trying to keep
+the list short, and life would be very difficult for <i>buffer_reclaim</i> if
+the list were not sorted.
+</p>
+<p>
+Because the lists are sorted, because the buffers are allocated in binary multiples, and because
+the bits below the memory block size have to be zero, buffer reclaim is reasonably simple.
+</p>
+<p>
+Buffer reclaim deals with one buffer size list at a time, trying to combine and 
+move the resultant buffer to the next list. If the base address of the buffer
+is an acceptable address for the next list up, it checks to see if the next buffer in the list is
+the next memory block ( <i><a HREF="./heap_control.html#_joinable"> _?joinable</a></i> ). 
+If both these conditions are met the reclaim word joins the buffer and puts it in the next list.
+</p>
+<p>
+Seems simple. Life gets complicated because this must occurs with high priority tasks returning and
+claiming buffers. A buffer that was in the list when the test was done, may be in use by the time
+joining is to occur. The complications and how they are dealt with can be seen by looking at 
+the code for <i><a HREF="./heap_control.html#_join_buffer_code"> _?join_buffer_code</a></i>
+</p>
+<h4>Keep track of Humpty Dumpty</h4>
+<p>
+As soon as you introduce a heap management system, you have memory leaks. If you keep track of 
+memory usage you can determine the guilty and dismiss the innocent
+</p>
+<p>
+An abort buffer allocated to a task is linked in as shown in the following diagram.
+</p>
+<img src="./abort_buffer.png" HEIGHT=375 WIDTH=522 >
+<p>
+The used buffer list heads are only used by words that display buffer usage, for example 
+<i><a HREF="./print_system_data.html#.buffers">.buffers</a></i> and
+<i><a HREF="./print_system_data.html#.buffers_used">.buffers_used</a></i>.
+The abort list is used to return buffers to the central pool on a task abort.
+The word <i><a HREF="./heap_control.html#get_abort_buffer">get_abort_buffer ( pointer n--addr)</a></i>
+allows you to supply the address of a cell that is reset to zero on a task abort. 
+The cell is typically used to store the address of the buffer as shown in the diagram.
+The application however is free to use it as it pleases.
+</p>
+
+<h3>application words</h3>
+<p>
+The COLDFIRE heap management system provides four ways of getting a memory block.
+</p>
+<table border=1>
+
+<tr><td><b>word</b></td> 
+	<td><b>description</b></td>
+	<td><b>returning word</b></td> 
+</tr>
+
+<tr><td><i><a HREF="./heap_control.html#get_buffer">get_buffer ( n --)</a></i></td>
+	<td>The address of the buffer will be returned by 
+	<i><a HREF="./heap_control.html#buffer">buffer</a></i>. 
+	If a task abort occurs the buffer will be returned to the free buffer pool.
+	</td>
+	<td><i><a HREF="./heap_control.html#kill_buffer">kill_buffer ( addr --)</a></i></td>
+</tr>
+<tr><td><i><a HREF="./heap_control.html#get_abort_buffer">get_abort_buffer ( pointer n--addr)</a></i></td>
+	<td>The system will assume the address of the buffer is stored at pointer, 
+	but it doesn't do the store for you. If a task abort occurs the value 
+	stored in pointer will be set to zero, and the buffer will be returned 
+	to the free buffer pool. If the get_abort_buffer operation fails, an 
+	abort occurs.</td>
+	<td><i><a HREF="./heap_control.html#kill_abort_buffer">kill_abort_buffer ( addr--)</a></i></td>
+</tr>
+<tr><td><i><a HREF="./heap_control.html#get_free_buffer">get_free_buffer ( n--)</a></i></td>
+	<td>Word returns the address of the buffer. The buffer will not be returned 
+	if the task aborts, it is your responsibility. Buffers used to transfer data 
+	to TCP/IP ( pep buffers) must be created in this way.</td>
+	<td><i><a HREF="./heap_control.html#kill_free_buffer">kill_free_buffer ( addr--)</a></i></td>
+</tr>
+<tr><td><i><a HREF="./heap_control.html#ALLOCATE">ALLOCATE ( n --addr ior)</a></i></td>
+	<td>If a task abort occurs the buffer will be returned to the free buffer pool. 
+	If the <i>ALLOCATE</i> operation fails ior points to a string describing the error.</td>
+	<td><i><a HREF="./heap_control.html#FREE">FREE ( addr--)</a></i></td>
+</tr>
+</table>
+<p>
+The standard gives us one way to allocate memory from the heap, COLDFORTH gives 
+you four. Some may ask. What is this nonsense?.
+</p>
+<p>
+The standard is very quiet on what happens when a task aborts. Should the memory
+claimed by the task be returned, or should if be left to the programmer to 
+use <i>CATCH</i> and <i>THROW</i> to return the memory in an orderly fashion. I believe the system
+should reclaim the memory.  When programming you want to deal with the problem not side
+issues such as this.
+</p>
+<p>
+If <i>ALLOCATE</i> returns memory to the heap management system on an abort, 
+then you need a set of words that does not. When using 
+memory blocks to move data between tasks it is important that
+aborting one task doesn't invalidate memory owned by another. <i>get_free_buffer</i> 
+and <i>kill_free_buffer</i> are used for this purpose.
+</p>
+<p>
+<i>get_about_buffer</i> and <i>kill_abort_buffer</i> are used to deal with data areas
+created from the heap. For example:
+</p>
+<pre> <samp>
+VARIABLE %data_pointer
+: setup_task ( --)
+	#data_length get_abort_buffer %data_pointer !
+;
+
+:task somthing ( --)
+	setup_task
+	task_action
+;task
+</samp> </pre>
+<p>
+If the task aborts the data area will be returned to the heap management system, and the cell 
+containing the pointer reset back to zero.
+</p>
+<p><i>get_buffer</i> and <i>kill_buffer</i> are historic CVS words. 
+They are a lot easier to use than <i>ALLOCATE</i> and <i>FREE</i>. 
+The following code demonstrates their use.
+</p>
+<pre> <samp>
+: do_some_stuff ( addr n --)
+	DUP get_buffer
+		buffer  SWAP MOVE
+		$100 buffer do_stuff
+			get_buffer
+				\ now dealing with second buffer
+				buffer do_more_stuffer
+			kill_buffer
+		\ now dealing with first buffer
+		buffer print_stuff
+	kill_buffer
+;
+</samp> </pre>
+<p>
+Basically  <i>get_buffer</i> and <i>kill_buffer</i> take the buffer address away
+from the stack. There is a word ( <i>buffer</i> ) that returns the address
+of the current buffer.
+</p>
+</body>
+
+</body>
+</html>
+

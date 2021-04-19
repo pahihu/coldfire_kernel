@@ -1,0 +1,231 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h4>codes that can be stored in the ep_type field.</h4>
+
+<a HREF="./license.html">license</a><br>
+
+<img src="./pep.png" HEIGHT=373 WIDTH=277>
+
+<pre> <code>
+: B@ C@ ; inline
+: B! C! ; inline
+: hs2net ; inline
+: net2hs ; inline
+: hs4net ; inline
+: net4hs ; inline
+2 CONSTANT RTIP_ALEN
+
+: ip@ @ ; inline
+: ip! ! ; inline
+</code></pre>
+<p>
+These are the ethernet codes, the sames codes are however used for all interfaces
+</p>
+	<pre> <code>
+	| 0x0800            CONSTANT EPT_IP     \ type: Internet Protocol
+	| 0x0806            CONSTANT EPT_ARP    \ type: ARP
+	| 0x0805            CONSTANT EPT_RARP   \ type: Reverse ARP
+	</code> </pre>
+
+<h4>external packet</h4>
+<pre> <code>
+.S .( into pep)
+	\ the pep packet preamble used to control it's path
+	| 6 CONSTANT HW_AMAX
+
+	zero
+	| DUP CONSTANT ep_link         CELL+    \ link field for lists
+	| DUP CONSTANT ep_back         CELL+    \ just in case we want to put in bouble linked list
+	| DUP CONSTANT ep_xclock+      CELL+    \ received time
+	| DUP CONSTANT ep_error        CELL+    \ address of error message or zero
+	\ so the interface can calculate the protocol checksum.
+	| DUP CONSTANT ep_proto_obj    CELL+    \
+	| DUP CONSTANT ep_nif_received CELL+    \ The nif this packet received on
+	| DUP CONSTANT ep_nexthop      CELL+    \ ip address
+	\ pointers and counts used in further processing
+	| DUP CONSTANT ep_ipdata       CELL+    \ pointer to ipdata
+	| DUP CONSTANT ep_ipcount      CELL+    \ count of ip bytes
+	| DUP CONSTANT ep_protodata    CELL+    \ pointer to protocol data
+	| DUP CONSTANT ep_protocount   CELL+    \ count of protocol bytes
+
+	\ used by tcp
+	| DUP CONSTANT ep_start_seq    CELL+    \ the first sequence in packet
+	| DUP CONSTANT ep_end_seq     CELL+    \ the last sequence in packet
+
+	\ data area to support tcp
+	| DUP CONSTANT ep_tcp_xclock   CELL+
+	| DUP CONSTANT ep_tcp_tries    CELL+
+
+	| DUP CONSTANT ep_len          CELL+    \ length in total including this header.
+	| DUP CONSTANT ep_dst          HW_AMAX +
+	| DUP CONSTANT ep_src          HW_AMAX +
+	| DUP CONSTANT ep_type         2 +
+	|	CONSTANT ep_data                  \ data in the packet
+
+	</code> </pre>
+<h4>Internet Protocol (IP)  Constants and Datagram Formats</h4>
+	<pre> <code>
+	| 4    CONSTANT IP_ALEN       \ IP address length in bytes (octets)
+	| $20  CONSTANT IP_ALEN_BITS  \ number of bits in IP address
+	| : ip_classa ( ip_addr --flag )  $80000000 AND not ;         \ IP Class A address
+	| : ip_classb ( ip_addr --flag )  $C0000000 AND $80000000 = ; \ IP Class B address
+	| : ip_classc ( ip_addr --flag )  $E0000000 AND $C0000000 = ; \ IP Class C address
+	| : ip_classd ( ip_addr --flag )  $F0000000 AND $E0000000 = ; \ IP Class D address
+	| : ip_classe ( ip_addr --flag )  $F8000000 AND $F0000000 = ; \ IP CLass E address
+	</code> </pre>
+<h5>Some Assigned Protocol Numbers</h5>
+	<pre> <code>
+	| 1    CONSTANT IPT_ICMP      \ protocol type for ICMP packets
+	| 6    CONSTANT IPT_TCP       \ protocol type for TCP packets
+	| 8    CONSTANT IPT_EGP       \ protocol type for EGP packets
+	| $11  CONSTANT IPT_UDP       \ protocol type for UDP packets
+	</code> </pre>
+<p>
+Struct ip header. Data offsets are as put out on wire. For the internet
+the byte order has to be in network order ( same as coldfire). For communication
+between programs and cards byte order is in coldfire order.
+Remeber that the header can be followed by option bytes so you have to use
+the word <i>_pep>ip_hlen</i> to determine the actual header length.
+</p>
+	<pre> <code>
+	zero
+	| DUP CONSTANT ip_verlen      1+        \ IP version & header length (in longs)
+	| DUP CONSTANT ip_tos         1+        \ type of service
+	| DUP CONSTANT ip_len         2+        \ total packet length (in octets)
+	| DUP CONSTANT ip_id          2+        \ datagram id
+	| DUP CONSTANT ip_fragoff     2+        \ fragment offset (in 8-octet's)
+	| DUP CONSTANT ip_ttl         1+        \ time to live, in gateway hops
+	| DUP CONSTANT ip_proto       1+        \ IP protocol (see IPT_* above)
+	| DUP CONSTANT ip_cksum       2+        \ header checksum
+	| DUP CONSTANT ip_src         IP_ALEN + \ IP address of source
+	| DUP CONSTANT ip_dst         IP_ALEN + \ IP address of destination
+	|	CONSTANT ip_options               \ start of options
+
+
+	| 4          CONSTANT IP_VERSION              \ current version value
+
+	| $2000 CONSTANT IP_MF                  \ more fragments bit
+	| $4000 CONSTANT IP_DF                  \ don't fragment bit
+	| $1FFF CONSTANT IP_FRAGOFF             \ fragment offset mask
+	| $E0   CONSTANT IP_PREC                \ precedence portion of TOS
+
+
+
+	| #20   CONSTANT IPMHLEN                \ minimum IP header length (in bytes)
+
+	| $3C   CONSTANT #max_ip_header         \ maximum ip header length in bytes
+	</code> </pre>
+<h5>IP options</h5>
+	<pre> <code>
+	| $80   CONSTANT IPO_COPY               \ copy on fragment mask
+	| $60   CONSTANT IPO_CLASS              \ option class
+	| $17   CONSTANT IPO_NUM                \ option number
+
+	| $00   CONSTANT IPO_EOOP               \ end of options
+	| $01   CONSTANT IPO_NOP                \ no operation
+	| $82   CONSTANT IPO_SEC                \ DoD security/compartmentalization
+	| $83   CONSTANT IPO_LSRCRT             \ loose source routing
+	| $89   CONSTANT IPO_SSRCRT             \ strict source routing
+	| $07   CONSTANT IPO_RECRT              \ record route
+	| $88   CONSTANT IPO_STRID              \ stream ID
+	| $44   CONSTANT IPO_TIME               \ internet timestamp
+	</code> </pre>
+<h5>Important ip addresses</h5>
+	<pre> <code>
+	| $FFFFFFFF CONSTANT ip_maskall
+	| $00000000 CONSTANT ip_anyaddr
+	| $7F000001 CONSTANT ip_loopback
+	</code> </pre>
+<h5>Extracting data from the ip header using the ip base address</h5>
+<p>
+Things like this are required for icmp; these contain a returned datagram.
+</p>
+	<pre> <code>
+	| : _ip>ip_tos
+		ip_tos + B@ $1C AND 2 RSHIFT
+	;
+
+	| : _ip>ip_plen ( ip --packet_len)
+		ip_len  + W@
+	; inline
+
+	| : _ip>ip_hlen ( ip -- header_len)
+		ip_verlen + B@ $0F AND 4*
+	;
+
+	| : _ip>ipdata ( ip -- ipdata)
+		DUP _ip>ip_hlen +
+	;
+
+	| : _ip>ip_data_length ( ip -- len )
+		DUP _ip>ip_plen
+		\ pep pln(--
+		SWAP _ip>ip_hlen
+		\ ln hl(--
+		-
+		\ dl(--
+	;
+	</code> </pre>
+<p>
+Most stuff is done relative to a pep address.
+</p>
+	<pre> <code>
+	| : _pep>ip_tos ( pep - tos )
+		[ ep_data ip_tos  + ]T LITERAL + B@ $1C AND 2 RSHIFT
+	;
+
+	| : _pep>ip_priority ( pep -- priority )
+		[ ep_data ip_tos + ]T LITERAL + B@ $E0 AND 5 RSHIFT ;
+
+	| : _pep>ip_hlen ( pep -- header_len)
+			[ ep_data ip_verlen + ]T LITERAL + B@ $0F AND 4*
+	;
+
+	| : _pep>ipdata ( pep --pip )
+		DUP _pep>ip_hlen + ep_data +
+	;
+
+	| : _pep>ip_plen ( pep --packet_len)
+		[ ep_data ip_len + ]T LITERAL  + W@
+	; inline
+
+
+	| : _pep>ip_data_length ( pep -- len )
+		DUP _pep>ip_plen
+		\ pep pln(--
+		SWAP _pep>ip_hlen
+		\ ln hl(--
+		-
+		\ dl(--
+	;
+
+
+
+	</code> </pre>
+<i>default_mask</i> can be used to get the hash value to search the route cache,
+arp cache and fragment table but has nothing to do with the actual net.
+The net uses masks.
+	<pre> <code>
+	| : ip>default_mask ( ip -- net)
+		DUP ip_classc IF
+			DROP $FFFFFF00 EXIT
+		THEN
+		DUP ip_classb IF
+			DROP $FFFF0000 EXIT
+		THEN
+		DUP ip_classa IF
+			DROP $FF000000 EXIT
+		THEN
+		DROP $FFFFFFFF
+	;
+	</code> </pre>
+
+</body>
+</html>

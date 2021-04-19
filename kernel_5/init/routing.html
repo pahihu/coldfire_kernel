@@ -1,0 +1,24 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="../license.html">license</a>
+<p>
+Datagrams of unkown destination are sent to the default gateway, the default code assumes
+that this is host 1 on the nice segment.
+</p>
+<pre> <code>
+000.000.000.000          \ ip, anything 
+$00000000                \ mask everything
+%nice_object @ :ip @ %nice_object @ :@netmask AND
+\ change this if you want the gateway to be something other than 1.
+001 OR                   \ gateway
+$00000040 $00000000 %nice_object @   static_route
+</code> </pre>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>Relevent Documents</h3>
+<a HREF="../license.html">license</a>
+<h4>General</h4>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc2500.html">RFC2500</a> The RFC that are standards<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1122.html">RFC1122</a> Host requirments<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1812.html">RFC1812</a> Router requirments<br>
+<h4>IP</h4>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc791.html">RFC0791</a> General<br>
+<h4>Internet Address Resolution Protocol</h4>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc814.html">RFC0814</a> General<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc826.html">RFC0826</a> ARP standard<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc826.html">RFC0903</a> RARP standard<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1029.html">RFC1029</a> Further notes<br><p>
+<h4>Computing the checksum</h4>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1071.html">RFC1071</a> Checksum computation<br>
+
+
+<h4>packet structure</h4>
+<p>
+The ip packet is structured as shown below. An application 
+that uses queue_ip packets must understand this, as room has to be left 
+at the start of the packet for the ep header and the ip header. This has to be,
+we do not want to be doing block moves as we move the packet up/down the protocol stack.
+</p>
+<img src="./pep.png" HEIGHT=373 WIDTH=277>
+<ul>
+<li>pep = pointer_external_packet</li>
+<li>pip = pointer_internet_packet</li>
+<li>pd = pointer_data</li>
+</ul>
+<h4>IP packet flow</h4>
+<p>
+All ip packets are queued into the IP packet queue. This is a priority queue,
+with the packet priority field ( contained in the ip header) giving which queue level 
+the packet is queued onto. All interfaces have a :queue_ip method. The queue_ip method
+expects a correctly formed ip packet. The following ip fields must be 
+filled in
+<ul>
+<li>HLEN</li>
+<li>SERVICE TYPE</li>
+<li>TOTAL LENGTH</li>
+<li>TIME TO LIVE</li>
+<li>PROTOCOL</li>
+<li>DESTINATION IP ADDRESS</li>
+<li><i>protocol_object</i> field must be set to a valid protocol object or be zero</li>
+</ul>
+<p> If  IP options are to be used they must be written in th data field and HLEN set
+to reflect there existance. <i>queue_ip</i> is a low level word, applications that use it 
+must deal with the complications.
+</p>
+<p>
+Routed will.
+</p>
+<ul>
+<li>Use the destination address to determine which interface to send the packet to.</li>
+</ul>
+<p>
+If the packet is queued with a source address of zero, routed will:
+</p>
+<ul>
+<li>Set the source to the ip address of the interface the packet is routed to.</li>
+<li>Execute the <i>:protocol_checksum</i> method. Some  protocols cannot create</li>
+there checksum until the source address is known.</li>
+</ul>
+<p>
+If the packet is queued with a source address routed assumes that the packet was
+sourced elsewhere.
+</p>
+<img src="./ip_packet_flow.png" HEIGHT=489 WIDTH=849>
+<p>
+All ip packets are taken from the ip packet queue, there is no special path for local or
+broadcast packets. The routing routine will determine a destination interface using
+the destination ip address. For local broadcast addresses it will be 
+the broadcast_interface. For local addresses it will be a local_interface. 
+For a remote adddress is will be a interface that can send ip packets off card.
+</p>
+<h4>Address resolution protocol</h4>
+<p>
+The address resolution protocol ( ARP) is only required if the hardware address 
+cannot be determined from the IP address, as an example ethernet. 
+:consume_interface will deal with the problem. It is also consume_interface's problem to fragment or defragment 
+the packet if required. The local interface will defragment, interfaces that send packets
+over the wire will fragment.
+We do it in consume_interface so that the full outgoing record goes through routed,
+and the hardware address only has to be resolved for the larger packet. We defragment in the 
+local consume_interface method because it is only then that we know the packet has 
+to be reconstructed.
+ 
+We have to do it at consume_interface as write_pep ( the word one layer down)
+can be sending packets other than ip. It is also consume_interface that has to convert 
+the ip header into network order, and checksum the header.We don't muck around 
+with incremental checksum updates. Such things also have to allow for ip options.
+</p>
+</body>
+</html>

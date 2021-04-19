@@ -1,0 +1,209 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code> 
+HOST
+\	WORDLIST
+\	\ wordlist name in target
+\	DUP name_wordlist ~unit
+\	all_vocabulary &UNIT
+
+\	WORDLIST
+\	DUP name_wordlist ~terminal
+\   all_vocabulary &TERMINAL
+
+	WORDLIST
+	DUP name_wordlist ~environment
+    all_vocabulary &environment
+
+
+	WORDLIST
+	DUP name_wordlist ~tasks
+    all_vocabulary &tasks
+
+\	WORDLIST
+\	DUP name_wordlist ~task_table
+\   all_vocabulary &TASK_TABLE
+
+ \   WORDLIST
+\	DUP name_wordlist ~system
+\	all_vocabulary &SYSTEM
+
+\	WORDLIST
+\	DUP name_wordlist ~serial
+\    all_vocabulary &SERIAL
+
+\	WORDLIST
+\	DUP name_wordlist ~scr_words
+\   all_vocabulary &SCR_WORDS
+
+\	WORDLIST
+\	DUP name_wordlist ~scr_i/o
+\    all_vocabulary &SCR_I/O
+
+\ wordlist for local variables
+	WORDLIST
+	DUP name_wordlist ~local_input
+	all_vocabulary  &local_input
+
+	WORDLIST
+	DUP name_wordlist ~local_output
+	all_vocabulary &local_output
+
+	WORDLIST
+	DUP name_wordlist ~local_data
+	all_vocabulary &local_data
+
+
+
+\ ok module only
+	WORDLIST
+	DUP name_wordlist ~screen
+    all_vocabulary &SCREEN
+
+\	WORDLIST
+\	DUP name_wordlist ~rp
+\   all_vocabulary &RP           ( remote port offsets)
+
+	WORDLIST
+	DUP name_wordlist ~root
+	all_vocabulary &root
+
+
+\	WORDLIST
+\	DUP name_wordlist ~printer
+\   all_vocabulary &PRINTER
+
+\	WORDLIST
+\	DUP name_wordlist ~parameters
+\    all_vocabulary &PARAMETERS
+
+\ module only
+	WORDLIST
+	DUP name_wordlist ~months
+    all_vocabulary &MONTHS
+
+	WORDLIST
+	DUP name_wordlist ~drivers
+    all_vocabulary &drivers
+
+
+\	WORDLIST
+\	DUP name_wordlist ~messages
+\    all_vocabulary &MESSAGES
+
+\	WORDLIST
+\	DUP name_wordlist ~lu
+\    all_vocabulary &LU
+
+\	WORDLIST
+\	DUP name_wordlist ~interrupt
+\    all_vocabulary &INTERRUPT
+
+ \   WORDLIST
+\	DUP name_wordlist ~interrupt
+\	all_vocabulary &ILAN
+	</code> </pre>
+
+
+<a name="FORTH-WORDLIST"></a>
+<h5>ANS 16.6.1.1595 FORTH-WORDLIST</h5> 
+<p>( -- wid )</p>
+<p>
+Return wid, the identifier of the word list that includes all standard words 
+provided by the implementation. This word list is initially the compilation 
+word list and is part of the initial search order.
+</p> 
+
+	<pre> <code>
+	_#forth_threads forth threads_number ! HOST
+	WORDLIST
+	DUP name_wordlist FORTH-WORDLIST
+	</code> </pre>
+
+<a name="FORTH"></a>
+<h5>ANS 6.6.2.1590 FORTH</h5>
+<p>( -- )</p>
+<p>
+Transform the search order consisting of widn, ... wid2, wid1 
+(where wid1 is searched first) into widn, ... wid2, wid
+</p> 
+	
+	
+	<pre> <code>
+	\ FORTH was created in XCOM we now need to patch in the 
+	\ target wid.
+	.S .( about to use FORTH)
+	DUP FORTH target_context @ patch_xvocabulary
+    target_vocabulary FORTH        ( Forth language)
+
+	_#normal_threads forth threads_number ! HOST 
+    
+	.S .( befor &FORMATS)
+	WORDLIST
+	DUP name_wordlist ~formats
+	all_vocabulary &FORMATS
+	
+	WORDLIST
+	DUP name_wordlist ~fixed
+    all_vocabulary &FIXED
+
+	WORDLIST
+	DUP name_wordlist ~flags
+	all_vocabulary &FLAGS
+	</code> </pre>
+<a name="EDITOR"></a>
+<h5>15.6.2.1300 EDITOR</h5>
+<p>TOOLS EXT</p> 
+<p>( -- )</p>
+<p>
+Replace the first word list in the search order with the EDITOR word list. 
+</p>
+	<pre> <code>
+	WORDLIST
+	DUP name_wordlist ~editor
+    DUP EDITOR target_context @ patch_xvocabulary       ( line editor)
+	target_vocabulary EDITOR
+   
+\	WORDLIST
+\	DUP name_wordlist ~disk
+\	all_vocabulary &DISK
+    
+	WORDLIST
+	DUP name_wordlist ~commands
+	all_vocabulary &COMMANDS     ( words available when system comes up)
+    
+\	WORDLIST
+\	DUP name_wordlist ~aux
+\	all_vocabulary &AUX
+    
+	</code> </pre>
+<a name="ASSEMBLER"></a>
+<h5>15.6.2.0740 ASSEMBLER</h5> 
+<p>TOOLS EXT</p> 
+<p>( -- )</p>
+<p>
+Replace the first word list in the search order with the ASSEMBLER word list. 
+</p>
+
+	<pre> <code>
+	WORDLIST
+	DUP name_wordlist ~assembler
+	DUP ASSEMBLER target_context @ patch_xvocabulary    ( 68XXX assembler)
+	target_vocabulary ASSEMBLER
+	
+	\ set target context as desired
+	FORTH          
+	\ set CONTEXT as desired
+    HOST
+	</code> </pre>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<a HREF="../license.html">license</a>
+	<pre> <code>
+	.S .( into ethernet.h)
+	| #6                CONSTANT EP_ALEN   \ number of octets in physical address
+	| EP_ALEN 2* 2 + CONSTANT EP_HLEN
+	\ assumption made in code
+	ep_data ep_dst - EP_HLEN ??=
+
+	| #60               CONSTANT EP_MINLEN \ minimum packet length
+	| #1500             CONSTANT EP_DLEN   \ length of data field ep
+	| EP_HLEN EP_DLEN + CONSTANT EP_MAXLEN
+
+	EP_ALEN HW_AMAX ??<= \ >
+
+	| #3                CONSTANT EP_RETRY  \ number of times to retry xmit errors
+
+	| CREATE $EP_BRC $06FFFFFF t, $FFFFFFFF t, \ Ethernet broadcast address
+
+	| #1sec 300 *       CONSTANT EP_RTO     \ time out in seconds for reads
+
+	</code> </pre>
+<h4>Internet Address Resolution Protocol</h4>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc814.html">RFC814</a> General<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc826.html">RFC826</a> ARP standard<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc826.html">RFC903</a> RARP standard<br>
+<a HREF="http://www.cis.ohio-state.edu/cgi-bin/rfc/rfc1029.html">RFC1029</a> Further notes<br><p>
+<pre> <code>
+| 	01  CONSTANT AR_HARDWARE \ ethernet hardware type code
+</code> </pre>
+<p>
+Definitions of codes used in operation field of ARP packet
+</p>
+<pre> <code>
+|	1 CONSTANT AR_REQUEST   \ ARP request to resolve address
+|	2 CONSTANT AR_REPLY     \ reply to a resolve request
+|	3 CONSTANT RA_REQUEST   \ reverse ARP request (RARP packets)
+|	4 CONSTANT RA_REPLY     \ reply to a reverse request (RARP)
+</code> </pre>
+<p>
+This describes the stucture of a arp packet. The fields <i>ar_hwlem</i>
+and <i>ar_prlen</i> give the length of the last four fields but we are only
+interested in one format.
+</p>
+<pre> <code>
+	\ structure was called <i>arp</i>
+	zero
+|	DUP CONSTANT ar_hwtype  02 + \ hardware type see AR_HARDWARE
+|	DUP CONSTANT ar_prtype  02 + \ protocol type contains $0800 for IP
+|	DUP CONSTANT ar_hwlen   01 + \ hardware address length
+|	DUP CONSTANT ar_prlen   01 + \ protocol address length
+|	DUP CONSTANT ar_op      02 + \ ARP operation (see list above)
+|	DUP CONSTANT ar_addrs        \ sender and target hw & proto addresses follow
+	\ the structure is fixed for the case we are interested in
+	\ hardware is six, ip is four, very easy to make bad code using unused options.
+|	DUP CONSTANT ar_source_ha EP_ALEN +
+|	DUP CONSTANT ar_source_pa IP_ALEN +
+|	DUP CONSTANT ar_target_ha EP_ALEN +
+|	DUP CONSTANT ar_target_pa IP_ALEN +
+|	    CONSTANT ar_length
+
+
+|	EP_ALEN RTIP_ALEN MAX	CONSTANT      MAXHWALEN    \ maximum hardware address length
+
+	\ the number of link list heads
+|	$40				        CONSTANT      ARP_TSIZE    \ ARP table size
+
+|	ARP_TSIZE 1- CELLS      CONSTANT      ARP_TSIZE_MASK
+
+	\ number of ip packets that can be queued before the arp request is resolved.
+|	#10				        CONSTANT      ARP_QSIZE    \ ARP port queue size
+
+	\ cache timeouts
+
+|	#1sec #600 *		        CONSTANT      ARP_TIMEOUT   \ 10 minutes
+|	#1sec			        CONSTANT      ARP_RESEND    \ resend if no reply in 1 sec
+|	4				        CONSTANT      ARP_MAXRETRY  \ give up after this many tires
+
+</code> </pre>
+<p>
+The arp cache is used to convert an ip addresses to hardware addresses.
+This occures when a packet is to be sent. If the address is not available
+the state is set to AS_PENDING, the packet queued.and a ARP message sent.
+</p>
+<pre> <code>
+|	1 CONSTANT _#ae_queue_priorities
+	zero
+|	DUP CONSTANT ae_link_fwd  CELL+
+|	DUP CONSTANT ae_link_back CELL+
+|	DUP CONSTANT ae_state     CELL+              \ state of this entry (see below)
+|	DUP CONSTANT ae_queue
+	                          #queue_list_length
+	                          _#ae_queue_priorities *
+	                          #queue_data_length + +
+
+|	DUP CONSTANT ae_attempts  CELL+              \ number of retries so far
+|	DUP CONSTANT ae_ttl       CELL+              \ time to live
+|	DUP CONSTANT ae_hwa       MAXHWALEN +        \ Hardware address
+|	DUP CONSTANT ae_pra       IP_ALEN   +        \ Protocol address
+|		CONSTANT ae_length                       \ length of a cache entry
+
+
+	\ values stored in ae_state.
+|	1 CONSTANT      AS_PENDING   \ Entry is used but incomplete
+|	2 CONSTANT      AS_RESOLVED  \ Entry has been resolved
+</code> </pre>
+</body>
+</html>

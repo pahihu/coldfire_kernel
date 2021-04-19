@@ -1,0 +1,285 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<p>
+.S .( Into system_rte.com)
+The coldfire doesn't have hardware to support the supervisor
+stack pointer.
+</p>
+
+<p>Support word</p>
+	<pre> <code>
+
+	\ changed C.E 18/Aug/1999 Interrupt level
+	\ preserved.  Remeber lower number is higher level
+	CODE _set_new_task_level ( level --)
+		S )+ D1 MOV
+		SR D2 W. MOV
+		7 $100 * $2000 + # SR W. MOV
+		_xlevel_next AB D0 MOV
+		D1 D0 CMP GT IF
+			D1 _xlevel_next AB  MOV
+		THEN
+		D2 SR W. MOV
+	NEXT
+
+
+        \ for use in interrupt code to activate a task level.
+        : activate_task_level ( n --)
+        		TRUE OVER CELLS _xheads + @
+		        [ _#level_head_restart_flag _#level_head_trap - ]T LITERAL + W!
+                        _set_new_task_level
+        ;
+        .S .( after activate_task_level)
+	</code> </pre>
+<p>
+This is a task switch within a loop. The task switch can use registers
+as any normal forth word would. That is A0 A1 and W ok etc. Actually you
+can use more as LP, and OP have been saved off. This work is done on the interrupted
+tasks stacks
+</p>
+
+	<pre> <code>
+        CREATE _switch_vectors
+        0 t,    \ sleep
+        0 t,    \ wake
+        0 t,    \ test
+        0 t,    \ level_switch
+
+
+        \ not a standard forth word. A0 contains the address off the activation table
+        \ a code fragment.
+        \ The task selection is done with interrupts disabled. The idle_task is always runnable
+        \ so a result is always generated ad interrupt re-enabled.
+
+        CREATE _switch assembler
+                0 # D0 MOV
+                #activation_status 0) D0 W. MOV
+                _switch_vectors # A1 MOV
+                [ A1 D0 ] A1 MOV
+                A1 ) JMP
+        HOST
+
+        CREATE _sleep assembler
+                #activation_task_link 0) A0 MOV
+                _switch AB JMP
+        HOST
+        _sleep _switch_vectors sleep + t!
+
+        CREATE _wake assembler
+	        sleep # #activation_status 0) W. MOV    ( only one activation)
+                #activation_task> 0) U MOV
+                (R) U) R MOV
+                \ the task is suspeneded with a trap so format
+                \ code and stutus is on return stack
+                RTE
+                NOP
+       HOST
+       _wake _switch_vectors wake + t!
+
+
+        CREATE _test assembler
+                #activation_task> 0) U MOV
+                _task_restart_time user_base - U) D0 MOV    ( activation time)
+	        xclock- AB D0 ADD CS IF
+                        #activation_task_link 0) A0 MOV     ( next task in loop)
+                        _switch AB JMP
+                THEN
+	        (R) U) R MOV   ( stack pointer restored)
+                RTE
+		NOP
+        HOST
+        _test _switch_vectors test + t!
+
+
+        \ This is executed in supervisor state.
+        \
+        CREATE _level_switch assembler
+                _xlevel AB D0 MOV
+                _#l_length # D0 MULU
+                %task_levels # A0 MOV
+                D0 A0 ADD _#l_active 0) D1 MOV NE IF 
+  			\ restore the MAC registers
+			_#l_ACC 0) D0 MOV
+			D0 ACC MOV
+			_#l_MASK 0) D0 MOV
+		        D0 MASK MOV
+			_#l_MACSR 0) D0 MOV
+			D0 MACSR MOV
+                        _#l_D0 0) D0 MOV
+                        _#l_D1 0) D1 MOV
+                        _#l_D2 0) D2 MOV
+                        _#l_D3 0) D3 MOV
+                        _#l_D4 0) D4 MOV
+                        _#l_D5 0) D5 MOV
+                        _#l_D6 0) D6 MOV
+                        _#l_D7 0) D7 MOV
+                        _#l_A1 0) A1 MOV
+                        _#l_A2 0) A2 MOV
+                        _#l_A3 0) A3 MOV
+                        _#l_A4 0) A4 MOV
+                        _#l_A5 0) A5 MOV
+                        _#l_A6 0) A6 MOV
+                        _#l_A7 0) A7 MOV
+                        FALSE  # _#l_active 0) MOV
+                        R )+ A0 MOV
+                        RTE
+                        NOP
+                THEN
+                _xlevel AB D0 MOV
+		_xheads # A0 MOV
+		[ A0 D0 4 ] A0 MOV        ( first task address)
+
+		_#level_head_restart_flag _#level_head_trap - 0) D0 MOV
+		NE IF
+			FALSE # _#level_head_restart_flag _#level_head_trap - 0) W. MOV
+			( First task is linked into the level swiching entry)
+			#activation_task_link  0) A0 MOV
+			_switch AB JMP
+		THEN
+                \ The next level is now obtained by getting _xlevel and adding 1
+ 		1 # _xlevel AB ADD
+                \ _xlevel has been increased go back and do this code again
+                \ we could vector through _switch but it is not needed and task
+                \ switch code is generally written for speed.
+                _level_switch AB JMP
+	HOST
+
+        _level_switch _switch_vectors level_switch + t!
+	</code> </pre>
+	<a name="_system_rte"></a>
+
+<p>
+The interrupt code can raise the multitasker priority level. When you switch from interrupt
+to user state you have to check and if that has occured, if it has
+a re-schedule has to occure.
+</p>
+	<pre> <code>
+#BVP5552 #BVP6552 + [IF]
+        port_variable %schedule_error1
+        port_variable %schedule_error2
+        port_variable %schedule_error3
+[ELSE]
+        ram_variable %schedule_error1
+        ram_variable %schedule_error2
+        ram_variable %schedule_error3
+[THEN]
+
+        \ we have already suspended this level
+        CODE system_error1
+                1 # %schedule_error1 AB ADD
+        NEXT
+        \ we have suspendeded a higher level than we were running.
+        CODE system_error2
+                1 # %schedule_error2 AB ADD
+        NEXT
+       \ Interrupt reenter.
+        CODE system_error3
+                1 # %schedule_error3 AB ADD
+        NEXT
+
+.S .( before _system_rte)
+	CREATE  _system_rte  assembler
+                \ remember the memeory BTST instruction is only a byte operation
+		5 # 2 R) B. BTST NE IF
+			\ return to another supervisor state leave things alone)
+			\ A0 AND R contain the same value
+                        RTE
+                        NOP
+                THEN
+
+                ( make sure things remain tidy)
+		( We need registers )
+                $2700 # SR MOV
+                A0 R -) MOV
+                D0 R -) MOV
+
+                _xlevel_next AB D0 MOV
+		_xlevel AB D0 CMP
+		GE IF   ( we don't have to suspend what we are doing and start a higher level)
+		        R )+ D0 MOV
+		        R )+ A0 MOV
+		        RTE
+                        NOP
+		THEN
+
+                _xlevel AB D0 MOV
+                _#l_length # D0 MULU
+                %task_levels # A0 MOV
+                D0 A0 ADD
+                _#l_active 0) D0 MOV NE IF
+                        ' system_error1 AB JSR
+                        \ well a state is saved at the current level
+                        \ not much we can do about it.
+                        R )+ D0 MOV
+                        R )+ A0 MOV
+                        RTE
+                        NOP
+                THEN
+                \ save the current machine state.
+                \ save the MAC registers
+                \ note A0 is on the return stack as we expect when we restore a machine state.
+                ACC D0 MOV
+	        D0 _#l_ACC 0) MOV
+		MASK D0 MOV
+	        D0 _#l_MASK 0) MOV
+		MACSR D0 MOV
+		D0 _#l_MACSR 0) MOV
+                R )+ D0 MOV
+                D0 _#l_D0 0) MOV
+                D1 _#l_D1 0) MOV
+                D2 _#l_D2 0) MOV
+                D3 _#l_D3 0) MOV
+                D4 _#l_D4 0) MOV
+                D5 _#l_D5 0) MOV
+                D6 _#l_D6 0) MOV
+                D7 _#l_D7 0) MOV
+                A1 _#l_A1 0) MOV
+                A2 _#l_A2 0) MOV
+                A3 _#l_A3 0) MOV
+                A4 _#l_A4 0) MOV
+                A5 _#l_A5 0) MOV
+                A6 _#l_A6 0) MOV
+                A7 _#l_A7 0) MOV
+                TRUE # _#l_active 0) MOV
+		\ Set _xlevel to required value
+		_xlevel_next AB D0 MOV
+		D0 _xlevel AB  MOV
+                \ the level we have raised to should not have a saved state
+                _#l_length # D0 MULU
+                %task_levels # A0 MOV
+                D0 A0 ADD
+                _#l_active 0) D0 MOV NE IF
+                        ' system_error2 AB JSR
+                        \ system is in a total mess
+                        \ lets just continue. The saved state will now be restored.
+                THEN
+                \ Set back to low value as level has been raised as required.
+		#clock_low # D0 MOV
+        	D0 _xlevel_next AB MOV
+                _level_switch AB JMP
+	HOST
+
+forth : system_rte
+		4EF9 tw,   \ ##code JMP
+		HOST  _system_rte t,
+	;
+
+
+
+HOST
+	: system_rte
+		4EF9 W,   \ ##code JMP
+		_system_rte ,
+	;
+	</code> </pre>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+<body>
+<h1>history</h1>
+<a HREF="./license.html">license</a><br>
+<p>
+Add things as you do them, than is the version change comes
+after the actions on the current version.
+</p>
+<h4>Version 0.5</h4>
+<p>
+1) The file objects reworked, stucture is now a lot neater.<br>
+2) NFS added<br>
+3) telnet client improved ( unix client only, NT sucks)<br>
+4) Some bug fixes.<br>
+<h4>Version 0.7</h4>
+<p>
+1)More work on file objects.<br>
+2)More work on telnet; moved to charater mode so it works better with NT.<br>
+4)More work with telnet, function keys working.<br>
+5)TCP data stream now sorted out in proto task so ^C can be made to work.<br>
+6)TCP now times out properly; was no activity for a long time; now can't
+  find other end for a short time. Needed for HTML server.<br>
+7)Assembler now supports 5407.<br>
+8)Watchdog task now works.<br>
+9).objects added.<br>
+10)Additional test in ?buffer.<br>
+11)Ansi terminal driver.<br>
+12):termination>code consistant across telnet and ttx so common drivers can be used, was a mistake.<br>
+13)string_class added; needed for HTML server.<br>
+14)lower case characters in hex numbers, needed for HTML server. Still not finished.<br>
+</p>
+<h4>Version 0.8</h4>
+<p>
+1)Bug in telnet_client :read.<br>
+2)Floating point basic word set added.<br>
+3)Q number words start with Q for example q. q.l and q.r. The Q base is now called %q_base<br>
+4)pure_code changed to inline
+<p>
+It is getting to a stage where it is a pleasure to use.
+</p>
+<h4>Version0.82</h4>
+<p>
+1) SET-PRECISION added.<br>
+2) PRECISION added.<br>
+3) CONVERT return n addr instead of nd2 addr
+4) The contributed MAC M* routine didn work, it has been removed. 
+</p>
+<h4>Version 0.83</h4>
+1) Html server added<br>
+2) NFS cleanup<br>
+3) TCP/IP cleanup<br>
+4) Move to CVS ( code version control) server<br>
+5) Tasks now printsd out activation address<br>
+<h4>Version 0.84</h4>
+<p>
+1) Nice hardware address is now random by default.<br>
+2) Tasks destruction code tidied up.<br>
+3) Lots of testing.<br>
+All in all pretty happy with it now. I think the tcpo/ip stack is now
+ready to go to war.
+</p>
+<h4>Version 0.85</h4>
+<p>
+1) Multitasker rewritten, there is now no interrupt stack. The interrupt routines
+have there own stack. This solved a fallover problem. related to how the coldfire
+disables interrupts on a TRAP. It had two nice side effects.<br>
+a) Interupts are faster.<br>
+b) The location of the stacks are known.<br>
+And one negative.<br>
+a) Interrupts can't be stacked.
+2)Bug in write code fixed. The device was claimed in the wrong location.</br>
+3)Flags to leave out the TCp/IP code and editor added for applications that
+require a smaller footprint.
+4) Ability to move the kernel to a space other than DRAM added.<br>
+5) interrupt enable traps tidied up.<br>
+<h4>Version 0.86</h4>
+<p>
+The boot failure sting is printed out properly.<br>
+Load not attempted on cold start.
+</p>
+<h4>Version 0.90</h4>
+<p>
+Code to swap between static and DRAM for BVP's cleaned up.<br>
+floating trigg functions added.<br>
+</p>
+<h4>Version 0.91</h4>
+<p>
+f2/ and f2* added.
+</p>
+<h4>Version 0.92</h4>
+<p>
+FSQRT added.
+</p>
+<h4>Version 0.93</h4>
+<p>
+1) Mistake in CREATE-FILE<br>
+2)Support for BVP560 added.
+</p>
+<h4>Version 0.94</h4>
+<p>
+1)Mistake in INCLUDE-FILE
+2)Support for BVP550 removed
+3)File tidy up
+4)BVP560 comms between cpu1 and 2 fixed.
+5)Error in switch_cold? fixed.
+6)The bank service routine changed to a port_task<br>
+7)Sub directories for cards.
+</p>
+<h4>Version 0.95</h4>
+<p>
+1) Twelve months have passed so we start a new version.
+</p>
+<h4>Version 0.96</h4>
+<p>
+1) Stack error in FASIN removed<br>
+</p>
+<h4>Version 0.97</h4>
+<p>
+1) Modified for BVP565<br>
+2) BVP5651 waits for BVP5652 during START<br>
+</p>
+<h4>Version 0.98</h4>
+<p>
+1) Modified for BVP655<br>
+2) BVP565 no longer supported, changed to BVP655<br>
+3) Card test options for running BVP555 in static ram plus dp ram testing<br>
+</p>
+<h4>Version 1.00</h4>
+<p>
+1) Static ram halved in size as 128M no longer available.
+</body>
+</html>

@@ -1,0 +1,55 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+	CODE  ?R@ ( t - a)
+		R )+ W MOV        \ points to action
+		R ) A0 MOV        \ points to start of string
+		\ get string count
+		D0 CLR
+		A0 ) D0 B. MOV
+		2 # D0 ADD
+		0 # D0 BCLR
+		D0 R ) ADD        \ points past string
+		S )+ TST   EQ IF
+			NEXT
+			assembler
+		THEN
+		A0 S -) MOV
+		W R -) MOV
+	NEXT
+
+
+    forth : ," ( --)
+		HOST
+    	forth [CHAR] "
+		PARSE HOST ,string
+    ;
+
+    CREATE ($abort) 0 t,
+
+| 	: $ABORT  ( $ --)
+		($abort) @execute
+	;
+
+
+    : abort" ( flag --)
+		?R@
+		$ABORT
+	;
+
+	forth : ABORT"
+		HOST
+		COMPILE abort"  ,"
+    ;   TARGET
+	</code> </pre>
+</body>
+</html>

@@ -1,0 +1,784 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="../forth.css" TYPE="text/css">
+</head>
+<body>
+<h3>local interface</h3>
+<a HREF="./license.html">license</a>
+<p>
+So others can say item is locally gnerated
+</p>
+	<pre> <code>
+| ram_variable %local_object
+
+interface_common class
+
+        \ routed to the local entity
+        cell% instance_variable %%received_datagrams
+        \ refragmented and sent on
+        cell% instance_variable %%queued_datagrams
+	m: ( --)
+		%local_object @ ABORT" Define local object only one"
+		this [parent] :construct
+		\ loopback need to know object address for
+		\ the local interface
+		this %local_object !
+	; overrides :construct
+
+
+	m: ( --)
+		this [parent] :destruct
+	; overrides :destruct
+
+	</code> </pre>
+<p>
+The local interface puts fragments back together so lets start off
+creating that code.
+</p>
+<img src="./fragment.png" HEIGHT=460 WIDTH=613>
+	<pre> <code>
+	\ A fragment has to be combined with other fragments from the same ip packet.
+	\ We hash the values the identify the fragment select a head and search the
+	\ selected list.
+	| 40 CONSTANT #frag_heads_number
+	| #frag_heads_number 1 - CELLS CONSTANT #frag_head_mask
+	| ram_create %fragment_heads #frag_heads_number CELLS ram_allot
+
+	</code> </pre>
+	<p>
+	The frag pointers are contained in a free buffer. There is a set of frag pointers
+	for every fragment being reassembled. Available memory limits the number of fragments
+	that can be reassembled and the length of the fragments. So that stupidity cannot bring
+	us down we limit the amount of memeory that can be allocated in an attempt to get
+	a fragment back together.  You will only get close to the limit if
+	someone is deliberatly trying to bring you down.
+	</p>
+	<pre> <code>
+        \ 128 k
+	| $20000 CONSTANT _#fragment_memory_limit
+
+        | ram_variable %fragment_memory_use
+
+	\ will allow maximum ip packet size ( 64k) over a link
+	\ that supports 128 byte data packets.
+	| $200 CONSTANT _#fpt_max_fp
+
+	\ A maximum datagram plus a couple of extra packets.
+	| $10800 CONSTANT _#frag_max_data_length
+
+
+
+
+	\  each fragment pointer entry is structured as follows
+	zero
+	| DUP CONSTANT	_fp_pep>           CELL+
+	| DUP CONSTANT	_fp_offset         CELL+
+	| DUP CONSTANT    _fp_offset_next    CELL+
+	|    CONSTANT    _fp_length
+
+	\ the number of pointer sets by default. This is where you
+	\ start if more are required a table that can take more
+	\ is created. The number selected will fit in a $100 buffer
+	\ block.
+	| $0C CONSTANT _#fpt_default_fp
+
+	\ the fragment table head is structured as follows
+	zero
+	| DUP CONSTANT   _fpt_fwd_link        CELL+
+	| DUP CONSTANT   _fpt_back_link       CELL+
+	| DUP CONSTANT   _fpt_state           CELL+
+	\ follow 4 fields identify datagram
+	| DUP CONSTANT   _fpt_id              CELL+
+	| DUP CONSTANT   _fpt_src             CELL+
+	| DUP CONSTANT   _fpt_dst             CELL+
+	| DUP CONSTANT   _fpt_proto           CELL+
+
+	| DUP CONSTANT   _fpt_ttl             CELL+   \ time to live
+	| DUP CONSTANT   _fpt_size            CELL+   \ set when last fragment received
+	| DUP CONSTANT   _fpt_size_set        CELL+   \ flag to say that the size has been set
+	| DUP CONSTANT   _fpt_no_holes_before CELL+   \ Offset from where we start checking for holes
+	| DUP CONSTANT   _fpt_received_length CELL+   \ Amount of data recived against
+	                                            \ this IP, used to limit buffer space
+	                                            \ allocated so silly sender doesn't
+                                                \ bring us down
+
+	| DUP CONSTANT   _fpt_fp_used         CELL+   \ number of fragment pointers used
+	| DUP CONSTANT   _fpt_fp_available    CELL+   \ number of fragmetn pointers that will fit
+	                                            \ in the table
+	|    CONSTANT   _fpt_length
+	</code> </pre>
+<p>
+Values stored in _fpt_state.
+</p>
+	<pre> <code>
+	\ if you add to the list of state names, see <i>_find_table</i>
+	\ fragments are being combined
+        | 0 CONSTANT IPFF_VALID
+	\ fragments can't be combined, no need to continue.
+	\ When the BOGUS state is entered the ip packets are returned to buffer
+	\ system leaving only the table head,
+	| 1 CONSTANT IPFF_BOGUS
+	\ the structure is finished with, timer task is destoying it, or
+	\ will destroy it. In this state the ip packets have been returned, only
+	\ the table entry remains.
+	| 2 CONSTANT IPFF_FREE
+
+	\ the length of time we will keep trying to put fragments together
+	\ #### Give it one minute.
+	| #1sec ( #60 * ) CONSTANT IP_FTTL
+
+	</code> </pre>
+
+<h4>reassemble ip datgrams</h4>
+
+<p>
+The datagrams souce and id is used as a hash value into hash table.
+The hash table contains heads for link list. The corrent link list
+entry is determined using the datagrams source, detination, id and protocol.
+</p>
+<p>
+The table entry includes all information on datagram being reconstucted,
+including pointers to ip packets received.
+</p>
+<p>
+A table entry is constucted when the first fragment arrives.
+It is removed by a low level task. The ip packets exist until
+the datagram is complete. A complete datagram is then
+reconstructed and returned. All the old ip fragments are discarded. However
+the table entry remains untill the low level task removes it.
+</p>
+<p> If the table status is valid the ip pointers point to ip packets, if the
+status is free or bogus, the ip packets are_heing or have_been returned.
+</p>
+<p>
+The spec calls for scr dst protocal and id to be the id fields for a datagram.
+The hash value doesn't have to use all, the comparison does.
+</p>
+	<pre> <code>
+	| : frag_hash { ( scr id -- hash_value ) }{
+				  6 bytes  %hashdata }
+		%hashdata 4 + W!
+		%hashdata !
+		%hashdata 6 checksum #frag_head_mask AND
+	;
+
+
+	| : _link_in_fragment_table ( table -- )
+		DUP _fpt_src + @
+		OVER _fpt_id + @ frag_hash %fragment_heads + link_double
+	;
+
+	| : _new_fragment_table { variable %pep -- ( addr ) }
+		[ _fpt_length _#fpt_default_fp _fp_length * + ]T LITERAL
+
+		get_free_buffer
+		DUP buffer_size %fragment_memory_use @ +
+		DUP _#fragment_memory_limit > IF
+			kill_free_buffer
+			ABORT" fragment memory use exceeded"
+		THEN
+		%fragment_memory_use !
+
+		\ addr(--
+		\ set head to zero
+		DUP _fpt_length ERASE
+		\ the value to set _fpt_fp_available to is not determined
+		\ by _#fpt_default_fp but but the actual length of the
+		\ buffer returned.
+		DUP buffer_size _fpt_length - _fp_length /
+		OVER _fpt_fp_available + !
+
+		\ we can be accepting datagrams from multiple destinations
+		\ so that needs to be tested also.
+		%pep @ [ ep_data ip_id + ]T LITERAL + W@ OVER _fpt_id + !
+		%pep @ [ ep_data ip_src + ]T LITERAL + @ OVER _fpt_src + !
+		%pep @ [ ep_data ip_dst + ]T LITERAL + @ OVER _fpt_dst + !
+		%pep @ [ ep_data ip_proto + ]T LITERAL + B@ OVER _fpt_proto + !
+
+		IP_FTTL xclock+ @ + OVER _fpt_ttl + !
+		IPFF_VALID OVER _fpt_state + !
+	;
+
+	\ create a new table with room for twice as many pointers.
+	\ Others link it in. Also make the table we are copying the
+	\ old pointers from invalid.
+	| : _extend_table { variable %table -- ( table ) }
+		%table @ _fpt_fp_available + @ 2* _fp_length * _fpt_length +
+
+		get_free_buffer
+		DUP buffer_size %fragment_memory_use @ +
+		DUP _#fragment_memory_limit > IF
+			kill_free_buffer
+			ABORT" fragment memory use exceeded"
+		THEN
+		%fragment_memory_use !
+
+		\ update with old data
+		\ new_table(--
+		\ This will copy the old +fpt_fp_used value. Greate care has been
+		\ taken to make all table data independent of the tables
+		\ base address
+		%table @ OVER %table @ buffer_size MOVE
+		DUP buffer_size _fpt_length - _fp_length /
+		OVER _fpt_fp_available + !
+		IPFF_VALID OVER _fpt_state + !
+	;
+
+	\ on exit there is a table to place the fragment
+	| : _find_table  { variable %pep -- ( table ) }
+		%pep @ [ ep_data ip_src + ]T LITERAL + @
+		%pep @ [ ep_data ip_id + ]T LITERAL + W@
+		frag_hash %fragment_heads +
+		\ head(--
+		BEGIN
+			@ ?DUP
+		WHILE
+			\ accept valid and bogus, valid will see the datagram
+			\ added to the table bogus will see the datagram destroyed.
+			DUP _fpt_state + @ IPFF_FREE <> IF
+				DUP _fpt_id + @
+				%pep @ [ ep_data ip_id + ]T LITERAL + W@ = IF
+					DUP _fpt_src + @
+					%pep @ [ ep_data ip_src + ]T LITERAL  + @ = IF
+						DUP _fpt_dst + @
+						%pep @ [ ep_data ip_dst + ]T LITERAL + @ = IF
+							DUP _fpt_proto + @
+							%pep @ [ ep_data ip_proto + ]T LITERAL + B@ = IF
+								\ this is it
+								\ table (--
+								EXIT
+							THEN
+						THEN
+					THEN
+				THEN
+			THEN
+		REPEAT
+		\ if we get here there is no table
+		\ we must create one
+		%pep @ _new_fragment_table
+		DUP _link_in_fragment_table
+	;
+
+
+	\ The state has just been set
+	\ to IPFF_FREE or IPFF_BOGUS. In both cases
+	\ other code assumes the peps have been released and so there is no
+	\ need to set _fpt_fp_used back to zero
+	| : _release_peps { variable %table -- }
+		%table @ _fpt_length + DUP
+		%table @ _fpt_fp_used + @ _fp_length * + SWAP ?DO
+			I _fp_pep> + @  DUP buffer_size NEGATE %fragment_memory_use +!
+			kill_free_buffer
+		_fp_length +LOOP
+	;
+
+
+	\ We add all fragments to the table. It takes time to test for
+	\ multiple copies and the test gets complex as the fragments
+	\ may have come from multiple paths and therefor the doubles
+	\ can be fragments of different lengths.
+	\ Against this, double would not be common, as they will only occure
+	\ on route changes.
+
+	\ Whatever happens %pep must be consumed.
+	| : _add_to_table { variable %table variable %pep -- ( table ) }{
+		variable %offset
+		variable %data_size
+	    }
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_FRAGOFF AND 3 LSHIFT %offset !
+		\ ep_ipcount set after defrag, can't use here
+		%pep @ _pep>ip_data_length %data_size !
+
+		\ does the datagram add to the known data
+		\ We don't work out how much is complete until
+		\ last fragment has arrived.
+		%table @ _fpt_size_set + @ IF
+			%table @ _fpt_no_holes_before + @
+			\ table_offset(--
+			%table @ + _fp_offset_next + @
+			\ data_offset(--
+			%offset @ %data_size @ + > IF
+				%pep @ kill_free_buffer
+				%table @
+				EXIT
+			THEN
+		THEN
+
+		\ to protect ourselves from stupidity limit the amount of
+		\ data that can be received per ip to something reasonable
+		\ Doing this test will allow fragmentation reasseble to continue
+		\ for sources not playing bad.
+		%table @ _fpt_received_length + @ %data_size @ +
+		DUP _#frag_max_data_length > IF
+			\ length_to_date(--
+			DROP
+			1 %%ip_fragment_stupidity0 +!
+			IPFF_BOGUS %table @ _fpt_state + !
+			%pep @ kill_free_buffer
+			%table @ _release_peps
+			%table @
+			EXIT
+		THEN
+		%table @ _fpt_received_length + !
+
+		\ to protect ourselves from stupidity limit the amount of memory
+		\ that can be consumed by this function.
+		\ If this comes into play fragmentation will fail randomly. Those
+		\ not playing bad will also be effected.
+		%fragment_memory_use @ %pep @ buffer_size +
+		DUP _#fragment_memory_limit > IF
+			\ length_to_date(--
+			DROP
+			1 %%ip_fragment_stupidity3 +!
+			IPFF_BOGUS %table @ _fpt_state + !
+			%pep @ kill_free_buffer
+			%table @ _release_peps
+			%table @
+			EXIT
+		THEN
+		%fragment_memory_use !
+
+		\ (--
+		\ can we add a pointer to the current buffer if not
+		\ mark this table as IPFF_FREE create a bigger table
+		\ and copy the pointers created so far into the bigger table
+		%table @ _fpt_fp_available + @
+		%table @ _fpt_fp_used + @ - 0= IF
+			\ have to create a larger table
+			\ but first make sure a sender hasn't gone stupid.
+			%table @ _fpt_fp_available + @ _#fpt_max_fp < not IF \ >
+				\ table will get removed be the timer task
+				\ if the sender is sending fragments continuously
+				\ things will just start again after this table entry
+				\ has been timed out.
+				1 %%ip_fragment_stupidity1 +!
+				IPFF_BOGUS %table @ _fpt_state + !
+				\ we thought it was going to be added to use but it wasn't
+				%pep @ buffer_size NEGATE %fragment_memory_use @ + %fragment_memory_use !
+				%pep @ kill_free_buffer
+				%table @ _release_peps
+				%table @
+				EXIT
+			THEN
+			\ remember we are in high priority code, tables are
+			\ removed in low level code, we can't delete table entries
+			\ for any reason, that is low level codes problem.
+			\ Setting state to IPED_FREE prevents the table from being used.
+			\ It also stops other code from releasing buffers pointed to.
+			\ This is a good thing as we are about to copy the pointers into
+			\ a larger table, se we don't want someone using the old table
+			\ to delete the buffers.
+			IPFF_FREE %table @ _fpt_state + !
+			\ extend_table can abort
+			\ (--
+			%table @
+			['] _extend_table CATCH ?DUP IF
+				\ old_table $(--
+				2DROP
+				\ well we can't finish the job may as well
+				\ release what we have
+				IPFF_BOGUS %table @ _fpt_state + !
+				\ we thought it was going to be added to use but it wasn't
+				%pep @ buffer_size NEGATE %fragment_memory_use @ + %fragment_memory_use !
+				%pep @ kill_free_buffer
+				%table @ _release_peps
+				%table @
+				EXIT
+			THEN
+			%table !
+			\ have to link new table in now
+			%table @ _link_in_fragment_table
+		THEN
+		\ if we get here we have a place to add the entry.
+		\ We move down the table until we find a offset that is less
+		\ We then move entries above up and add our entry
+
+		\ The last fragments will tend to come last so scan from end back
+		zero
+		\ counter(--
+		%table @ _fpt_fp_used + @ ?DUP IF
+			\ counter limit(--
+			%table @ _fpt_length + _fp_offset + DUP
+			\ count limit addr addr(--
+			ROT 1- _fp_length * +
+			\ counter first last(--
+			\ The last shall be first
+			DO
+				I @ %offset @ < IF \ >
+					\ new is next
+					I _fp_length + _fp_offset - \ counter from (--
+					DUP _fp_length + \ counter from to(--
+					ROT _fp_length *
+					\ from to count(--
+					MOVE
+					I _fp_length + _fp_offset -
+					\ entry_addr(--
+					%offset @ OVER _fp_offset + !
+					%pep @ OVER _fp_pep> + !
+					%data_size @ %offset @ +
+					OVER _fp_offset_next + !
+					DROP
+					\ (--
+					1 %table @ _fpt_fp_used + +!
+					UNLOOP
+					%table @
+					EXIT
+				THEN
+				1+
+				[ _fp_length NEGATE ]T LITERAL
+			+LOOP
+		THEN
+		\ count(--
+		DROP
+
+		\ has to be moved up so we can add to first postion
+		%table @ _fpt_length + DUP _fp_length +
+		%table @ _fpt_fp_used + @ _fp_length * MOVE
+
+		%table @ _fpt_length +
+		%offset @ OVER _fp_offset + !
+		%pep @ OVER _fp_pep> + !
+		%data_size @ %offset @ +
+		OVER _fp_offset_next + !
+		DROP
+
+		1 %table @ _fpt_fp_used + +!
+		%table @
+	;
+
+	| : _fragment_complete? { variable %table -- ( flag ) }
+		\ no use trying if last fragment has not arrived
+		%table @ _fpt_size_set + @ not IF
+			FALSE
+			EXIT
+		THEN
+		\ We do not add fragments that describe data below _fpt_no_holes_before
+		\ _fpt_no_holes_before is an offet into the table.
+		%table @ _fpt_no_holes_before + @ ?DUP IF
+			%table @ +  DUP _fp_offset + @ SWAP
+		ELSE
+			zero %table @ _fpt_length +
+		THEN
+		\ start_offset valid_entry_addr(--
+		%table @ _fpt_length +
+		%table @ _fpt_fp_used + @ _fp_length * + SWAP
+		\ start_offset  end_addr start_addr(--
+		?DO
+			\ gap if current offset is less than the offset of next packet
+			\ extracted from previous.
+			DUP I _fp_offset + @
+			< IF    \ >
+				\ valid_to(--
+				IF
+					\ we have got started but
+					\ there is a gap
+					I _fp_length - %table @ - %table @ _fpt_no_holes_before + !
+				THEN
+				UNLOOP
+				FALSE
+				EXIT
+			THEN
+			\ remember fragment from different paths may be differnt sizes
+			\ as we go up we move our next pointer to the biggest found so far
+			\ the previous test makes sure the current fragment is in the window
+			I _fp_offset_next + @
+			MAX
+		_fp_length +LOOP
+		\ now we have a tricky question. What happens if the last fragment
+		\ lies about the amount of data sent. Can you create a consistant
+		\ fragment and clobber past the end of the buffer allocated for
+		\ reasseble. The answer is yes. Send lots of data then send the final
+		\ fragment with a smaller offset. Another stupidity test.
+		%table @ _fpt_size + @ <> IF
+			\ better set a count we really would like to know if this
+			\ stunt is being pulled.
+			1 %%ip_fragment_stupidity2 +!
+			IPFF_BOGUS %table @ _fpt_state + !
+			%table @ _release_peps
+			FALSE
+			EXIT
+		THEN
+		\ we get here and the answer is yep we have it all
+		TRUE
+	;
+
+
+	| : _assemble_datagram { variable %table -- ( pep ) }{
+	       variable %pep
+		   variable %ipdata }
+		\ the datagram length is the total data length plus the
+		\ length of the first header. We also have to leave room
+		\ for ep_data
+		\ The first table entry is the first fragment, have the pointers
+		\ point to this while we sort out the head
+		%table @ _fpt_length + _fp_pep> + @ %pep !
+		\ buffer big enough to fit full datagram.
+		ep_data %pep @ _pep>ip_hlen + %table @ _fpt_size + @ + get_free_buffer
+		\ addr(--
+
+		\ start datagram with header
+		%pep @ OVER %pep @ _pep>ip_hlen ep_data + MOVE
+
+		\ fix up header to reflect total datagram
+		%pep @ _pep>ip_hlen %table @ _fpt_size + @ +
+		OVER [ ep_data ip_len + ]T LITERAL + W!
+
+		DUP [ ep_data ip_fragoff + ]T LITERAL  + W@
+		\ want everthing but IP_MF bit.
+		\ The fragment offset should be zero as
+		\ first fragment in list
+		[ IP_MF -1 XOR ]T LITERAL  AND
+		OVER [ ep_data  ip_fragoff + ]T LITERAL + W!
+
+		\ now copy all the data from the fragments into the final datagram
+		\ If there are multiple copies there will be multiple copies.
+		\ So what?
+		DUP DUP _pep>ip_hlen + ep_data + %ipdata !
+		\ new_pep(--
+		%table @ _fpt_length + DUP
+		\ new_pep addr addr(--
+		%table @ _fpt_fp_used + @ _fp_length * + SWAP DO
+			\ new_pep(--
+			I _fp_pep> + @ %pep !
+			%pep @ DUP _pep>ip_hlen + ep_data +
+			\ from (--
+			%ipdata @ I _fp_offset + @ +
+			\ from to (--
+			%pep @ [ ep_data ip_len + ]T LITERAL + W@ %pep @ _pep>ip_hlen - MOVE
+		_fp_length +LOOP
+		\ new_pep(--
+	;
+
+	</code> </pre>
+	<h5>ip re-assemble</h5>
+	<pre> <code>
+	\ if the output is zero we cannot give you a complete
+	\ datagram yet.
+	| : ip_reassemble { variable %pep -- ( %pep|0 ) }{
+		variable %table
+		}
+		\ did datagram get fragmented
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@
+		[ IP_FRAGOFF IP_MF OR ]T LITERAL AND not IF
+			\ This is complete. There may be fragments for this datagram
+			\ as it may have been sent by two paths. We could look now
+			\ and delete such fragments ( RFC791 recommends such action)
+			\ however protocol have to be able to handle multiple delivery so
+			\ if reassembler is completed there is no problem. Timeout will deal
+			\ with incomplete datagrams.
+			\ This is the common paths. It is better to go for speed in this
+			\ path.
+			%pep @
+			EXIT
+		THEN
+		\ (--
+		\ _find_table can abort if we run out of memory
+		%pep @ ['] _find_table CATCH ?DUP IF
+			\ pep $(--
+			2DROP
+			%pep @ kill_free_buffer
+			zero
+			EXIT
+		THEN
+		\ addr(--
+		%table !
+		\ (--
+		\ Are we trying to fix the unfixable
+		%table @ _fpt_state + @
+		IPFF_VALID <> IF
+			%pep @ kill_free_buffer
+			zero
+			EXIT
+		THEN
+
+		\ is this the last
+		%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_MF AND not IF
+			\ yep we may not have all the data but we can now work out the length
+			%pep @ [ ep_data ip_fragoff + ]T LITERAL + W@ IP_FRAGOFF AND 3 LSHIFT
+			\ ep_ipcount set after defrag can't use here
+			%pep @ _pep>ip_data_length +
+			%table @ _fpt_size + !
+			TRUE %table @ _fpt_size_set + !
+		THEN
+
+		\ if there are too many fragments for the current table
+		\ a new table is created. So on return we have to set %table
+		\ just in case
+		%table @ %pep @ _add_to_table %table !
+		\ did adding this fragment lead to the unfixable
+		%table @ _fpt_state + @ IPFF_VALID <> IF
+			zero
+			EXIT
+		THEN
+		\ Do we have the lot
+		%table @ _fragment_complete?
+		IF
+			%table @ _assemble_datagram
+			\ pep(--
+			IPFF_FREE %table @ _fpt_state + !
+			%table @ _release_peps
+			EXIT
+		THEN
+		\ we have added fragment to table and that is that
+		zero
+	;
+
+
+	</code> </pre>
+	<h5>reassemble timeout</h5>
+	<p>
+	We need to talk about this a bit. Most of the fragminatation
+	problem is dealt with in high level tasks. The high level tasks
+	cannot use a table entry that has been set to IPFF_FREE. So when
+	we see that state so we can be sure the table entry is stable.
+	</p>
+	<p>
+	High level tasks can change the state of a table entry from valid
+	to free or bogus. When a high level tasks changes the state it
+	releases all the pep packets. This code assumes that has been
+	done.
+	</p>
+	<p>
+	A table entry that has been set to bogus is removed by timeout.
+	This means that bogus fragments are removed from the system directly
+	from the time we conclude we are being sent rubbish, untill the
+	timeout period. After the timeout period the bogus data is once again
+	used to contruct the bogus structure. The whole process then repeats
+	</p>
+	<p>
+	The fragmentation timeout is set when the first fragment arrives. It is
+	not updated as new bits come. Rememer the ip packet id is circular. If
+	we are too generous on the reassemble time and the link is fast we could
+	get fragments from different packets.
+	</p>
+	<pre> <code>
+	| : _fragment_table_timeout ( --)
+		[ #frag_heads_number CELLS %fragment_heads + ]T LITERAL %fragment_heads DO
+			I @
+			BEGIN
+				?DUP
+			WHILE
+				\ table_entry(--
+				\ get next entry for next time around
+				\ next_entry current_entry(--
+				DUP @ SWAP
+				\ If valid entry see if timed out
+				_lock_word
+				\ if not free the entry has to be timed out
+				DUP _fpt_state + @ IPFF_FREE <> IF
+					DUP _fpt_ttl + @ xclock- @ + 0< IF
+						\ entry has timed out
+						DUP _fpt_state + @ >R
+						\ it has timed out
+						IPFF_FREE OVER _fpt_state + !
+						_unlock_word
+						\ only release peps if state was valid.
+						R> IPFF_VALID  = IF
+							\ Now state has been set to free we can unlock
+							\ and release the peps at any rate we please
+							DUP _release_peps
+						THEN
+					ELSE
+						_unlock_word
+					THEN
+				ELSE
+					_unlock_word
+				THEN
+				DUP _fpt_state + @ IPFF_FREE = IF
+					DUP unlink_double
+					DUP buffer_size NEGATE %fragment_memory_use +!
+					DUP kill_free_buffer
+				THEN
+
+				DROP
+			REPEAT
+			xpause
+		cell +LOOP
+	;
+
+	\ protocol queue
+	\ priorities have to be maintained
+	| _#ip_priority_levels CONSTANT _#proto_priority_levels
+	| $40 CONSTANT _#proto_queue_depth
+
+	| _#proto_queue_depth _#proto_priority_levels net_queue _proto_queue
+
+	| : queue_proto { variable %pep -- }
+		%pep @ _proto_queue OVER _pep>ip_priority enqueue_try IF
+			%pep @ kill_free_buffer
+			1 %%proto_queue_discards +!
+		THEN
+	;
+
+	| : queue_proto_wait ( pep --)
+		_proto_queue OVER _pep>ip_priority enqueue_wait
+	;
+
+	\ If you have to queue incoming packets directly this is the one to use.
+	: queue_proto_force ( pep --)
+		_proto_queue OVER _pep>ip_priority enqueue_force
+	;
+
+        \ this word is used by routed to take the datagrams from the wire to the local system
+        \ it has no other use.
+	m: ( pep -- )
+                1 %%received_datagrams +!
+		ip_reassemble
+		?DUP IF
+			\ pep(--
+                        1 %%queued_datagrams +!
+			queue_proto
+		THEN
+	; overrides :consume_interface
+
+	\ the local :broadcast address is called for -1. The local interface will
+	\ only do this if the local device does not know it's ip address.
+	\ #### we really should step through all interface and call :consume_ip.
+	\ As the datagram should be broudcast to all networks.
+	\ This would require the duplication of the datagram. At the moment we generate an
+	\ error. In other words we do not support a general broudcast from the
+	\ local machine.
+	| ram_variable %local_general_broadcast
+	m: ( pep -- )
+		DUP ep_nif_received + @
+		\ pep interface(--
+		DUP this =
+		SWAP 0= OR
+		\ pep flag(--
+		IF
+			1 %local_general_broadcast +!
+			kill_free_buffer
+		ELSE
+			\ received from remote source
+			this :consume_interface
+		THEN
+	; overrides :broadcast
+
+
+	m: ( indent --)
+			CR DUP SPACES ." interface_local | " ." Object: " this .h
+                        DUP .interface_errors
+
+                        CR DUP SPACES ." frag mem use : " %fragment_memory_use @ .h
+                                      ." Rcved grams  : " %%received_datagrams @ .h
+                                      ." Queued grams : " %%queued_datagrams @ .h
+                        CR DUP SPACES ." proto queue  : " _proto_queue .h
+                        _proto_queue OVER .net_queue
+
+                        DROP send
+
+	; overrides :print
+
+end_class interface_local
+
+: .local_interface ( --)
+        zero %local_object @ :print
+;
+	</code> </pre>
+</body>
+</html>
+

@@ -1,0 +1,166 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<h3>string_class</h3>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+
+
+	base_class class
+
+		\ number of characters in string
+		cell% instance_variable %%length
+		\ free buffer containing string
+		cell% instance_variable %%data_area
+
+		m: ( add n -- )
+                       this [parent] :construct
+
+			\ just in case getting the data area aborts
+                        0 %%data_area !
+
+                        DUP %%length !
+                        DUP IF
+			        DUP get_free_buffer
+			        DUP %%data_area !
+			        SWAP MOVE
+                        ELSE
+                                2DROP
+                        THEN
+		; overrides :construct
+
+		m: ( --)
+			\ pointer will only be zero if failed to allocate on a create
+			%%data_area @ ?DUP IF
+				0 %%data_area !
+				kill_free_buffer
+			THEN
+			this [parent] :destruct
+		; overrides :destruct
+                </code></pre>
+                <a name="string!"></a>
+                <pre><code>
+		m: ( addr n --)
+			DUP %%length !
+                        %%data_area @ IF
+			        %%data_area @ OVER resize_free_buffer %%data_area !
+			        %%data_area @ SWAP MOVE
+                        ELSE
+                                DUP get_free_buffer
+                                DUP %%data_area !
+                                SWAP MOVE
+                        THEN
+		; method :string!
+                </code></pre>
+                <a name="string@"></a>
+                <pre><code>
+
+		m: ( -- addr n )
+			%%data_area @ %%length @
+		; method :string@
+
+		\ delete the first n bytes from the start of a buffer
+		: delete  { ( buffer size u --) }{
+				variable %delete_n }
+                        \ limit to string length things go better
+			 OVER MIN \ buffer length u (--
+			 \ nope we are not going to allow the deletion of charaters
+			 \ from another dimension
+			 zero MAX
+			 %delete_n !       \ addr n(--
+			 OVER     \ addr n addr (--
+			 %delete_n @ +   \ addr n addr_from
+			 jump
+			 jump %delete_n @ -  \ addr n addr_from addr_to n_after
+			 MOVE     \ addr n
+
+			 2DROP
+
+			 \ if you want to fill end with blanks
+			 \ addr n (--
+			 \ + %delete_n @ -     \ addr
+			 \ %delete_n @         \ addr count
+			 \ BLANK
+ 		;
+
+		\ insert a string at the start of a buffer
+		: insert { ( iaddr n buffer size --) }{
+			variable %insert_n }
+			\ limit the string to the buffer size
+			ROT                 \ iaddr buffer size n
+			OVER                \ iaddr buffer size n size
+			MIN                 \ iaddr buffer size min
+			%insert_n !         \ iaddr buffer size
+			%insert_n @ -                \ iaddr buffer cnt_left
+		        OVER                \ iaddr buffer cnt_left buffer
+		        DUP %insert_n @ +            \ iaddr buffer cnt_left buffer beffer_to
+			ROT MOVE            \ iaddr buffer
+			%insert_n @ MOVE
+		;
+
+                </code></pre>
+                <a name="string_delete"></a>
+                <pre><code>
+
+		\ delete u bytes at offset
+		m: { variable %offset variable %u ( --) }
+                        %%data_area @ IF
+                                this :string@
+                                %offset @
+			        /STRING                  \ add n (--
+			        %u @ delete              \ (--
+			        %u @ NEGATE          \ string new_len(--
+			        %%length +!
+			        %%data_area @ %%length @ resize_free_buffer %%data_area !
+                        THEN
+		; method :string_delete
+                </code></pre>
+                <a name="string_insert"></a>
+                <pre><code>
+
+
+		\ insert S at offset
+		m: { ( addr1 u ) variable %offset (  --) }
+                        %%data_area @ IF
+			        DUP %%length +!
+			        %%data_area @  %%length @ resize_free_buffer %%data_area !
+			        this :string@  \ addr n buffer n1
+			        %offset @ /STRING
+			        insert
+                        ELSE
+                                DUP %%length !
+                                DUP get_free_buffer
+                                DUP %%data_area !
+                                SWAP MOVE
+                        THEN
+		; method :string_insert
+                </code></pre>
+                <a name="string+"></a>
+                <pre><code>
+
+		\ add S to end
+		m: ( addr u  --)
+			%%length @ this :string_insert
+		; method :string+
+
+		m: ( indent --)
+			CR DUP SPACES ." string | " ." Object: " this .h
+			CR DUP SPACES ." buffer: " %%data_area @ .h
+			       SPACE  ." buffer_length: " %%data_area @ buffer_size .h
+			       SPACE  ." string length: " %%length @ .h
+			CR DUP SPACES ." string: " %%data_area @ %%length @ TYPE
+			DROP send
+		; overrides :print
+
+	end_class string_class
+	</code> </pre>
+
+</body>
+</html>

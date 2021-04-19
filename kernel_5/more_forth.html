@@ -1,0 +1,326 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<a name="DUMP"></a>
+<h5>15.6.1.1280 DUMP</h5> 
+<p>TOOLS</p> 
+<p>( addr u -- )</p>
+<p>
+Display the contents of u consecutive addresses starting at addr. The format of 
+the display is implementation dependent. 
+</p>
+<p>
+DUMP may be implemented using pictured numeric output words. Consequently, 
+its use may corrupt the transient region identified by #>.
+</p>
+<p>
+<b>COLDFORTH</b> It uses the pictured number words but the pictured number words do not 
+corrupt a transient reqion.
+</p> 
+    <pre> <code>
+    : DUMP ( addr n --)
+    	SWAP -2 AND  DUP ROT + SWAP DO
+    		CR I .h I 10 +  I     
+    		DO  
+    			I @  .h  four  
+    		+LOOP
+    	 	four SPACES I 10 + I DO
+    			I C@ 7F AND DUP BL <  IF
+    				DROP 2E 
+    			THEN
+    		 	DUP 07F = IF 
+    		 		DROP 2E 
+    		 	THEN  EMIT
+      		LOOP ^C  
+      	10 +LOOP 
+      	send  
+    ;
+    
+	' DUMP (dump) t!
+	</code> </pre>
+	<pre> <code>
+    
+	</code> </pre>
+<a name="ABORTquote">
+<h5>6.1.0680 ABORT"</h5> 
+<p>abort-quote CORE</h5> 
+<p>
+Interpretation: Interpretation semantics for this word are undefined.
+</p>
+<p>
+Compilation: ( "ccc"" -- )
+</p>
+<p>
+Parse ccc delimited by a " (double-quote). Append the run-time 
+semantics given below to the current definition. 
+</p>
+<p>
+Run-time: ( i*x x1 --  | i*x ) ( R: j*x --  | j*x )
+</p>
+<p>
+Remove x1 from the stack. If any bit of x1 is not zero, display ccc 
+and perform an implementation-defined abort sequence that
+includes the function of ABORT.
+</p>
+<pre> <samp>
+Typical use: : X ... test ABORT" ccc" ... ; 
+</samp> </pre>
+<h5>9.6.2.0680 ABORT"</h5>
+<p>abort-quote EXCEPTION EXT</p>
+<p>
+Extend the semantics of 6.1.0680 ABORT" to be: 
+</p>
+<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+<p>Compilation: ( "ccc<quote>" -- )</p>
+<p>
+Parse ccc delimited by a " (double-quote). Append the run-time semantics 
+given below to the current definition.
+</p> 
+<p>
+Run-time:       ( i*x x1 --  | i*x ) ( R: j*x --  | j*x )
+</p>
+<p>
+Remove x1 from the stack. If any bit of x1 is not zero, perform the 
+function of -2 THROW, displaying ccc if there is no exception
+frame on the exception stack.
+</p> 
+<h5> Notes COLDFORTH </h5>
+<p>
+THROW performs an implementation-dependent message if the 
+stackitem is not -2 -1 or zero. In this system it treats the
+stack item as the address of a counted string. ABORT" will THROW with
+the address of the counted string.
+</p>
+ 
+
+	<pre> <code>   
+    : ABORT" ( flag--)   
+    	COMPILE abort" ," 
+    ;  IMMEDIATE 
+
+	</code> </pre>    
+<a name="ABORT">
+<h5>6.1.0670 ABORT</h5> 
+<p>CORE</p> 
+<p>( i*x -- ) ( R: j*x -- )</p>
+<p>
+Empty the data stack and perform the function of QUIT, which includes 
+emptying the return stack, without displaying a message.
+</p> 
+<h5>9.6.2.0670 ABORT</h5>
+<p>EXCEPTION EXT</p>
+<p>
+Extend the semantics of 6.1.0670 ABORT to be: 
+</p>
+<p>( i*x -- ) ( R: j*x -- )</p>
+<p>
+Perform the function of -1 THROW . 
+</p>
+
+	<pre> <code>
+	: ABORT ( --)
+		-1 THROW
+	;
+	</code> </pre>
+
+	<pre> <code>
+
+	
+    ??HEX
+
+	</code> </pre>
+<a name="[COMPILE]"></a>
+<h5>6.2.2530 [COMPILE]</h5> 
+<p>bracket-compile CORE EXT</p> 
+<p>
+Intrepretation: Interpretation semantics for this word are undefined.
+</p>
+<p>
+Compilation: ( " name" -- )
+</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space. Find name. 
+If name has other than default compilation semantics, append them to the current
+definition; otherwise append the execution semantics of name. 
+An ambiguous condition exists if name is not found. 
+</p>
+<pre> <samp>
+Typical use: : name2 ... [COMPILE] name1 ... ; IMMEDIATE 
+</samp> </pre>
+
+	<pre> <code>
+    : [COMPILE] ( --)
+    	' COMPILE, 
+    ;    IMMEDIATE 
+    </code> </pre>
+<a name="POSTPONE"></a>
+<h5>6.1.2033 POSTPONE</h5>
+<p>CORE</p> 
+<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+<p>Compilation: ( " name" -- )</p>
+<p>
+Skip leading space delimiters. Parse name delimited by a space. Find name. 
+Append the compilation semantics of name to the current definition. An
+ambiguous condition exists if name is not found. 
+</p>
+<p>
+Typical use: 
+</p>
+<pre> <samp>
+: ENDIF  POSTPONE THEN ;  IMMEDIATE
+
+: X  ... IF ... ENDIF ... ;
+</samp>  </pre>
+<p>
+POSTPONE replaces most of the functionality of COMPILE and [COMPILE]. 
+COMPILE and [COMPILE] are used for the same purpose: postpone the
+compilation behavior of the next word in the parse area. COMPILE was 
+designed to be applied to non-immediate words and [COMPILE] to immediate
+words. This burdens the programmer with needing to know which words in 
+a system are immediate. Consequently, Forth standards have had to specify the
+immediacy or non-immediacy of all words covered by the Standard. 
+This unnecessarily constrains implementors. 
+</p>
+<p>
+A second problem with COMPILE is that some programmers have come to expect 
+and exploit a particular implementation, namely:
+</p> 
+<pre> <samp>
+:  COMPILE  R>  DUP  @  ,  CELL+  >R  ;
+</samp> </pre>
+<p>
+This implementation will not work on native code Forth systems. 
+In a native code Forth using inline code expansion and peephole optimization, 
+the size of the object code produced varies; this information is 
+difficult to communicate to a dumb COMPILE. A smart (i.e., immediate) 
+COMPILE would not have this
+problem, but this was forbidden in previous standards.
+</p> 
+<p>
+For these reasons, COMPILE has not been included in the Standard and 
+[COMPILE] has been moved in favor of POSTPONE. Additional discussion can
+be found in Hayes, J.R., Postpone, Proceedings of the 1989 Rochester 
+Forth Conference.
+</p> 
+	<pre> <code>
+	: POSTPONE
+		_defined              \ false|xt true (-- 
+		DUP 0= ?token            \ abort if word not there
+		0< IF                \ not IMMEDIATE 
+		    ['] _do_compile COMPILE, , 
+		ELSE
+			COMPILE,
+		THEN 
+	; IMMEDIATE
+	</code> </pre>
+<a name=".("><h5>6.2.0200 .(</h5></a>
+<p> 
+dot-paren CORE EXT 
+</p>
+<p>        
+Compilation: Perform the execution semantics given below.
+</p>
+<p>Execution: ( "ccc)" -- )</p>
+<p>
+Parse and display ccc delimited by ) (right parenthesis). 
+.( is an immediate word.
+</p> 
+<pre> <samp>
+Typical use: .( ccc) 
+</samp> </pre>
+	<pre> <code>
+    : .(	( --)   
+    	[CHAR] ) (word) TYPE 
+    ;   IMMEDIATE
+    
+    
+    
+    	
+	</code> </pre>
+<a name="[CHAR]"></a>
+<h5>6.1.2520 [CHAR]</h5> 
+<p>CORE</p>
+<p>Interpretation: Interpretation semantics for this word are undefined.</p>
+<p>Compilation: ( " < spaces > name" -- )</p>
+<p>Skip leading space delimiters. Parse name delimited by a space. 
+Append the run-time semantics given below to the current definition.
+</p> 
+<p>Run-time: ( -- char )</p>
+<p>Place char, the value of the first character of name, on the stack.</p>
+<pre> <samp>
+Typical use: : X ... [CHAR] ccc ... ; 
+</samp> </pre>
+	<pre> <code>
+    : [CHAR] ( --char) 
+		BL (word) DROP C@ 
+		[COMPILE] LITERAL  
+    ;  IMMEDIATE 
+    
+    ( create options) HEX
+    : (CREATE) ( --)
+		ALIGN                      \ Move to word boundry 
+		BL WORD
+		DUP COUNT NIP _#name_count_bits > ABORT" Word name too large" 
+		DUP COUNT current @ hash   \ $ head<-)
+		DUP last !                 \ $ head (-- 
+
+		\ name string
+	  	SWAP                   \ head $(--
+		COUNT                  \ head addr n (--
+		TUCK                   \ head n addr n (--
+		DUP #$count_length  +   \ head n addr n total$(--
+		DUP ALIGNED ALLOT        \ head n addr n total$(--
+		HERE SWAP -            \ head n addr n to<-
+		SWAP                   \ head n from to n (--
+		MOVE                   \ head n (--
+		HERE #$count_length  - $count!   \ 
+		
+		\ fix link
+		DUP @ ,
+		HERE cell- SWAP !      \ (--
+		
+		\ hash value
+		%name_hash @ ,                ( hash value)
+		
+		\ cfa
+		4EB9 W,    \ AB L. JMP                
+		zero ,
+		init_assembler
+		['] _do_create xt>cfa use ;
+    
+    
+    : ?CREATE ( --)   
+		>IN @ _defined IF
+			DROP
+			\ >in(--
+			CR                      \ send current data and CR
+			DUP >IN ! BL (word) TYPE 
+			."  Redefined " send  
+		THEN                        \ xt|addr(-- 
+		>IN !  
+		(CREATE) 
+	;
+    
+	\ used to set 'create in the abort word
+    ' ?CREATE (create) t!
+
+
+
+    	\ Given a user_variable reference to the current running task
+	\ convert to a reference in the other task.
+	: other_task  ( user_variable user_area -- user_new)
+		SWAP user_base - +
+	;
+
+	</code> </pre>  
+  
+</body>
+</html>

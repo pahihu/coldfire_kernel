@@ -1,0 +1,157 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+.S .( enter rlogon.html)
+    | 1F CONSTANT #remote_develop
+    
+    
+    
+    ( offsets relative to status)  HEX
+    | 0A CONSTANT #port_^C
+    
+    
+    ( REMOTE I/O)  HEX
+    CODE SLOT>BASE ( n -- addr)
+    	S )+ D0 MOV 
+    	D0 SWP
+    	_#RTI1000_bus_base # D0 ADD
+    	D0 S -) MOV 
+    NEXT
+    
+    | CODE (remote_table) ( slot port --addr)
+    	S )+ D2 MOV  
+    	S )+ D0 MOV  
+    	D0 SWP 
+    	_#RTI1000_bus_base # D0 ADD
+    	D0 A0 MOV 
+    	%port_pbase _#RTI1000_dual_port_base - 0) D1 MOV  
+    	%port_offset _#RTI1000_dual_port_base -  0)  D1 SUB
+    	D0 D1 ADD ( D1 contains base address of table)
+    	2 # D2 ASL  
+    	D2 D1 ADD 
+    	D1 A1 MOV
+    	A1 ) D1 MOV ( base of #p) EQ IF ( not set)
+    		TRUE # S -) MOV  
+    		NEXT assembler 
+    	THEN
+    	%port_offset _#RTI1000_dual_port_base -  0) D1 SUB  
+    	D0 D1 ADD  
+    	D1 S -) MOV
+		4 # R ADD
+	NEXT  
+    
+    | : remote_ptable ( slot port --addr)
+     (remote_table) ABORT" Port not available" ;
+    
+    ( channel  1) HEX
+    ( flag is true if all ok)
+    | : remote_logon ( slot port --)
+      TUCK  ( port slot port --)
+      remote_ptable 'MLINK ! 
+	  \ this is not strickly correct as slave does not use
+	  \ address. But the location cannot be link so this will do.
+      064 'MLINK @ #p_owner + port_xgrab
+      ABORT" remote pipe busy."
+      ( wake remote task)
+      'MLINK @ FFFF0000 AND [ %port_wake _#RTI1000_dual_port_base - ]T LITERAL  + W@
+      'MLINK @ #p_status + @
+      'MLINK @ FFFF0000 AND DUP [ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - + W! ;
+    
+    | : remote_logoff ( --)
+      zero 'MLINK @ #p_request + W!
+      'MLINK @ #p_owner + port_release
+      0 'MLINK !
+      ['] QUIT 'abort ! ABORT ;
+    
+    ( action codes)
+    | 1 CONSTANT #expect_data
+    | 2 CONSTANT #sending_data
+    
+    ( Source can be on an odd boundry)
+    ( Destination has to be even)
+
+        \ moves to the bus have to be words
+	| CODE BUSMOVE ( source dest num --)
+		S )+ D0 MOV
+		1 # D0 ASR
+		S )+ A1 MOV
+		S )+ A0 MOV
+		BEGIN
+			A0 )+ D1 B. MOV
+			8 # D1 ASL
+    		A0 )+ D1 B. MOV
+			D1 A1 )+ W. MOV
+		1 # D0 SUB
+		CS UNTIL
+	NEXT
+
+    ( expect)
+    | : expect_function ( --)
+		#$buffer get_buffer
+			buffer 'MLINK @ #p_count + W@ ACCEPT
+			\ n(--
+			\ add 1 for terminator
+			1+
+			user_base activation_^c_set W@ IF ( ^C )
+				'MLINK @ #p_^C_task + @ IF
+    				TRUE 'MLINK @ #p_^C_task + @ 'MLINK @ FFFF0000 AND
+    				DUP [ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - + #port_^C + W!
+    			THEN
+				FALSE  user_base activation_^c_set W!
+			THEN
+
+    		buffer 'MLINK @ #p_address + @ 'MLINK @ FFFF0000 AND
+    		DUP [ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - +
+    		jump #$maximum_data MIN BUSMOVE
+    	kill_buffer
+		'MLINK @ #p_actual + W!
+	;
+
+    ( type)
+    | : type_function ( --)
+    		   'MLINK @ #p_address + @
+    		   'MLINK @ FFFF0000 AND DUP [  %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - +
+    		   'MLINK @ #p_count + W@
+    			_cvs_terminal_codes_decode
+		;
+
+    ( rlog_functions)
+    | CREATE rlog_functions
+    0 t,
+    ' expect_function t,
+    ' type_function   t,
+
+    : rlogon ( slot --)
+     #remote_develop  remote_logon
+     ['] remote_logoff 'abort ! BEGIN
+    	 KEY? 'MLINK @ #p_?data + W!
+         user_base activation_^c_set W@ IF ( ^C )
+			'MLINK @ #p_^C_task + @ IF
+    			TRUE 'MLINK @ #p_^C_task + @ 'MLINK @ FFFF0000 AND
+    			DUP [ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - + #port_^C + W!
+			THEN
+    		FALSE  user_base activation_^c_set W!
+	THEN
+        'MLINK @ #p_request + W@ IF
+    		'MLINK @ #p_function + W@
+                4* rlog_functions + @execute
+    		 zero 'MLINK @ #p_request + W!
+    		'MLINK @ FFFF0000 AND [ %port_wake _#RTI1000_dual_port_base - ]T LITERAL + W@
+    		'MLINK @ #p_status + @
+    		'MLINK @ FFFF0000 AND DUP [ %port_offset _#RTI1000_dual_port_base - ]T LITERAL + @ - + W!
+    	 THEN xpause AGAIN
+    ;
+.S .( exit rlogon.html)
+    </code> </pre>
+
+</BODY>
+</HTML>

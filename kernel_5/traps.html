@@ -1,0 +1,299 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<pre><code>
+
+	: .panic_registers
+	        @int_stack_frame .panic_level_frame
+	;
+
+	\ Have ago at aborting process
+	: _abort_access_error _%fault_data .int_stack_frame TRUE ABORT" Access Error" ;
+	interrupt: TRAP02
+		save_fault_stack
+		panic_cr
+		panic" Access Error"
+                .panic_registers
+		panic_cr
+		set_processor_fault
+		['] _abort_access_error int_return!
+	;interrupt
+
+
+	\ Have an attempt at abort the offending process
+	: _abort_address_error _%fault_data .int_stack_frame TRUE ABORT" Address Error" ;
+ 	interrupt: TRAP03
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Address Error"
+                .panic_registers
+		panic_cr
+		['] _abort_address_error int_return!
+	;interrupt
+
+
+	\ Have an attempt at aborting the offending process
+	: _abort_illegial_instruction _%fault_data .int_stack_frame TRUE ABORT" Illegal Instruction" ;
+	interrupt: TRAP04
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Illegal Instruction"
+		.panic_registers
+		panic_cr
+		['] _abort_illegial_instruction int_return!
+	;interrupt
+
+
+	\ have an attempt at aborting offending process
+	: _abort_priv_violation _%fault_data .int_stack_frame TRUE ABORT" Privilege violation" ;
+	interrupt: TRAP08
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Privilege violation"
+		.panic_registers
+		panic_cr
+		['] _abort_priv_violation int_return!
+	;interrupt
+
+
+	\ acceptable behavior
+	interrupt: TRAP09
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Trace"
+		.panic_registers
+	;interrupt
+
+	\ Have a go at aborting offending process
+	: _abort_line_a _%fault_data .int_stack_frame TRUE ABORT" Unimplemented line A code" ;
+        interrupt: TRAP0A
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Unimplemented line A code"
+            .panic_registers
+		panic_cr
+		['] _abort_line_a int_return!
+	;interrupt
+
+
+
+	\ have a go at oborting offending process
+	: _abort_line_f  _%fault_data .int_stack_frame TRUE ABORT" Unimplemented line F code" ;
+	interrupt: TRAP0B
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Unimplemented line F code"
+		.panic_registers
+		panic_cr
+		['] _abort_line_f int_return!
+	;interrupt
+
+	\ This is acceptable behavior
+	interrupt: TRAP0C
+		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Debug interrupt"
+		.panic_registers
+	;interrupt
+
+	\ we are not likely to be able to recover from this one
+	interrupt: TRAP0E
+ 		save_fault_stack
+		set_processor_fault
+		panic_cr
+		panic" Format error"
+		.panic_registers
+	;interrupt
+
+	\ just return from this
+	interrupt: TRAP0F
+		panic_cr
+		panic" Return Stack :...."
+		@r 20 panic_dump panic_cr
+		panic" Data Stack :...."
+		@s 20 panic_dump panic_cr
+		save_fault_stack
+		set_processor_fault
+		panic" Unimplemented interrupt :...."
+		.panic_registers
+	;interrupt
+
+	: _abort_bus_error _%fault_data .int_stack_frame panic" In abort code" TRUE ABORT" Bus error" ;
+
+
+	\ switch task levels
+      CREATE TRAP22 assembler
+                $2700 # SR MOV
+                \ note the task is saved of with the RTE data in place.
+                \ It will be restarted with a RTE
+                R (R) U) MOV
+                \ U is used to get the activation address.
+                _activation> user_base - U) A0 MOV
+                #activation_task_link 0) A0 MOV
+                _switch AB JMP
+        HOST
+
+
+
+	\ Run user code in supervisor mode
+	\ needed for cache flush
+	ram_variable %super_execute
+	CREATE TRAP23 assembler ( ?? instruction -- ??)
+		1 # D0 MOV
+		D0 %super_execute AB ADD
+		S )+ A0 MOV
+		A0 ) JSR
+		NOP
+	RTE
+	NOP
+	HOST
+
+
+      ??HEX
+	\ stop the CPU
+	LABEL TRAP25 ( reset) assembler
+		7 100 * 2000 + # STOP
+		BEGIN
+			D0 D0 ADD
+		BRA
+	HOST
+
+	\ start the tcp level; if running at a lower level the priority will be raised.
+	\ if running at a high level the level will be run when priorities are lowered
+	interrupt: TRAP26
+			#tcp/ip  activate_task_level
+	;interrupt
+
+        LABEL TRAP27
+        RTE
+        HOST
+
+        LABEL null_trap
+        RTE
+        HOST
+
+</code>
+</pre>
+<h3>Interrupt levels</h3>
+<p>
+We run user apps as user code. User apps have control over enableing and disabling interrupts. 
+These traps do the job, one for each level.
+</p>
+<pre>
+<code>
+	LABEL TRAP28
+		$2700 # SR MOV
+		D0 R -) MOV
+		6 R) D0 W. MOV
+		$2000 # D0 AND NE IF
+		        R )+ D0 MOV
+		        \ if we were in supervisor state leave things as they are
+		        RTE
+                        NOP
+		THEN
+		6 R) D0 W. MOV
+    		$F8FF # D0 AND
+		D0 6 R) W. MOV
+		R )+ D0 MOV
+	        _system_rte AB JMP
+    HOST
+
+	LABEL TRAP29
+            $2700 # SR MOV
+		D0 R -) MOV
+		6 R) D0 W. MOV
+		$F8FF # D0 AND
+		$0100 # D0 OR
+		D0 6 R) W. MOV
+		R )+ D0 MOV
+	        _system_rte AB JMP
+	HOST
+
+	LABEL TRAP2A
+		$2700 # SR MOV
+		D0 R -) MOV
+		6 R) D0 W. MOV
+    		$F8FF # D0 AND
+		$0200 # D0 OR
+		D0 6 R) W. MOV
+		R )+ D0 MOV
+	        _system_rte AB JMP
+    HOST
+
+	LABEL TRAP2B
+		$2700 # SR MOV
+	        D0 R -) MOV
+	        6 R) D0 W. MOV
+    		$F8FF # D0 AND
+	        $0300 # D0 OR
+	        D0 6 R) W. MOV
+	        R )+ D0 MOV
+	        _system_rte AB JMP
+    HOST
+
+	LABEL TRAP2C
+                $2700 # SR MOV
+	        D0 R -) MOV
+	        6 R) D0 W. MOV
+    		$F8FF # D0 AND
+	        $0400 # D0 OR
+	        D0 6 R) W. MOV
+	        R )+ D0 MOV
+                _system_rte AB JMP
+	HOST
+
+	LABEL TRAP2D
+                $2700 # SR MOV
+	        D0 R -) MOV
+	        6 R) D0 W. MOV
+    		$F8FF # D0 AND
+	        $0500 # D0 OR
+	        D0 6 R) W. MOV
+	        R )+ D0 MOV
+	        _system_rte AB JMP
+    HOST
+
+	LABEL TRAP2E
+                $2700 # SR MOV
+	        D0 R -) MOV
+	        6 R) D0 W. MOV
+    		F8FF # D0 AND
+	        $0600 # D0 OR
+	        D0 6 R) W. MOV
+                R )+ D0 MOV
+                _system_rte AB JMP
+        NOP
+	HOST
+
+	LABEL TRAP2F
+		$2700 # SR MOV
+		D0 R -) MOV
+		6 R) D0 W. MOV
+		$0700 # D0 OR
+		D0 6 R) W. MOV
+		R )+ D0 MOV
+                _system_rte AB JMP
+        NOP
+    HOST
+
+</code> 
+</pre>
+</body>
+</html>
+
+

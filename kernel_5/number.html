@@ -1,0 +1,768 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+	<pre> <code>
+    :  _?digit ( addr -- addr1+1 digit true | addr1+1 false)
+		DUP char@	\ addr+ char (--
+		DUP [CHAR] 9 > IF
+			DUP [ CHAR A 1- ]T LITERAL > 
+			OVER [ CHAR Z 1+ ]T LITERAL < AND \ >
+			IF
+				[ CHAR A CHAR 9 - 1- ]T LITERAL -
+			ELSE
+				DUP [ CHAR a 1- ]T LITERAL > IF
+					[ CHAR a CHAR 9 - 1- ]T LITERAL -
+				ELSE
+					DROP
+					FALSE
+				THEN
+			THEN
+		THEN
+		[CHAR] 0 - DUP 0< not IF
+			DUP BASE @ < IF
+				SWAP
+				1 CHARS + \ point to next character
+				SWAP
+				TRUE 
+				EXIT
+			THEN
+		THEN
+		DROP
+		1 CHARS + \ point to next character
+		FALSE
+	;	
+
+    
+
+	: *digit ( dlow dhigh addr digit -- d2low d2high addr )
+		SWAP >R              \ dlow dhigh digit(--
+		-rot                 \ digit dlow dhigh(--
+		BASE @ ut* DROP      \ digit d1low d1high(--
+		ROT zero             \ d1low d1high digitlow digithigh(--
+		D+                   \ d2low d2high(--
+		R>
+	;
+ 
+	</code> </pre>
+<a name="toNUMBER"></a>
+<h5>6.1.0570 >NUMBER</h5>
+<p>to-number CORE</p> 
+<p>( ud1 c-addr1 u1 -- ud2 c-addr2 u2 )</p>
+<p>
+ud2 is the unsigned result of converting the characters within the 
+string specified by c-addr1 u1 into digits, using the number in
+BASE, and adding each into ud1 after multiplying ud1 by the number 
+in BASE. Conversion continues left-to-right until a character
+that is not convertible, including any + or -, is encountered or 
+the string is entirely converted. c-addr2 is the location of the first
+unconverted character or the first character past the end of the string 
+if the string was entirely converted. u2 is the number of
+unconverted characters in the string. An ambiguous condition exists if 
+ud2 overflows during the conversion. 
+</p>
+	<pre> <code>
+	: >NUMBER { ( ulow uhigh c-addr1 u1 -- ulow uhigh c-addr2 u2 ) }{
+	               variable _%start_count
+	          }
+		DUP _%start_count !
+		zero DO         \ ulow uhigh addr(--
+			\ tests current increments address
+			_?digit           \ ulow uhigh addr1 digit true | ulow uhigh addr1 false(--
+			not IF            \ finished with non digits left in string
+				1 CHARS -     \ undo pointer increment
+				_%start_count @ I - 
+				UNLOOP
+				EXIT
+			THEN
+			*digit
+		LOOP
+		\ if we get here the whole lot is done
+		zero
+	;		
+		</code></pre><a name="CONVERT"></a>
+		<h5>6.2.0970 CONVERT</h5> 
+		<p>CORE EXT</p> 
+		<p>( ud1 c-addr1 -- ud2 c-addr2 )</p>
+		<p>
+		ud2 is the result of converting the characters within the text beginning 
+		at the first character after c-addr1 into digits, using the number
+		in BASE, and adding each digit to ud1 after multiplying ud1 by the 
+		number in BASE. Conversion continues until a character that is
+		not convertible is encountered. c-addr2 is the location of the first 
+		unconverted character. An ambiguous condition exists if ud2
+		overflows.
+		</p> 
+		<p>
+		Note: This word is obsolescent and is included as a concession to 
+		existing implementations. Its function is superseded by <i>>NUMBER</i>.
+		</p>
+		<h5>COLDFORTH</h5>
+		<p>
+		The input is a counted string the standard does not require this, as written
+		in the standard the data must be followed by a non convertable character. I'm
+		sorry, it is the only time a zero terminated string is needed in the FORTH 
+		standard, the inconsitance has been ignored, CONVERT requires a counted string. 
+		</p><pre><code>
+	
+	TRUE -1 ??=    
+    : CONVERT ( nd1  $ -- nd2 addr2)
+		COUNT                    \ ud1 addr count(--
+		OVER C@ [CHAR] - = DUP >R IF
+			SWAP CHAR+
+			SWAP 1-
+		THEN
+		>NUMBER
+    	R> IF 
+    		 2SWAP DNEGATE 2SWAP  
+    	THEN  
+		DROP
+    ;
+
+		</code></pre><h3>Number</h3>
+		<p>    
+		(NUMBER) traces down the number conversion list until the output flag is true.
+		The words conversion words have the form:
+		</p><pre><samp>
+		: name \ interpret ( add num -- ?? flag)
+		       \ compile   ( add num -- flag)
+			action
+		;
+		</samp></pre>
+		<p>
+		In other words the entry is reposible for putting the number onto the stack
+		in interpret state and compiling the literal in compile state. Numbers can now deal with 
+		multicell conversions.
+		</p>
+		<p>
+		Application programs may add to the list.
+		</p><pre><code>
+
+     _create_listhead _conversion_list
+    
+	
+	zero
+		DUP CONSTANT _#cl_link CELL+
+		DUP CONSTANT _#cl_xt   CELL+
+		DROP
+	
+	forth : add_number_conversion ( xt --)
+    	HOST _conversion_list dt@  HERE _conversion_list dt! 
+    	t, \ xt(--
+		t, \ (--
+    ;
+ 
+	\ User can add own options.
+ 	: add_number_conversion ( xt --)
+    	_conversion_list @  HERE _conversion_list ! 
+    	, \ xt(-- link into list
+		, \ (-- save the xt
+    ;
+
+	
+	: _finish_single_cell_conversion ( ud1 addr count --)
+		0=  \ ud1 addr flag (--
+		STATE @ IF  \ compile number
+			IF \ valid
+				2DROP  [COMPILE] LITERAL TRUE 
+				EXIT
+			ELSE \ failed
+				2DROP DROP
+				FALSE
+				EXIT
+			THEN
+		ELSE
+			IF \ valid
+				2DROP
+				TRUE    \ num true(--
+				EXIT
+			ELSE
+				2DROP 
+				DROP
+				FALSE
+			THEN
+		THEN
+	;
+
+	: _finish_double_cell_conversion ( ud1 addr count --)
+		0=  \ ud1 addr flag (--
+		STATE @ IF  \ compile number
+			IF \ valid
+				DROP  [COMPILE] 2LITERAL TRUE 
+				EXIT
+			ELSE \ failed
+				2DROP DROP
+				FALSE
+				EXIT
+			THEN
+		ELSE
+			IF \ valid
+				DROP
+				TRUE    \ num true(--
+				EXIT
+			ELSE
+				2DROP 
+				DROP
+				FALSE
+			THEN
+		THEN
+	;
+
+
+	: _+pointer   ( addr n -- addr+ n-)
+		SWAP CHAR+ SWAP 1- ;
+
+</code></pre>
+<a name="simple_number"></a>
+<pre><code>
+    \ -nnnnnnn nnnnnnn
+    : simple_number \ interpret ( add num  -- num true|false)
+	                \ compile   ( add num -- flag)
+		zero zero 2SWAP \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		>NUMBER
+    	R> IF 
+    		 2SWAP DNEGATE 2SWAP  
+    	THEN                      \ ud1 addr count(--  
+		_finish_single_cell_conversion
+	;
+
+</code></pre>
+<a name="simple_double_number"></a>
+<pre><code>
+    \ -nnnnnnnl nnnnnnnL
+    : simple_double_number \ interpret ( addr num -- num true|false)
+	                       \ compile   ( addr num -- flag)
+		zero zero 2SWAP    \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		>NUMBER
+    	R> IF 
+    		 2SWAP DNEGATE 2SWAP  
+    	THEN                      \ ud1 addr count(--
+		DUP IF 
+			OVER char@ DUP [CHAR] L <>  SWAP [CHAR] l <> AND IF
+				4drop
+				FALSE
+				EXIT
+			THEN
+		ELSE
+				4drop
+				FALSE
+				EXIT
+		THEN
+		_+pointer   \ ud1 addr count(--
+		_finish_double_cell_conversion
+	;
+
+ </code></pre>
+<a name="hex_number"></a>
+<pre><code>
+	\ -0xnnnnnn -0Xnnnnnnn 0Xnnnnnn 0xnnnnnnn
+    : hex_number \ interpret ( addr count -- num true|false)
+	             \ compile   ( addr count -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] 0 <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		OVER char@ DUP [CHAR] X <>  SWAP [CHAR] x <> AND IF
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		\ set hex
+		BASE @ >R HEX
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		_finish_single_cell_conversion
+	;
+</code></pre>
+<a name="hex_double_number"></a>
+<pre><code>
+	\ -0xnnnnnnL -0Xnnnnnnnl 0XnnnnnnL 0xnnnnnnnl etc.
+    : hex_double_number \ interpret ( addr count -- num true|false)
+	             \ compile   ( addr count -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] 0 <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		OVER char@ DUP [CHAR] X <>  SWAP [CHAR] x <> AND IF
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		\ set hex
+		BASE @ >R HEX
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		DUP 0= IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		OVER char@ DUP [CHAR] L <>  SWAP [CHAR] l <> AND IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		_finish_double_cell_conversion
+	;
+</code></pre>
+<a name="hex$_number"></a>
+<pre><code>
+
+	\ -$nnnnnn -$nnnnnnn $nnnnnn $nnnnnnn
+    : hex$_number \ interpret ( addr count -- num true|false)
+	             \ compile   ( addr count -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] $ <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set hex
+		BASE @ >R HEX
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		_finish_single_cell_conversion
+	;
+
+</code></pre>
+<a name="hex$_double_number"></a>
+<pre><code>
+	\ -$nnnnnnL -$nnnnnnnl $nnnnnnL $nnnnnnnl etc.
+    : hex$_double_number \ interpret ( addr count -- num true|false)
+	             \ compile   ( addr count -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] $ <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set hex
+		BASE @ >R HEX
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		DUP 0= IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		OVER char@ DUP [CHAR] L <>  SWAP [CHAR] l <> AND IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		_finish_double_cell_conversion
+	;
+</code></pre>
+<a name="decimal_number"></a>
+<pre><code>
+	\ -#nnnnnn -#nnnnnnn #nnnnnn #nnnnnnn
+    : decimal_number \ interpret ( addr count -- num true|false)
+	             \ compile   ( addr count -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] # <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set decimal
+		BASE @ >R DECIMAL
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		_finish_single_cell_conversion
+	;
+</code></pre>
+<a name="decimal_double_number"></a>
+<pre><code>
+
+	\ -#nnnnnnL -#nnnnnnnl #nnnnnnL #nnnnnnnl etc.
+    : decimal_double_number \ interpret ( addr num --num true|false)
+	             \ compile   ( addr num -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] # <> IF \ ud1 addr count (--
+			4drop
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set decimal
+		BASE @ >R DECIMAL
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		DUP 0= IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		OVER char@ DUP [CHAR] L <>  SWAP [CHAR] l <> AND IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		_finish_double_cell_conversion
+	;
+
+</code></pre>
+<a name="binary_number"></a>
+<pre><code>
+	\ -%nnnnnnn %nnnnnn
+    : binary_number \ interpret ( addr num -- num true|false)
+	                \ compile   ( addr num -- flag)
+		zero zero 2SWAP   \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] % <> IF \ ud1 addr count (--
+			2DROP
+			2DROP
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set binary
+		BASE @ >R binary
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		_finish_single_cell_conversion
+	;
+
+</code></pre>
+<a name="binary_double_number"></a>
+<pre><code>
+	\ -%nnnnnnL -%nnnnnnnl %nnnnnnL %nnnnnnnl .
+    : binary_double_number \ interpret ( addr num -- num true|false)
+	             \ compile   ( addr num -- flag)
+		zero zero 2SWAP  \ ud1 addr count(--
+		OVER char@ [CHAR] - = DUP >R IF
+			_+pointer
+		THEN
+		OVER char@ [CHAR] % <> IF \ ud1 addr count (--
+			2DROP
+			2DROP
+			FALSE
+			r>drop
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+
+		\ set binary
+		BASE @ >R binary
+		>NUMBER
+		\ restore old base
+		R> BASE !
+    	R> IF
+    		 2SWAP DNEGATE 2SWAP
+    	THEN                      \ ud1 addr count(--
+		DUP 0= IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		OVER char@ DUP [CHAR] L <>  SWAP [CHAR] l <> AND IF
+			4drop
+			FALSE
+			EXIT
+		THEN
+		_+pointer  \ ud1 addr count(--
+		_finish_double_cell_conversion
+	;
+
+</code></pre>
+<a name="single_character"></a>
+<pre><code>
+	\ 'c'
+	: single_character \ interpret ( addr count -- num true|false)
+	                   \ compile   ( addr count -- flag)
+		                          \ addr count(--
+		OVER char@ [CHAR] ' <> IF \ addr count (--
+			2DROP
+			FALSE
+			EXIT
+		THEN
+
+		\ The character
+		_+pointer   \ addr count(--
+
+		OVER char@ >R
+
+		_+pointer
+		OVER char@ [CHAR] ' <>  IF
+			2DROP
+			FALSE
+			r>drop
+			EXIT
+		THEN      \ addr count(--
+		_+pointer
+		R> zero 2SWAP
+		_finish_single_cell_conversion
+	;
+</code></pre>
+<a name="control_character"></a>
+<pre><code>
+	\ '^c'
+	: control_character \ interpret ( addr count -- num true|false)
+	                    \ compile   ( addr count -- flag)
+		                          \ addr count(--
+		OVER char@ [CHAR] ' <> IF \ addr count (--
+			2DROP
+			FALSE
+			EXIT
+		THEN
+		_+pointer
+		OVER char@ [CHAR] ^ <> IF \ addr count (--
+			2DROP
+			FALSE
+			EXIT
+		THEN
+		_+pointer
+
+		OVER char@ 1F AND >R
+
+		_+pointer      \ addr count(--
+		OVER char@ [CHAR] ' <>  IF
+			2DROP
+			FALSE
+			r>drop
+			EXIT
+		THEN      \ addr count(--
+		_+pointer   \ addr count(--
+		R> zero 2SWAP
+		_finish_single_cell_conversion
+	;
+
+</code></pre>
+<a name="byte_number"></a>
+<pre><code>
+	\ nnn.nnn.nnn.nnn  etc.
+	: byte_number   \ interpret ( addr num -- num true| false)
+	                \ compile   ( addr num -- flag)
+		BASE @ >R DECIMAL
+		zero zero                  \ final-value (--
+		2SWAP
+
+		\ allow it to start with a .
+		OVER char@ [CHAR] . =  IF
+			_+pointer
+		THEN
+		4 0 DO
+			zero zero 2SWAP
+			>NUMBER                  \ final_value ud1 addr count(--
+			\ final_value ud1 addr count(--
+			2>R
+			\ See how easy a full set of double words makes the job.
+			2SWAP 8 d<< 2SWAP dor \ x1 addr count
+			2R>
+			\ final_value ud1 addr count(--
+			\ This entered after simple number so nnnn has gone.
+			\ If we exit here first time number had the form :nnn
+			DUP 0= IF
+				2SWAP 3 I - 8 * d<< 2SWAP
+				_finish_single_cell_conversion
+				UNLOOP
+				R> BASE !
+				EXIT
+			THEN                      \ final_value addr addr count(--
+			OVER char@ [CHAR] . <> IF \ failed
+				4drop
+				FALSE
+				UNLOOP
+				R> BASE !
+				EXIT
+			THEN  \ final_value addr count(--
+			\ skip the :
+			_+pointer
+		LOOP
+		\ get to here we have problems
+		4drop
+		R> BASE !
+		FALSE
+	;
+</code></pre>
+<a name="byte_double_number"></a>
+<pre><code>
+	\ nnn.nnn.nnn.nnn.nnn
+	\ nnn.nnn.nnn.nnn.nnn.nnn  etc.
+	\ base has to be decimal
+	: byte_double_number  \ interpret ( addr num -- num true| false)
+	                \ compile   ( addr num -- flag)
+		BASE @ >R DECIMAL
+		zero zero                  \ final-value(--
+		2SWAP
+		\ allow it to start with a :
+		OVER char@ [CHAR] . =  IF
+			_+pointer
+		THEN
+		7 0 DO
+			zero zero 2SWAP
+			>NUMBER                  \ final_value ud1 addr count(--
+			\ final_value ud1 addr count(--
+			2>R
+			\ See how easy a full set of double words makes the job.
+			2SWAP 8 d<< 2SWAP dor \ x1 addr count
+			2R>
+			\ final_value ud1 addr count(--
+			\ This entered after simple number so nnnn has gone.
+			\ If we exit here first time number had the form :nnn
+			DUP 0= IF
+				2SWAP 7 I - 8 * d<< 2SWAP
+				_finish_double_cell_conversion
+				UNLOOP
+				R> BASE !
+				EXIT
+			THEN                      \ final_value addr addr count(--
+			OVER char@ [CHAR] . <> IF \ failed
+				4drop
+				FALSE
+				UNLOOP
+				R> BASE !
+				EXIT
+			THEN  \ final_value addr count(--
+			\ skip the :
+			_+pointer
+		LOOP
+		\ get to here we have problems
+		4drop
+		R> BASE !
+		FALSE
+	;
+
+	\ First are tried last. This allows user to override default behavior.
+	\ byte_double_numbers has to be done after
+	\ byte_numbers as byte_double_number will accept nnn:nnn etc.
+	\ Both byte_double_numbers and byte_numbers have to be done after
+	\ simple number as both will accept nnn
+
+	' byte_double_number     add_number_conversion
+	' byte_number            add_number_conversion
+	' control_character       add_number_conversion
+	' single_character        add_number_conversion
+\	' q_double_number         add_number_conversion
+	' binary_double_number    add_number_conversion
+	' decimal_double_number   add_number_conversion
+	' hex$_double_number      add_number_conversion
+	' hex_double_number       add_number_conversion
+    ' simple_double_number    add_number_conversion
+\	' q_number                add_number_conversion
+	' binary_number           add_number_conversion
+	' decimal_number          add_number_conversion
+	' hex$_number             add_number_conversion
+	' hex_number              add_number_conversion
+    ' simple_number           add_number_conversion
+
+
+
+	: Snumber { variable %addr variable %num -- ( ?? ) }
+		_conversion_list
+		BEGIN
+			@ DUP   \ list (--
+		WHILE
+			>R
+			%addr @ %num @
+			R@ _#cl_xt + @execute  \ ?? flag (--
+			IF \ success
+				r>drop EXIT
+			THEN
+			R>
+		REPEAT
+		\ Get to here all is lost
+		TRUE ABORT" Can't convert to number"
+	;
+
+	: $number ( $ -- ?? )
+		COUNT Snumber
+	;
+    
+
+</code>
+</pre>
+</body>
+</html>
+

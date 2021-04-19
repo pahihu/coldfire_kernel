@@ -1,0 +1,51 @@
+<html>
+<head>
+<title>Buss error interrupt</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth">
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a>
+<h1>Buss error interrupt</h1>
+<pre>
+<code>
+ 
+
+
+	interrupt: buss_error
+		\ reset interrupt generated using the FPGA must be a write
+		zero _breg_int_reset_bus_error byte!
+		save_fault_stack
+		panic_cr
+		panic" Bus Error"
+		.panic_registers
+		panic_cr
+		set_processor_fault
+		['] _abort_bus_error int_return!
+        ;interrupt
+
+        ram_variable %bus_trapped
+        interrupt: _address_check
+                zero  _breg_int_reset_bus_error byte!
+                TRUE %bus_trapped !
+        ;interrupt
+
+
+        : check_bus_address ( addr --)
+                0 %bus_trapped !
+                _address_check #buss_error_vector EXCEPTION
+                \ operation may or may not succeed.
+                @s >R
+                W@
+                R> !s DROP
+                buss_error #buss_error_vector EXCEPTION
+                %bus_trapped @
+        ;
+
+</code> 
+</pre>
+</body>
+</html>

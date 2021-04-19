@@ -1,0 +1,114 @@
+<html>
+<head>
+<title>COLDFORTH KERNEL</title>
+<META NAME="Author" CONTENT="Charles Esson">
+<META NAME="keywords" CONTENT="forth"> 
+<META NAME="description" CONTENT=" COLDFORTH uses this file to generate COLDFORTH">
+<LINK REL=stylesheet HREF="forth.css" TYPE="text/css">
+</head>
+
+<body>
+<a HREF="./license.html">license</a><br>
+<a HREF="./input_output.html#send">See send</a>
+<pre> <code>
+
+\ forward reference
+	| CREATE (_:write_) 0 t,
+	| : :write (_:write_) @execute ;
+
+	| CREATE (_:cr_) 0 t,
+	| : :cr (_:cr_) @execute ;
+
+
+
+	| CREATE (_send_) 0 t,
+	| : send (_send_) @execute ;
+
+</code> </pre>
+<a HREF="./input_output.html#TYPE">See TYPE</a>
+<pre> <code>
+	| CREATE (_type_) 0 t,
+	| : TYPE ( addr num --)
+		(_type_) @execute 
+	;
+	
+	\ Non standard
+	\
+    : $type   ( addr --) COUNT TYPE ;
+	
+
+</code> </pre>
+<a HREF="./input_output.html#TYPE">See EXPECT</a>
+<pre> <code>
+	| CREATE (_expect_) 0 t,
+	| : EXPECT ( addr num --)
+		(_expect_) @execute ;
+	</code> </pre>
+<a name="EMIT"></a>
+<h5>ANS 6.1.1320 EMIT</h5> 
+<p>( x -- )</p>
+<p>
+If x is a graphic character in the implementation-defined character set, 
+display x. The effect of EMIT for all other values of x is 
+implementation-defined. 
+</p>
+<p> 
+When passed a character whose character-defining bits have a value between 
+hex 20 and 7E inclusive, the corresponding standard character, specified by
+3.1.2.1 Graphic characters, is displayed. Because different output devices 
+can respond differently to control characters, programs that use control
+characters to perform specific functions have an environmental dependency. 
+Each EMIT deals with only one character. 
+</p>
+	<pre> <code>
+	\ can't use the stack as we are not allowed to take the
+	\ stack address. Using a buffer is a bit over the top so
+	\ we will allocate a user variable for the job.
+	\
+	uvariable _emit_buffer
+	: EMIT ( char --)
+			_emit_buffer C!
+			_emit_buffer one 
+			TYPE 
+	;
+	</code> </pre>
+	<pre> <code>
+	CREATE (_cr_) 0 t,
+	| : CR (_cr_) @execute ; 
+
+
+</code> </pre>
+<a name="visible"></a>
+<h5>visible ( from num to --)</h5>
+<p>
+Move the characters from the buffer described by from and num to the buffer
+pointed to by to. Make sure the characters are in a visible range. Useful for
+printing ascii text out to terminals that will interpret some characters as
+control characters.
+</p>
+	<pre> <code> 
+
+
+	: visible ( from num to --)
+		-rot               \ to from num (--
+		OVER               \ to from num from (--
+		+                  \ to start end (--
+		SWAP               \ to end start (--
+		DO                 \ to (--
+			I char@ 
+			DUP BL < IF    
+				DROP [CHAR] ~
+			THEN
+			DUP [CHAR] ~ > IF
+				DROP [CHAR] ~
+			THEN
+			OVER char!
+			CHAR+
+		[ 1 CHARS ]T LITERAL +LOOP
+		DROP
+	;
+
+   	</code> </pre>   
+ 
+</body>
+</html>
