@@ -25,7 +25,7 @@ ram_variable %xdebug
 
 : #GPL ;
 \ check that we have the right licence
-include ./license.html \ <a HREF="./licence.html">link</a>
+include ./license.html \ <a HREF="./license.html">link</a>
 
 include ./xcom.html  \ <a HREF="./xcom.html">link</a>
 
@@ -242,7 +242,7 @@ card being cross compiled.
 <pre>
 <code>
 
-	include ./image_save.html \ <a HREF="./image_file_save.html">link</a>
+	include ./image_save.html \ <a HREF="./image_save.html">link</a>
  
 	include ./setup_xcom.html \ <a HREF="./setup_xcom.html">link</a>
 
@@ -344,7 +344,7 @@ An offset is used to find the checksum in the flashed application image.
 	include ./basic_io.html \ <a HREF="./basic_io.html">link</a>
 	\ code to print out messages before serial port can be opened.
 	\ Selected option must be able to work in interrupt routines.
-	include_card panic.html \ <a HREF="./BCM520j/panic.html">link</a>
+	include_card panic.html \ <a HREF="./BCM550j/panic.html">link</a>
 
 	include ./heap_control.html \ <a HREF="./heap_control.html">link</a>
 	include ./find.html \ <a HREF="./find.html">link</a>
@@ -477,7 +477,7 @@ Convert invisible caracters to ~
 [THEN]
 
 #BVP6551 #BVP6552 + [IF]
-	include_card vga_driver.html \ <a HREF="./vga_driver.html">link</a>
+	include_card vga_driver.html \ <a HREF="./bvp6551/vga_driver.html">link</a>
 [THEN]
 	include ./tube.html \ <a HREF="./tube.html">link</a>
 
@@ -495,7 +495,7 @@ Convert invisible caracters to ~
 	include ./show.html \ <a HREF="./show.html">link</a>
 	include ./fault_data.html \ <a HREF="./fault_data.html">link</a>
 
-	include_card watchdog.html \ <a HREF="./BCM520j/watchdog.html">link</a>
+	include_card watchdog.html \ <a HREF="./BCM550j/watchdog.html">link</a>
 	include ./watchdog.html \ <a HREF="./watchdog.html">link</a>
 
 	include_card ./traps.html \ <a HREF="./BCM550j/traps.html">link</a>
@@ -539,7 +539,7 @@ Convert invisible caracters to ~
 \ provide terminal services without getting involved in tcp/ip.
 \ Provide file service to cpu1
 #BVP5552  #BVP6552  + [IF]
-        include ./bank_server.html \ <a HREF="./bank_code.html">link</a>
+        include ./bank_server.html \ <a HREF="./bank_server.html">link</a>
         include ./bank_logon.html \ <a HREF="./bank_logon.html">link</a>
 [THEN]
 
@@ -603,12 +603,12 @@ Convert invisible caracters to ~
 	include_card vectors.html \ <a HREF="./BCM550j/vectors.html">link</a>
 	include ./init.html \ <a HREF="./init.html">link</a>
 
-	include_card boot_to_ram.html \ <a HREF="./BCM550j_boot_to_ram.html">link</a>
+	include_card boot_to_ram.html \ <a HREF="./BCM550j/boot_to_ram.html">link</a>
 
 	include ./locate.html \ <a HREF="./locate.html">link</a>
 	include ./glossary.html \ <a HREF="./glossary.html">link</a>
 
-\	include ./print_source.html
+\	include ./print_source.html <a HREF="./print_source.html">link</a>
 
 	include ./op_function_vectors.html \ <a HREF="./op_function_vectors.html">link</a>
 	include ./environment.html \ <a HREF="./environment.html">link</a>
